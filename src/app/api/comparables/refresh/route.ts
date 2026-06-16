@@ -53,7 +53,7 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null
 }
 
 async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=defaultKeyStatistics,financialData,summaryDetail&crumb=${encodeURIComponent(crumb)}`;
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=defaultKeyStatistics,financialData,summaryDetail,assetProfile&crumb=${encodeURIComponent(crumb)}`;
   const res = await fetch(url, {
     headers: { ...YF_HEADERS, "Cookie": cookie },
     cache: "no-store",
@@ -70,6 +70,7 @@ async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
   const ks = r.defaultKeyStatistics ?? {};
   const fd = r.financialData ?? {};
   const sd = r.summaryDetail ?? {};
+  const ap = r.assetProfile ?? {};
 
   const rev   = fd.totalRevenue?.raw ?? null;
   const ebitda = fd.ebitda?.raw ?? null;
@@ -93,6 +94,7 @@ async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
     roe:             fd.returnOnEquity?.raw ?? null,
     debtToEquity:    fd.debtToEquity?.raw ?? null,
     beta:            sd.beta?.raw ?? ks.beta?.raw ?? null,
+    description:     ap.longBusinessSummary ?? null,
     lastRefreshed:   new Date().toISOString(),
   };
 }

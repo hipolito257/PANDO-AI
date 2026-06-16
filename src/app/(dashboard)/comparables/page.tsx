@@ -363,7 +363,10 @@ function ComparablesPage() {
                   </div>
 
                   {activeTab === "datos" && (
-                    <MetricsTable comps={comps} company={selectedCompany} />
+                    <>
+                      <CompsOverview comps={comps} company={selectedCompany} />
+                      <MetricsTable comps={comps} company={selectedCompany} />
+                    </>
                   )}
                   {activeTab === "graficas" && mounted && (
                     <ChartsPanel comps={comps} company={selectedCompany}
@@ -385,6 +388,120 @@ function ComparablesPage() {
       {showAI && selectedCompanyId && (
         <AISuggestPanel companyId={selectedCompanyId} existingTickers={tickers}
           onClose={() => setShowAI(false)} onAdd={addTicker} />
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COMPS OVERVIEW
+// ══════════════════════════════════════════════════════════════════════════════
+function CompsOverview({ comps, company }: { comps: PublicComp[]; company: Company }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (ticker: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(ticker)) next.delete(ticker); else next.add(ticker);
+    return next;
+  });
+
+  const hasDescriptions = comps.some(c => c.description);
+
+  return (
+    <div className="bg-paper rounded-[10px] border border-chalk overflow-hidden">
+      <div className="px-4 py-3 border-b border-chalk">
+        <p className="text-[13px] font-semibold text-carbon">Overview de comparables</p>
+        <p className="text-[11px] text-slate">Modelo de negocio y perfil de cada empresa del set</p>
+      </div>
+
+      {/* Target private company */}
+      <div className="px-4 py-3 border-b border-chalk bg-orange/5">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-[6px] bg-orange flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
+            {company.name.slice(0,2).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="text-[13px] font-semibold text-carbon">{company.name}</span>
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange/15 text-orange border border-orange/25">TARGET PRIVADA</span>
+              {company.sector && <span className="text-[9px] text-slate bg-fog border border-chalk px-1.5 py-0.5 rounded-full">{company.sector}</span>}
+              {company.country && <span className="text-[9px] text-slate">{company.country}</span>}
+            </div>
+            {company.description
+              ? <p className="text-[11px] text-graphite leading-relaxed">{company.description}</p>
+              : <p className="text-[11px] text-slate italic">Sin descripción — agrégala en el Radar</p>}
+            <div className="flex gap-4 mt-2">
+              {company.revenueUsd != null && <span className="text-[10px] text-slate">Revenue: <span className="font-semibold text-carbon">{fmtB(company.revenueUsd)}</span></span>}
+              {company.stage && <span className="text-[10px] text-slate">Etapa: <span className="font-semibold text-carbon">{company.stage}</span></span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Public comps */}
+      <div className="divide-y divide-chalk">
+        {comps.map((c, i) => {
+          const isExp = expanded.has(c.ticker);
+          const desc = c.description;
+          const TRUNCATE = 220;
+          const isTruncatable = desc && desc.length > TRUNCATE;
+          return (
+            <div key={c.ticker} className="px-4 py-3 hover:bg-fog/30 transition-colors">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-[6px] bg-fog border border-chalk flex items-center justify-center text-[10px] font-bold font-mono text-carbon shrink-0 mt-0.5"
+                  style={{ background: COLORS[i % COLORS.length] + "18", color: COLORS[i % COLORS.length], borderColor: COLORS[i % COLORS.length] + "30" }}>
+                  {c.ticker.slice(0,2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="text-[13px] font-semibold text-carbon">{c.name}</span>
+                    <a href={`https://finance.yahoo.com/quote/${c.ticker}`} target="_blank" rel="noopener noreferrer"
+                      className="text-[9px] font-mono text-slate bg-fog border border-chalk px-1.5 py-0.5 rounded hover:text-orange transition-colors">
+                      {c.ticker}
+                    </a>
+                    {c.exchange && <span className="text-[9px] text-slate">{c.exchange}</span>}
+                    {c.sector && <span className="text-[9px] text-slate bg-fog border border-chalk px-1.5 py-0.5 rounded-full">{c.sector}</span>}
+                  </div>
+
+                  {desc ? (
+                    <div>
+                      <p className="text-[11px] text-graphite leading-relaxed">
+                        {isTruncatable && !isExp ? desc.slice(0, TRUNCATE) + "…" : desc}
+                      </p>
+                      {isTruncatable && (
+                        <button onClick={() => toggle(c.ticker)}
+                          className="mt-1 text-[10px] text-orange hover:text-orange/70 font-medium transition-colors">
+                          {isExp ? "Ver menos ▲" : "Ver más ▼"}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate italic">
+                      Sin descripción — presiona "Actualizar datos" para cargar el perfil de Yahoo Finance
+                    </p>
+                  )}
+
+                  {/* Key metrics row */}
+                  {c.lastRefreshed && (
+                    <div className="flex gap-4 mt-2 flex-wrap">
+                      {c.marketCapUsd != null && <span className="text-[10px] text-slate">Mkt Cap: <span className="font-semibold text-carbon">{fmtB(c.marketCapUsd)}</span></span>}
+                      {c.revenueUsd   != null && <span className="text-[10px] text-slate">Revenue: <span className="font-semibold text-carbon">{fmtB(c.revenueUsd)}</span></span>}
+                      {c.evRevenue    != null && <span className="text-[10px] text-slate">EV/Rev: <span className="font-semibold text-carbon">{c.evRevenue.toFixed(1)}x</span></span>}
+                      {c.grossMargin  != null && <span className="text-[10px] text-slate">Mg. Bruto: <span className="font-semibold text-carbon">{fmtPct(c.grossMargin)}</span></span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!hasDescriptions && comps.length > 0 && (
+        <div className="px-4 py-3 bg-amber-50 border-t border-amber-100">
+          <p className="text-[10px] text-amber-700">
+            ⚠️ Sin descripciones cargadas — presiona <strong>"Actualizar datos"</strong> en la barra superior para traer los perfiles de negocio desde Yahoo Finance.
+          </p>
+        </div>
       )}
     </div>
   );
