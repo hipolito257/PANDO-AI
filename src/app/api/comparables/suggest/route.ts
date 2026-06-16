@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const companyId = req.nextUrl.searchParams.get("companyId");
+  const companyId  = req.nextUrl.searchParams.get("companyId");
+  const userPrompt = req.nextUrl.searchParams.get("userPrompt")?.trim() || null;
   if (!companyId) return NextResponse.json({ error: "companyId required" }, { status: 400 });
 
   const company = await db.query.companies.findFirst({ where: eq(companies.id, companyId) });
@@ -41,9 +42,9 @@ Target private company:
 - Stage: ${company.fundingStage ?? company.stage ?? "Unknown"}
 - Revenue: ${company.revenueUsd ? `$${company.revenueUsd}M USD` : "Unknown"}
 
-Select 6-8 publicly listed comparable companies ideal for a trading comps valuation table. Selection criteria:
+${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nFollow these instructions when selecting comparables. They override the default criteria below where they conflict.\n` : ""}Select 6-8 publicly listed comparable companies ideal for a trading comps valuation table. Default selection criteria (unless overridden by user instructions above):
 1. Same or very similar business model
-2. Similar end-customer and product category  
+2. Similar end-customer and product category
 3. Same geography when available (LATAM-focused preferred), plus US/global category leaders
 4. At least 3-4 should be direct category leaders even if different geography
 

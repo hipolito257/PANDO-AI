@@ -23,8 +23,11 @@ type PublicComp = {
   marketCapUsd: number | null; evUsd: number | null;
   revenueUsd: number | null; ebitdaUsd: number | null;
   revenueGrowth: number | null; grossMargin: number | null;
-  ebitdaMargin: number | null; evRevenue: number | null;
-  evEbitda: number | null; peRatio: number | null;
+  operatingMargin: number | null; ebitdaMargin: number | null;
+  netMargin: number | null; fcfUsd: number | null;
+  evRevenue: number | null; evEbitda: number | null;
+  peRatio: number | null; psRatio: number | null; pbRatio: number | null;
+  roe: number | null; debtToEquity: number | null; beta: number | null;
   lastRefreshed: string | null;
 };
 type CompSet = {
@@ -388,14 +391,135 @@ function ComparablesPage() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// COLUMN DEFINITIONS
+// ══════════════════════════════════════════════════════════════════════════════
+type ColKey = "marketCap"|"ev"|"revenue"|"growth"|"ebitda"|"grossMargin"|"operatingMargin"|"ebitdaMargin"|"netMargin"|"fcf"|"evRev"|"evEbitda"|"pe"|"ps"|"pb"|"roe"|"de"|"beta"|"r40";
+
+const ALL_COLS: { key: ColKey; label: string; group: string }[] = [
+  { key: "marketCap",       label: "Mkt Cap",       group: "Tamaño" },
+  { key: "ev",              label: "EV",             group: "Tamaño" },
+  { key: "revenue",         label: "Revenue",        group: "Tamaño" },
+  { key: "fcf",             label: "FCF",            group: "Tamaño" },
+  { key: "growth",          label: "Crec. Rev.",     group: "Crecimiento" },
+  { key: "ebitda",          label: "EBITDA",         group: "Rentabilidad" },
+  { key: "grossMargin",     label: "Mg. Bruto",      group: "Márgenes" },
+  { key: "operatingMargin", label: "Mg. Operativo",  group: "Márgenes" },
+  { key: "ebitdaMargin",    label: "Mg. EBITDA",     group: "Márgenes" },
+  { key: "netMargin",       label: "Mg. Neto",       group: "Márgenes" },
+  { key: "roe",             label: "ROE",            group: "Rentabilidad" },
+  { key: "evRev",           label: "EV/Rev",         group: "Múltiplos" },
+  { key: "evEbitda",        label: "EV/EBITDA",      group: "Múltiplos" },
+  { key: "pe",              label: "P/E",            group: "Múltiplos" },
+  { key: "ps",              label: "P/S",            group: "Múltiplos" },
+  { key: "pb",              label: "P/B",            group: "Múltiplos" },
+  { key: "de",              label: "Deuda/Capital",  group: "Balance" },
+  { key: "beta",            label: "Beta",           group: "Mercado" },
+  { key: "r40",             label: "R40",            group: "Salud" },
+];
+
+const DEFAULT_COLS: ColKey[] = ["marketCap","ev","revenue","growth","ebitda","grossMargin","ebitdaMargin","evRev","evEbitda","pe","r40"];
+
+// ══════════════════════════════════════════════════════════════════════════════
 // METRICS TABLE
 // ══════════════════════════════════════════════════════════════════════════════
 function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Company }) {
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
+  const [showColPicker, setShowColPicker] = useState(false);
   const hasData = comps.some(c => c.lastRefreshed);
-  const evRevArr = comps.map(c => c.evRevenue).filter((x): x is number => x != null && x > 0 && x < 200);
-  const evEbArr  = comps.map(c => c.evEbitda).filter((x): x is number => x != null && x > 0 && x < 500);
-  const growArr  = comps.map(c => toGrowthPct(c.revenueGrowth)).filter((x): x is number => x != null);
-  const r40Arr   = comps.map(c => r40(c.revenueGrowth, c.ebitdaMargin)).filter((x): x is number => x != null);
+  const cols = ALL_COLS.filter(c => visibleCols.has(c.key));
+
+  function toggleCol(k: ColKey) {
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  }
+
+  // Helper: get value for a column key from a comp row (or null for private)
+  function compVal(c: PublicComp, key: ColKey): React.ReactNode {
+    switch (key) {
+      case "marketCap": return <span className="text-[11px] text-graphite">{fmtB(c.marketCapUsd)}</span>;
+      case "ev":        return <span className="text-[11px] text-graphite">{fmtB(c.evUsd)}</span>;
+      case "revenue":   return <span className="text-[12px] font-medium text-carbon">{fmtB(c.revenueUsd)}</span>;
+      case "fcf":       return <span className="text-[11px] text-graphite">{fmtB(c.fcfUsd)}</span>;
+      case "growth":    return c.revenueGrowth != null
+        ? <span className={toGrowthPct(c.revenueGrowth)! >= 0 ? "text-[12px] text-emerald-600 font-medium" : "text-[12px] text-red-500 font-medium"}>{fmtGrowth(c.revenueGrowth)}</span>
+        : <span className="text-[11px] text-slate">—</span>;
+      case "ebitda":          return <span className="text-[11px] text-graphite">{fmtB(c.ebitdaUsd)}</span>;
+      case "grossMargin":     return <span className="text-[11px] text-graphite">{fmtPct(c.grossMargin)}</span>;
+      case "operatingMargin": return <span className="text-[11px] text-graphite">{fmtPct(c.operatingMargin)}</span>;
+      case "ebitdaMargin":    return <span className="text-[11px] text-graphite">{fmtPct(c.ebitdaMargin)}</span>;
+      case "netMargin":       return <span className="text-[11px] text-graphite">{fmtPct(c.netMargin)}</span>;
+      case "roe":             return <span className="text-[11px] text-graphite">{fmtPct(c.roe)}</span>;
+      case "evRev":    return <MultipleChip value={c.evRevenue} />;
+      case "evEbitda": return <MultipleChip value={c.evEbitda} />;
+      case "pe":       return <span className="text-[11px] text-graphite">{fmtX(c.peRatio)}</span>;
+      case "ps":       return <span className="text-[11px] text-graphite">{fmtX(c.psRatio)}</span>;
+      case "pb":       return <span className="text-[11px] text-graphite">{fmtX(c.pbRatio)}</span>;
+      case "de":       return <span className="text-[11px] text-graphite">{c.debtToEquity != null ? c.debtToEquity.toFixed(2) : "—"}</span>;
+      case "beta":     return <span className="text-[11px] text-graphite">{c.beta != null ? c.beta.toFixed(2) : "—"}</span>;
+      case "r40": {
+        const v = r40(c.revenueGrowth, c.ebitdaMargin);
+        return v != null ? <R40Chip val={v} /> : <span className="text-[11px] text-slate">—</span>;
+      }
+    }
+  }
+
+  // Helper: get value for private company row
+  function privateVal(key: ColKey): React.ReactNode {
+    switch (key) {
+      case "revenue": return <span className="text-[12px] font-semibold text-carbon">{fmtB(company.revenueUsd)}</span>;
+      case "growth":  return company.revenueGrowth != null
+        ? <span className="text-[12px] text-emerald-600 font-semibold">{fmtGrowth(company.revenueGrowth)}</span>
+        : <span className="text-[11px] text-slate">—</span>;
+      case "ebitda":      return <span className="text-[12px] font-semibold text-carbon">{fmtB(company.ebitdaUsd)}</span>;
+      case "ebitdaMargin": return <span className="text-[12px] text-graphite">{fmtPct(company.ebitdaMargin)}</span>;
+      case "r40": {
+        const v = r40(company.revenueGrowth, company.ebitdaMargin);
+        return v != null ? <R40Chip val={v} /> : <span className="text-[11px] text-slate">—</span>;
+      }
+      default: return <span className="text-[11px] text-slate">—</span>;
+    }
+  }
+
+  // Helper: median cell for footer
+  function medianVal(key: ColKey): React.ReactNode {
+    const nums = (arr: (number|null)[]) => arr.filter((x): x is number => x != null);
+    switch (key) {
+      case "marketCap":       return fmtB(median(nums(comps.map(c=>c.marketCapUsd))));
+      case "ev":              return fmtB(median(nums(comps.map(c=>c.evUsd))));
+      case "revenue":         return fmtB(median(nums(comps.map(c=>c.revenueUsd))));
+      case "fcf":             return fmtB(median(nums(comps.map(c=>c.fcfUsd))));
+      case "growth":          return fmtGrowth(median(nums(comps.map(c=>toGrowthPct(c.revenueGrowth)))));
+      case "ebitda":          return fmtB(median(nums(comps.map(c=>c.ebitdaUsd))));
+      case "grossMargin":     return fmtPct(median(nums(comps.map(c=>c.grossMargin))));
+      case "operatingMargin": return fmtPct(median(nums(comps.map(c=>c.operatingMargin))));
+      case "ebitdaMargin":    return fmtPct(median(nums(comps.map(c=>c.ebitdaMargin))));
+      case "netMargin":       return fmtPct(median(nums(comps.map(c=>c.netMargin))));
+      case "roe":             return fmtPct(median(nums(comps.map(c=>c.roe))));
+      case "evRev": {
+        const a = nums(comps.map(c=>c.evRevenue)).filter(x=>x>0&&x<200);
+        return a.length ? `${median(a)!.toFixed(1)}x` : "—";
+      }
+      case "evEbitda": {
+        const a = nums(comps.map(c=>c.evEbitda)).filter(x=>x>0&&x<500);
+        return a.length ? `${median(a)!.toFixed(1)}x` : "—";
+      }
+      case "pe":   { const a=nums(comps.map(c=>c.peRatio)).filter(x=>x>0&&x<200); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "ps":   { const a=nums(comps.map(c=>c.psRatio)).filter(x=>x>0&&x<200); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "pb":   { const a=nums(comps.map(c=>c.pbRatio)).filter(x=>x>0&&x<200); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "de":   { const a=nums(comps.map(c=>c.debtToEquity)); return a.length?median(a)!.toFixed(2):"—"; }
+      case "beta": { const a=nums(comps.map(c=>c.beta)); return a.length?median(a)!.toFixed(2):"—"; }
+      case "r40":  { const a=nums(comps.map(c=>r40(c.revenueGrowth,c.ebitdaMargin))); return a.length?`${median(a)!.toFixed(0)}`:"—"; }
+    }
+  }
+
+  const isMultiple = (k: ColKey) => ["evRev","evEbitda"].includes(k);
+  const isR40      = (k: ColKey) => k === "r40";
+
+  // Group cols for picker
+  const groups = [...new Set(ALL_COLS.map(c => c.group))];
 
   return (
     <div className="bg-paper rounded-[10px] border border-chalk overflow-hidden">
@@ -404,24 +528,58 @@ function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Compan
           <p className="text-[13px] font-semibold text-carbon">Tabla de múltiplos</p>
           <p className="text-[11px] text-slate">{comps.length} peers públicos · datos de Yahoo Finance</p>
         </div>
-        {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">Sin datos — actualizar</span>}
+        <div className="flex items-center gap-2">
+          {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">Sin datos — actualizar</span>}
+          <div className="relative">
+            <button onClick={() => setShowColPicker(v => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-chalk rounded-[7px] hover:border-carbon bg-white transition-colors">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <rect x="1" y="1" width="4" height="4" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                <rect x="7" y="1" width="4" height="4" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                <rect x="1" y="7" width="4" height="4" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                <rect x="7" y="7" width="4" height="4" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+              </svg>
+              Columnas ({visibleCols.size})
+            </button>
+            {showColPicker && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowColPicker(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-chalk rounded-[10px] shadow-xl p-3 w-[280px]">
+                  <p className="text-[10px] font-semibold text-slate uppercase tracking-wide mb-2">Selecciona columnas</p>
+                  {groups.map(group => (
+                    <div key={group} className="mb-2.5">
+                      <p className="text-[9px] font-bold text-slate/60 uppercase tracking-wider mb-1">{group}</p>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                        {ALL_COLS.filter(c => c.group === group).map(col => (
+                          <label key={col.key} className="flex items-center gap-1.5 cursor-pointer py-0.5 group">
+                            <input type="checkbox" checked={visibleCols.has(col.key)} onChange={() => toggleCol(col.key)}
+                              className="w-3 h-3 accent-carbon" />
+                            <span className="text-[11px] text-carbon group-hover:text-graphite">{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={() => setVisibleCols(new Set(DEFAULT_COLS))}
+                    className="mt-1 text-[10px] text-slate hover:text-carbon underline">
+                    Restaurar por defecto
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="text-[9px] text-slate uppercase tracking-wide border-b border-chalk bg-fog/40">
               <th className="px-3 py-2.5 text-left font-semibold sticky left-0 bg-fog/40">Empresa</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Mkt Cap</th>
-              <th className="px-3 py-2.5 text-right font-semibold">EV</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Revenue</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Crec.</th>
-              <th className="px-3 py-2.5 text-right font-semibold">EBITDA</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Mg. Bruto</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Mg. EBITDA</th>
-              <th className="px-3 py-2.5 text-right font-semibold bg-carbon/5">EV/Rev</th>
-              <th className="px-3 py-2.5 text-right font-semibold bg-carbon/5">EV/EBITDA</th>
-              <th className="px-3 py-2.5 text-right font-semibold">P/E</th>
-              <th className="px-3 py-2.5 text-right font-semibold bg-blue-50/60">R40</th>
+              {cols.map(c => (
+                <th key={c.key} className={`px-3 py-2.5 text-right font-semibold whitespace-nowrap ${isMultiple(c.key) ? "bg-carbon/5" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-chalk">
@@ -438,75 +596,43 @@ function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Compan
                   </div>
                 </div>
               </td>
-              <td className="px-3 py-2.5 text-[11px] text-right text-slate">—</td>
-              <td className="px-3 py-2.5 text-[11px] text-right text-slate">—</td>
-              <td className="px-3 py-2.5 text-[12px] text-right font-semibold text-carbon">{fmtB(company.revenueUsd)}</td>
-              <td className="px-3 py-2.5 text-[12px] text-right">
-                {company.revenueGrowth != null
-                  ? <span className="text-emerald-600 font-semibold">{fmtGrowth(company.revenueGrowth)}</span>
-                  : <span className="text-slate">—</span>}
-              </td>
-              <td className="px-3 py-2.5 text-[12px] text-right font-semibold text-carbon">{fmtB(company.ebitdaUsd)}</td>
-              <td className="px-3 py-2.5 text-[11px] text-right text-slate">—</td>
-              <td className="px-3 py-2.5 text-[12px] text-right text-graphite">{fmtPct(company.ebitdaMargin)}</td>
-              <td className="px-3 py-2.5 text-right bg-carbon/3"><span className="text-[11px] text-slate">—</span></td>
-              <td className="px-3 py-2.5 text-right bg-carbon/3"><span className="text-[11px] text-slate">—</span></td>
-              <td className="px-3 py-2.5 text-[11px] text-right text-slate">—</td>
-              <td className="px-3 py-2.5 text-right bg-blue-50/60">
-                {r40(company.revenueGrowth, company.ebitdaMargin) != null
-                  ? <R40Chip val={r40(company.revenueGrowth, company.ebitdaMargin)!} />
-                  : <span className="text-[11px] text-slate">—</span>}
-              </td>
+              {cols.map(c => (
+                <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
+                  {privateVal(c.key)}
+                </td>
+              ))}
             </tr>
-            {comps.map(c => (
-              <tr key={c.ticker} className="hover:bg-fog/40 transition-colors">
+            {comps.map(comp => (
+              <tr key={comp.ticker} className="hover:bg-fog/40 transition-colors">
                 <td className="px-3 py-2.5 sticky left-0 bg-paper">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded bg-fog border border-chalk flex items-center justify-center text-[9px] font-bold text-slate shrink-0">
-                      {c.ticker.slice(0,2)}
+                      {comp.ticker.slice(0,2)}
                     </div>
                     <div>
-                      <p className="text-[12px] font-medium text-carbon">{c.name}</p>
-                      <a href={`https://finance.yahoo.com/quote/${c.ticker}`} target="_blank" rel="noopener noreferrer"
-                        className="text-[9px] font-mono text-slate hover:text-orange">{c.ticker} · {c.exchange ?? ""}</a>
+                      <p className="text-[12px] font-medium text-carbon">{comp.name}</p>
+                      <a href={`https://finance.yahoo.com/quote/${comp.ticker}`} target="_blank" rel="noopener noreferrer"
+                        className="text-[9px] font-mono text-slate hover:text-orange">{comp.ticker} · {comp.exchange ?? ""}</a>
                     </div>
                   </div>
                 </td>
-                <td className="px-3 py-2.5 text-[11px] text-right text-graphite">{fmtB(c.marketCapUsd)}</td>
-                <td className="px-3 py-2.5 text-[11px] text-right text-graphite">{fmtB(c.evUsd)}</td>
-                <td className="px-3 py-2.5 text-[12px] text-right font-medium text-carbon">{fmtB(c.revenueUsd)}</td>
-                <td className="px-3 py-2.5 text-[12px] text-right">
-                  {c.revenueGrowth != null
-                    ? <span className={toGrowthPct(c.revenueGrowth)! >= 0 ? "text-emerald-600 font-medium" : "text-red-500 font-medium"}>{fmtGrowth(c.revenueGrowth)}</span>
-                    : <span className="text-slate">—</span>}
-                </td>
-                <td className="px-3 py-2.5 text-[11px] text-right text-graphite">{fmtB(c.ebitdaUsd)}</td>
-                <td className="px-3 py-2.5 text-[11px] text-right text-graphite">{fmtPct(c.grossMargin)}</td>
-                <td className="px-3 py-2.5 text-[11px] text-right text-graphite">{fmtPct(c.ebitdaMargin)}</td>
-                <td className="px-3 py-2.5 text-right bg-carbon/3"><MultipleChip value={c.evRevenue} /></td>
-                <td className="px-3 py-2.5 text-right bg-carbon/3"><MultipleChip value={c.evEbitda} /></td>
-                <td className="px-3 py-2.5 text-[11px] text-right text-graphite">{fmtX(c.peRatio)}</td>
-                <td className="px-3 py-2.5 text-right bg-blue-50/60">
-                  {r40(c.revenueGrowth, c.ebitdaMargin) != null
-                    ? <R40Chip val={r40(c.revenueGrowth, c.ebitdaMargin)!} />
-                    : <span className="text-[11px] text-slate">—</span>}
-                </td>
+                {cols.map(c => (
+                  <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
+                    {compVal(comp, c.key)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
-          {hasData && (evRevArr.length > 0 || evEbArr.length > 0) && (
+          {hasData && (
             <tfoot>
               <tr className="border-t-2 border-carbon/20 bg-fog/60 text-[11px] font-semibold">
-                <td className="px-3 py-2.5 text-carbon sticky left-0 bg-fog/60" colSpan={3}>Mediana del set</td>
-                <td className="px-3 py-2.5 text-right text-carbon">{fmtB(median(comps.map(c=>c.revenueUsd).filter((x):x is number=>x!=null)))}</td>
-                <td className="px-3 py-2.5 text-right text-emerald-700">{fmtGrowth(median(growArr))}</td>
-                <td className="px-3 py-2.5 text-right text-carbon">{fmtB(median(comps.map(c=>c.ebitdaUsd).filter((x):x is number=>x!=null)))}</td>
-                <td className="px-3 py-2.5 text-right text-carbon">{fmtPct(median(comps.map(c=>c.grossMargin).filter((x):x is number=>x!=null)))}</td>
-                <td className="px-3 py-2.5 text-right text-carbon">{fmtPct(median(comps.map(c=>c.ebitdaMargin).filter((x):x is number=>x!=null)))}</td>
-                <td className="px-3 py-2.5 text-right bg-carbon/3 text-carbon">{evRevArr.length ? `${median(evRevArr)!.toFixed(1)}x` : "—"}</td>
-                <td className="px-3 py-2.5 text-right bg-carbon/3 text-carbon">{evEbArr.length ? `${median(evEbArr)!.toFixed(1)}x` : "—"}</td>
-                <td className="px-3 py-2.5" />
-                <td className="px-3 py-2.5 text-right bg-blue-50/60 text-blue-700">{r40Arr.length ? `${median(r40Arr)!.toFixed(0)}` : "—"}</td>
+                <td className="px-3 py-2.5 text-carbon sticky left-0 bg-fog/60">Mediana del set</td>
+                {cols.map(c => (
+                  <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3 text-carbon" : isR40(c.key) ? "bg-blue-50/60 text-blue-700" : "text-carbon"}`}>
+                    {medianVal(c.key)}
+                  </td>
+                ))}
               </tr>
             </tfoot>
           )}
@@ -968,23 +1094,25 @@ function AISuggestPanel({
   onClose: () => void;
   onAdd: (ticker: string, name: string, exchange?: string) => Promise<void>;
 }) {
-  const [loading,     setLoading]     = useState(true);
+  const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState("");
   const [noKeyMsg,    setNoKeyMsg]    = useState("");
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
   const [added,       setAdded]       = useState<Set<string>>(new Set(existingTickers));
+  const [userPrompt,  setUserPrompt]  = useState("");
+  const [fetched,     setFetched]     = useState(false);
 
-  useEffect(() => {
-    fetch(`/api/comparables/suggest?companyId=${companyId}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.error === "no_key") setNoKeyMsg(d.message);
-        else if (d.error) setError(d.error);
-        else setSuggestions(d.suggestions ?? []);
-        setLoading(false);
-      })
-      .catch(e => { setError(e.message); setLoading(false); });
-  }, [companyId]);
+  async function doFetch() {
+    setLoading(true); setError(""); setNoKeyMsg(""); setSuggestions([]);
+    const params = new URLSearchParams({ companyId });
+    if (userPrompt.trim()) params.set("userPrompt", userPrompt.trim());
+    const d = await fetch(`/api/comparables/suggest?${params}`).then(r => r.json()).catch(e => ({ error: e.message }));
+    if (d.error === "no_key") setNoKeyMsg(d.message);
+    else if (d.error) setError(d.error);
+    else setSuggestions(d.suggestions ?? []);
+    setLoading(false);
+    setFetched(true);
+  }
 
   async function handleAdd(s: AISuggestion) {
     if (added.has(s.ticker)) return;
@@ -999,12 +1127,38 @@ function AISuggestPanel({
         <div className="p-4 border-b border-chalk flex items-center justify-between">
           <div>
             <h3 className="text-[14px] font-semibold text-carbon">✨ Sugerencias de IA</h3>
-            <p className="text-[11px] text-slate">Claude analiza tu empresa y sugiere los mejores peers públicos</p>
+            <p className="text-[11px] text-slate">Claude analiza tu empresa y sugiere peers públicos comparables</p>
           </div>
           <button onClick={onClose} className="text-slate hover:text-carbon text-[20px] leading-none w-7 h-7 flex items-center justify-center">×</button>
         </div>
 
+        {/* Prompt input */}
+        <div className="p-4 border-b border-chalk bg-fog/30 space-y-2">
+          <label className="block text-[11px] font-medium text-graphite">Instrucciones para la IA <span className="font-normal text-slate">(Opcional)</span></label>
+          <textarea
+            value={userPrompt}
+            onChange={e => setUserPrompt(e.target.value)}
+            rows={3}
+            placeholder={"Ej: Busca solo empresas de SaaS B2B con revenue entre $100M-$500M que coticen en NYSE o NASDAQ.\n\nO: Prioriza empresas latinoamericanas o de mercados emergentes similares."}
+            className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[11px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-carbon resize-none bg-white leading-relaxed"
+          />
+          <button onClick={doFetch} disabled={loading}
+            className="w-full flex items-center justify-center gap-2 py-2 bg-carbon text-white text-[12px] font-medium rounded-[8px] hover:opacity-85 disabled:opacity-50 transition-opacity">
+            {loading
+              ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/></svg>Analizando con IA...</>
+              : <><span>✨</span>{fetched ? "Sugerir de nuevo" : "Sugerir comparables"}</>}
+          </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {!fetched && !loading && (
+            <div className="text-center py-10">
+              <p className="text-[32px] mb-2">🔍</p>
+              <p className="text-[13px] font-medium text-carbon">Listo para analizar</p>
+              <p className="text-[11px] text-slate mt-1">Opcionalmente escribe instrucciones arriba<br />y presiona "Sugerir comparables"</p>
+            </div>
+          )}
+
           {loading && (
             <>
               <p className="text-[12px] text-slate text-center py-3 animate-pulse">Analizando con IA...</p>
@@ -1018,13 +1172,7 @@ function AISuggestPanel({
             <div className="bg-amber-50 border border-amber-200 rounded-[10px] p-4 mt-2">
               <p className="text-[13px] font-semibold text-amber-800">⚙️ API key no configurada</p>
               <p className="text-[11px] text-amber-700 mt-1">{noKeyMsg}</p>
-              <div className="mt-3 bg-amber-100/60 rounded-[6px] p-2.5">
-                <p className="text-[10px] font-mono text-amber-800">
-                  1. Abre el archivo .env.local en la carpeta del proyecto<br />
-                  2. Agrega: ANTHROPIC_API_KEY=sk-ant-...<br />
-                  3. Reinicia el servidor (Ctrl+C y npm run dev)
-                </p>
-              </div>
+              <a href="/settings" className="mt-2 inline-block text-[11px] font-semibold text-amber-700 underline">Ir a Configuración →</a>
             </div>
           )}
 

@@ -75,17 +75,25 @@ async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
   const ebitda = fd.ebitda?.raw ?? null;
 
   return {
-    marketCapUsd:  sd.marketCap?.raw ?? null,
-    evUsd:         ks.enterpriseValue?.raw ?? null,
-    revenueUsd:    rev,
-    ebitdaUsd:     ebitda,
-    revenueGrowth: fd.revenueGrowth?.raw ?? null,
-    grossMargin:   fd.grossMargins?.raw ?? null,
-    ebitdaMargin:  rev && ebitda ? ebitda / rev : null,
-    evRevenue:     ks.enterpriseToRevenue?.raw ?? null,
-    evEbitda:      ks.enterpriseToEbitda?.raw ?? null,
-    peRatio:       sd.trailingPE?.raw ?? ks.forwardPE?.raw ?? null,
-    lastRefreshed: new Date().toISOString(),
+    marketCapUsd:    sd.marketCap?.raw ?? null,
+    evUsd:           ks.enterpriseValue?.raw ?? null,
+    revenueUsd:      rev,
+    ebitdaUsd:       ebitda,
+    revenueGrowth:   fd.revenueGrowth?.raw ?? null,
+    grossMargin:     fd.grossMargins?.raw ?? null,
+    ebitdaMargin:    rev && ebitda ? ebitda / rev : null,
+    operatingMargin: fd.operatingMargins?.raw ?? null,
+    netMargin:       fd.profitMargins?.raw ?? null,
+    fcfUsd:          fd.freeCashflow?.raw ?? null,
+    evRevenue:       ks.enterpriseToRevenue?.raw ?? null,
+    evEbitda:        ks.enterpriseToEbitda?.raw ?? null,
+    peRatio:         sd.trailingPE?.raw ?? ks.forwardPE?.raw ?? null,
+    psRatio:         ks.priceToSalesTrailing12Months?.raw ?? null,
+    pbRatio:         ks.priceToBook?.raw ?? null,
+    roe:             fd.returnOnEquity?.raw ?? null,
+    debtToEquity:    fd.debtToEquity?.raw ?? null,
+    beta:            sd.beta?.raw ?? ks.beta?.raw ?? null,
+    lastRefreshed:   new Date().toISOString(),
   };
 }
 
