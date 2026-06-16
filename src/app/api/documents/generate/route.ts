@@ -179,10 +179,11 @@ interface CompanyRow {
 async function generateWithAI(
   templateBuffer: Buffer,
   templateType: string,
-  company: CompanyRow,
+  company: CompanyRow | null,
   peers: { ticker: string; evRevenue?: number|null; evEbitda?: number|null }[],
   contextFiles: ContextFile[],
-  userApiKey: string | null
+  userApiKey: string | null,
+  userPrompt: string | null
 ): Promise<Buffer> {
   if (!userApiKey) return templateBuffer;
   const apiKey = userApiKey;
@@ -190,7 +191,7 @@ async function generateWithAI(
   const medRev  = median(peers.map(p => Number(p.evRevenue)).filter(n => !isNaN(n) && n > 0));
   const medEbit = median(peers.map(p => Number(p.evEbitda)).filter(n => !isNaN(n) && n > 0));
 
-  const companyCard = `
+  const companyCard = company ? `
 Empresa: ${company.name}
 Sector: ${company.sector ?? "N/D"} | País: ${company.country} | Ciudad: ${company.city ?? "N/D"}
 Descripción: ${company.description ?? "N/D"}
@@ -202,7 +203,7 @@ Peers públicos: ${peers.map(p => p.ticker).join(", ") || "N/D"}
 EV/Revenue mediana (peers): ${medRev ? fmtX(medRev) : "N/D"}
 EV/EBITDA mediana (peers): ${medEbit ? fmtX(medEbit) : "N/D"}
 Fecha: ${today()}
-`.trim();
+`.trim() : null;
 
   const templateText = extractOfficeText(templateBuffer, templateType);
 
@@ -213,7 +214,7 @@ Fecha: ${today()}
   if (contextFiles.length > 0) {
     contentBlocks.push({
       type: "text",
-      text: `A continuación hay ${contextFiles.length} documento(s) de respaldo con información adicional de la empresa. Léelos con atención para extraer datos relevantes:`
+      text: `A continuación hay ${contextFiles.length} documento(s) de respaldo. Léelos con atención para extraer datos relevantes:`
     });
     for (const f of contextFiles) {
       const block = buildContextBlock(f);
@@ -222,24 +223,32 @@ Fecha: ${today()}
   }
 
   // Main instruction
+  const companySection = companyCard
+    ? `DATOS DE LA EMPRESA (base de datos PANDO):\n${companyCard}\n\n${contextFiles.length > 0 ? "IMPORTANTE: Los documentos de respaldo de arriba contienen información adicional. Prioriza esos datos si son más detallados o actuales que los de la base de datos." : ""}`
+    : "";
+
+  const userInstructions = userPrompt
+    ? `INSTRUCCIONES ESPECÍFICAS DEL USUARIO:\n${userPrompt}\n\nSigue estas instrucciones como guía principal para personalizar el documento.`
+    : "";
+
   contentBlocks.push({
     type: "text",
-    text: `Eres un analista senior de Private Equity. Tu tarea es personalizar un documento ${templateType.toUpperCase()} para la empresa que se especifica.
+    text: `Eres un analista senior de Private Equity. Tu tarea es personalizar un documento ${templateType.toUpperCase()}.
 
-DATOS DE LA EMPRESA (base de datos PANDO):
-${companyCard}
+${companySection}
 
-${contextFiles.length > 0 ? "IMPORTANTE: Los documentos de respaldo de arriba contienen información adicional. Prioriza esos datos si son más detallados o actuales que los de la base de datos." : ""}
+${userInstructions}
 
 CONTENIDO ACTUAL DEL DOCUMENTO A PERSONALIZAR:
 ${templateText || "(documento sin texto extraíble — usa los datos disponibles)"}
 
-INSTRUCCIONES:
-1. Identifica EXACTAMENTE qué texto del documento debe reemplazarse con datos de la empresa objetivo
-2. Reemplaza: nombres propios, cifras financieras, porcentajes, sectores, países, ciudades, fechas, nombres de personas clave, descripción del negocio
-3. Para campos narrativos (tesis de inversión, descripción del modelo, resumen ejecutivo), genera texto profesional y conciso en español basado en toda la información disponible
+INSTRUCCIONES GENERALES:
+1. Identifica EXACTAMENTE qué texto del documento debe reemplazarse
+2. Reemplaza: nombres propios, cifras financieras, porcentajes, sectores, países, ciudades, fechas, nombres de personas, descripción del negocio
+3. Para campos narrativos, genera texto profesional y conciso en español
 4. Mantén el tono y estilo del documento original
 5. NO reemplaces: títulos genéricos de secciones, labels, términos del mercado generales
+${userPrompt ? "6. Prioriza las instrucciones específicas del usuario al decidir qué y cómo reemplazar" : ""}
 
 Responde ÚNICAMENTE con un JSON array (sin texto adicional, sin markdown, sin \`\`\`):
 [{"find": "texto exacto del documento a reemplazar", "replace": "nuevo texto"}, ...]
@@ -302,12 +311,13 @@ export async function POST(req: NextRequest) {
 
   // Parse multipart form data
   const formData = await req.formData();
-  const templateId = formData.get("templateId") as string | null;
-  const companyId  = formData.get("companyId")  as string | null;
+  const templateId  = formData.get("templateId")  as string | null;
+  const companyId   = formData.get("companyId")   as string | null;
+  const userPrompt  = (formData.get("userPrompt") as string | null)?.trim() || null;
   const contextFileEntries = formData.getAll("files") as File[];
 
-  if (!templateId || !companyId) {
-    return NextResponse.json({ error: "templateId y companyId requeridos" }, { status: 400 });
+  if (!templateId) {
+    return NextResponse.json({ error: "templateId requerido" }, { status: 400 });
   }
 
   // Load template
@@ -316,22 +326,24 @@ export async function POST(req: NextRequest) {
   });
   if (!template) return NextResponse.json({ error: "Plantilla no encontrada" }, { status: 404 });
 
-  // Load company
-  const company = await db.query.companies.findFirst({
-    where: (c, { eq }) => eq(c.id, companyId),
-  });
-  if (!company) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
-
-  // Load comparable peers
-  const compSet = await db.query.compSets.findFirst({
-    where: (cs, { eq }) => eq(cs.companyId, companyId),
-  });
-  const peerTickers: string[] = compSet ? JSON.parse(compSet.tickers ?? "[]") : [];
+  // Load company (optional)
+  let company: CompanyRow | null = null;
   let peers: { ticker: string; evRevenue?: number|null; evEbitda?: number|null }[] = [];
-  if (peerTickers.length) {
-    peers = await db.query.publicComps.findMany({
-      where: (p, { inArray }) => inArray(p.ticker, peerTickers),
+  if (companyId) {
+    company = await db.query.companies.findFirst({
+      where: (c, { eq }) => eq(c.id, companyId),
+    }) ?? null;
+    if (!company) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+
+    const compSet = await db.query.compSets.findFirst({
+      where: (cs, { eq }) => eq(cs.companyId, companyId),
     });
+    const peerTickers: string[] = compSet ? JSON.parse(compSet.tickers ?? "[]") : [];
+    if (peerTickers.length) {
+      peers = await db.query.publicComps.findMany({
+        where: (p, { inArray }) => inArray(p.ticker, peerTickers),
+      });
+    }
   }
 
   // Read template file
@@ -379,8 +391,8 @@ export async function POST(req: NextRequest) {
   let outBuffer: Buffer;
 
   try {
-    if (hasPlaceholders && contextFiles.length === 0) {
-      // Fast path: {{}} placeholders, no context files — use docxtemplater directly
+    // Fast path: {{}} placeholders + no context files + no userPrompt + company selected
+    if (hasPlaceholders && contextFiles.length === 0 && !userPrompt && company) {
       const values: Record<string, string> = {
         company_name: company.name, nombre_empresa: company.name, empresa: company.name,
         sector: company.sector ?? "N/D", pais: company.country, ciudad: company.city ?? "N/D",
@@ -401,7 +413,7 @@ export async function POST(req: NextRequest) {
         outBuffer = generateWithPlaceholders(templateBuffer, values);
       }
     } else {
-      // AI path: context files provided OR no placeholders
+      // AI path: context files, userPrompt, no placeholders, or no company
       if (!userApiKey) {
         return NextResponse.json({
           error: "API key no configurada",
@@ -409,7 +421,7 @@ export async function POST(req: NextRequest) {
           code: "NO_API_KEY"
         }, { status: 400 });
       }
-      outBuffer = await generateWithAI(templateBuffer, ext, company, peers, contextFiles, userApiKey);
+      outBuffer = await generateWithAI(templateBuffer, ext, company, peers, contextFiles, userApiKey, userPrompt);
     }
   } catch (e: any) {
     console.error("Document generation error:", e);
@@ -421,7 +433,7 @@ export async function POST(req: NextRequest) {
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   };
-  const safeName = company.name.replace(/[^a-zA-Z0-9_\-]/g, "_");
+  const safeName = (company?.name ?? "documento").replace(/[^a-zA-Z0-9_\-]/g, "_");
   const fileName = `${safeName}_${template.name.replace(/[^a-zA-Z0-9_\-]/g, "_")}.${ext}`;
 
   return new NextResponse(new Uint8Array(outBuffer), {

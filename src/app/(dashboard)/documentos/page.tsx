@@ -33,6 +33,7 @@ export default function DocumentosPage() {
   const [selected, setSelected]       = useState<DocTemplate | null>(null);
   const [companyId, setCompanyId]     = useState("");
   const [contextFiles, setContextFiles] = useState<File[]>([]);
+  const [userPrompt, setUserPrompt]    = useState("");
   const [hasApiKey, setHasApiKey]     = useState(true);
   const [uploading, setUploading]     = useState(false);
   const [generating, setGenerating]   = useState(false);
@@ -102,9 +103,9 @@ export default function DocumentosPage() {
   async function handleGenerate() {
     if (!selected || !companyId) return;
 
-    // Check if needs API key
-    if (contextFiles.length > 0 && !hasApiKey) {
-      setGenErr("Necesitas configurar tu API key de Anthropic para usar archivos de respaldo");
+    // Check if needs API key (needed for context files OR user prompt)
+    if ((contextFiles.length > 0 || userPrompt.trim()) && !hasApiKey) {
+      setGenErr("Necesitas configurar tu API key de Anthropic en Configuración para usar esta función");
       return;
     }
 
@@ -112,7 +113,8 @@ export default function DocumentosPage() {
 
     const fd = new FormData();
     fd.append("templateId", selected.id);
-    fd.append("companyId", companyId);
+    if (companyId) fd.append("companyId", companyId);
+    if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     for (const f of contextFiles) fd.append("files", f);
 
     const res = await fetch("/api/documents/generate", { method: "POST", body: fd });
@@ -330,15 +332,18 @@ export default function DocumentosPage() {
               </div>
             </div>
 
-            {/* Step 1 — Company */}
+            {/* Step 1 — Company (optional) */}
             <div className="bg-white border border-chalk rounded-[12px] p-5">
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-                <div className="text-[13px] font-semibold text-carbon">¿Para qué empresa?</div>
+                <div>
+                  <div className="text-[13px] font-semibold text-carbon">¿Para qué empresa? <span className="text-[11px] font-normal text-slate">(Opcional)</span></div>
+                  <div className="text-[10px] text-slate">Si seleccionas una, la IA tendrá acceso a sus datos financieros y comparables</div>
+                </div>
               </div>
               <select value={companyId} onChange={e => setCompanyId(e.target.value)}
                 className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
-                <option value="">— Elige una empresa del radar —</option>
+                <option value="">— Sin empresa específica —</option>
                 {companies.map(c => (
                   <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
                 ))}
@@ -447,10 +452,34 @@ export default function DocumentosPage() {
               </div>
             </div>
 
-            {/* Step 3 — Generate */}
+            {/* Step 3 — User prompt */}
+            <div className="bg-white border border-chalk rounded-[12px] p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                <div>
+                  <div className="text-[13px] font-semibold text-carbon">Instrucciones para la IA <span className="text-[11px] font-normal text-slate">(Opcional)</span></div>
+                  <div className="text-[10px] text-slate">Especifica qué quieres que haga la IA con este documento</div>
+                </div>
+              </div>
+              <textarea
+                value={userPrompt}
+                onChange={e => setUserPrompt(e.target.value)}
+                rows={4}
+                placeholder={"Ej: Genera un resumen ejecutivo de inversión en español. Enfócate en el potencial de crecimiento y los riesgos clave. El tono debe ser formal y conciso.\n\nO: Llena la plantilla con los datos de la empresa seleccionada y agrega una sección de tesis de inversión."}
+                className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-carbon resize-none leading-relaxed"
+              />
+              {userPrompt.trim() && !hasApiKey && (
+                <div className="mt-2 flex items-center gap-1.5 text-[10px] text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-[7px] px-2.5 py-1.5">
+                  <span>⚠️</span>
+                  <span>Se requiere API key de Anthropic para usar instrucciones personalizadas. <a href="/settings" className="underline font-medium">Configurar →</a></span>
+                </div>
+              )}
+            </div>
+
+            {/* Step 4 — Generate */}
             <div className="bg-white border border-chalk rounded-[12px] p-5">
               <div className="flex items-center gap-2 mb-4">
-                <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
                 <div className="text-[13px] font-semibold text-carbon">Generar documento</div>
               </div>
 
@@ -467,14 +496,14 @@ export default function DocumentosPage() {
                 </div>
               )}
 
-              <button onClick={handleGenerate} disabled={generating || !companyId || !selected}
+              <button onClick={handleGenerate} disabled={generating || !selected}
                 className="w-full flex items-center justify-center gap-2 py-3.5 bg-carbon text-white rounded-[10px] text-[14px] font-semibold hover:bg-graphite disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 {generating ? (
                   <>
                     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                     </svg>
-                    {contextFiles.length > 0 ? `IA leyendo ${contextFiles.length} archivo${contextFiles.length > 1 ? "s" : ""} y generando…` : "IA generando documento…"}
+                    {contextFiles.length > 0 ? `IA leyendo ${contextFiles.length} archivo${contextFiles.length > 1 ? "s" : ""} y generando…` : userPrompt.trim() ? "IA procesando instrucciones…" : "IA generando documento…"}
                   </>
                 ) : (
                   <>
@@ -487,9 +516,6 @@ export default function DocumentosPage() {
                 )}
               </button>
 
-              {!companyId && (
-                <div className="mt-3 text-center text-[11px] text-slate">Selecciona una empresa para continuar</div>
-              )}
 
               <div className="mt-4 pt-4 border-t border-chalk flex items-start gap-2">
                 <span className="text-sm shrink-0">🔒</span>
