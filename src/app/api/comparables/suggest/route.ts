@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
   const client = new Anthropic({ apiKey });
 
-  const prompt = `You are a senior private equity analyst doing a trading comps (comparable companies) analysis for a valuation.
+  const prompt = `You are a senior private equity analyst building a trading comps table for a valuation.
 
 Target private company:
 - Name: ${company.name}
@@ -42,19 +42,24 @@ Target private company:
 - Stage: ${company.fundingStage ?? company.stage ?? "Unknown"}
 - Revenue: ${company.revenueUsd ? `$${company.revenueUsd}M USD` : "Unknown"}
 
-${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nFollow these instructions when selecting comparables. They override the default criteria below where they conflict.\n` : ""}Select 6-8 publicly listed comparable companies ideal for a trading comps valuation table. Default selection criteria (unless overridden by user instructions above):
-1. Same or very similar business model
-2. Similar end-customer and product category
-3. Same geography when available (LATAM-focused preferred), plus US/global category leaders
-4. At least 3-4 should be direct category leaders even if different geography
+${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}SELECTION CRITERIA (apply unless overridden above):
+1. Select publicly listed companies that sell THE SAME PRODUCT OR SERVICE as the target — prioritize what they sell, not the business model structure. For example, if the target sells eyeglasses, select all public companies that sell eyeglasses worldwide, regardless of whether they are direct-to-consumer, wholesale, online, or brick-and-mortar.
+2. Geography does NOT matter — include companies from any country or exchange (US, Europe, Asia, LATAM, etc.) as long as they are publicly traded.
+3. Prioritize companies whose core revenue comes from the same product/service category as the target.
+4. Include 6–10 companies. If there are many direct product comparables, prefer those over indirect ones.
+
+For each company, write:
+- "reason": 1 sentence explaining WHY it is a comparable (what specific product/service matches)
+- "businessModel": 1–2 sentences describing how this public company makes money and how its model compares to the target (similarities and key differences)
+- "similarity": rate the product/service similarity as "Alta", "Media", or "Baja" with a brief justification
 
 Return ONLY a JSON array (no markdown, no preamble, no explanation):
-[{"ticker":"TWLO","name":"Twilio Inc.","exchange":"NYSE","reason":"CPaaS leader, most direct comparable"},{"ticker":"BAND","name":"Bandwidth Inc.","exchange":"NASDAQ","reason":"Voice/SMS APIs for enterprises"}]`;
+[{"ticker":"LGN","name":"Luxottica Group","exchange":"NYSE","reason":"Global eyewear manufacturer and retailer — same product category","businessModel":"Vertically integrated: designs, manufactures, and retails eyewear brands (Ray-Ban, Oakley). Similar to the target in selling eyeglasses; differs in that Luxottica owns the full supply chain and has massive wholesale distribution.","similarity":"Alta — ambas venden lentes ópticos al consumidor final"}]`;
 
   try {
     const msg = await client.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
     });
 

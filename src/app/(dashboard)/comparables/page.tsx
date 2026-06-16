@@ -34,7 +34,7 @@ type CompSet = {
   id: string; name: string; tickers: string; notes: string | null;
   company: Company | null; comps: PublicComp[];
 };
-type AISuggestion = { ticker: string; name: string; exchange: string; reason: string };
+type AISuggestion = { ticker: string; name: string; exchange: string; reason: string; businessModel: string; similarity: string };
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmtB = (n: number | null | undefined) => {
@@ -1183,28 +1183,51 @@ function AISuggestPanel({
             </div>
           )}
 
-          {!loading && suggestions.map(s => (
-            <div key={s.ticker} className="flex items-start gap-3 p-3 bg-fog rounded-[8px] border border-chalk hover:border-carbon/30 transition-colors">
-              <div className="w-10 h-10 rounded-[6px] bg-paper border border-chalk flex items-center justify-center text-[11px] font-bold font-mono text-carbon shrink-0">
-                {s.ticker.slice(0,3)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-[12px] font-semibold text-carbon">{s.name}</p>
-                  <span className="text-[9px] font-mono text-slate bg-paper border border-chalk px-1.5 py-0.5 rounded">{s.ticker}</span>
-                  <span className="text-[9px] text-slate">{s.exchange}</span>
+          {!loading && suggestions.map(s => {
+            const simColor = s.similarity?.startsWith("Alta")
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : s.similarity?.startsWith("Media")
+              ? "bg-amber-50 text-amber-700 border-amber-200"
+              : "bg-fog text-slate border-chalk";
+            return (
+              <div key={s.ticker} className="p-3 bg-fog rounded-[8px] border border-chalk hover:border-carbon/30 transition-colors space-y-2">
+                {/* Header row */}
+                <div className="flex items-start gap-2">
+                  <div className="w-9 h-9 rounded-[6px] bg-paper border border-chalk flex items-center justify-center text-[10px] font-bold font-mono text-carbon shrink-0">
+                    {s.ticker.slice(0,3)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-[12px] font-semibold text-carbon">{s.name}</p>
+                      <span className="text-[9px] font-mono text-slate bg-paper border border-chalk px-1.5 py-0.5 rounded">{s.ticker}</span>
+                      <span className="text-[9px] text-slate">{s.exchange}</span>
+                    </div>
+                    <p className="text-[11px] text-carbon mt-0.5 leading-snug">{s.reason}</p>
+                  </div>
+                  <button onClick={() => handleAdd(s)} disabled={added.has(s.ticker)}
+                    className={`px-2.5 py-1.5 text-[11px] font-medium rounded-[6px] transition-colors shrink-0
+                      ${added.has(s.ticker)
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
+                        : "bg-carbon text-white hover:opacity-85"}`}>
+                    {added.has(s.ticker) ? "✓" : "+ Add"}
+                  </button>
                 </div>
-                <p className="text-[11px] text-slate mt-0.5 leading-snug">{s.reason}</p>
+                {/* Business model + similarity */}
+                {(s.businessModel || s.similarity) && (
+                  <div className="pl-[44px] space-y-1.5">
+                    {s.businessModel && (
+                      <p className="text-[10px] text-slate leading-relaxed">{s.businessModel}</p>
+                    )}
+                    {s.similarity && (
+                      <span className={`inline-block text-[9px] font-medium px-2 py-0.5 rounded-full border ${simColor}`}>
+                        Similitud: {s.similarity}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
-              <button onClick={() => handleAdd(s)} disabled={added.has(s.ticker)}
-                className={`px-2.5 py-1.5 text-[11px] font-medium rounded-[6px] transition-colors shrink-0 mt-0.5
-                  ${added.has(s.ticker)
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
-                    : "bg-carbon text-white hover:opacity-85"}`}>
-                {added.has(s.ticker) ? "✓" : "+ Add"}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="p-3 border-t border-chalk bg-fog/30">
