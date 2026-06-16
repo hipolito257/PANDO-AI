@@ -1,6 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import {
   ResponsiveContainer,
@@ -96,10 +95,8 @@ const COLORS = ["#202020","#ea5c2b","#6366f1","#0ea5e9","#10b981","#f59e0b","#ec
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-function ComparablesPageInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const selectedCompanyId = searchParams.get("company");
+function ComparablesPage() {
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
 
   const [companies,   setCompanies]   = useState<Company[]>([]);
   const [compSet,     setCompSet]     = useState<CompSet | null>(null);
@@ -137,7 +134,7 @@ function ComparablesPageInner() {
   }, [selectedCompanyId, loadCompSet]);
 
   const selectCompany = (id: string) => {
-    router.push(`/comparables?company=${id}`);
+    setSelectedCompanyId(id);
     setActiveTab("datos");
   };
 
@@ -959,16 +956,7 @@ function PeerSearchDrawer({
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SUSPENSE WRAPPER (required for useSearchParams in Next.js App Router)
-// ══════════════════════════════════════════════════════════════════════════════
-export default function ComparablesPage() {
-  return (
-    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-slate text-sm">Cargando...</div>}>
-      <ComparablesPageInner />
-    </Suspense>
-  );
-}
+export default ComparablesPage;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // AI SUGGEST PANEL
