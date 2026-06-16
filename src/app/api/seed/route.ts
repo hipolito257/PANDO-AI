@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { users, dataSources, companies, signals, companyTags, founders, mandates, mandateMatches } from "@/lib/schema";
+import { users, dataSources, companies, signals, companyTags, mandates, mandateMatches } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
+
+export const dynamic = "force-dynamic";
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
