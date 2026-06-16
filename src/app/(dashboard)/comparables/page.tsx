@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/layout/Topbar";
 import {
@@ -96,7 +96,7 @@ const COLORS = ["#202020","#ea5c2b","#6366f1","#0ea5e9","#10b981","#f59e0b","#ec
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-export default function ComparablesPage() {
+function ComparablesPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedCompanyId = searchParams.get("company");
@@ -956,6 +956,17 @@ function PeerSearchDrawer({
         </div>
       </div>
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SUSPENSE WRAPPER (required for useSearchParams in Next.js App Router)
+// ══════════════════════════════════════════════════════════════════════════════
+export default function ComparablesPage() {
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-slate text-sm">Cargando...</div>}>
+      <ComparablesPageInner />
+    </Suspense>
   );
 }
 
