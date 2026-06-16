@@ -694,7 +694,7 @@ function ChartsPanel({
               {barData.map((d, i) => (
                 <Cell key={i} fill={d.isPrivate ? "#ea5c2b" : COLORS[(i) % COLORS.length]} opacity={d.isPrivate ? 1 : 0.7} />
               ))}
-              <LabelList dataKey="value" position="top" formatter={(v: number) => fmtB(v)} style={{ fontSize: 9, fill: "#8a8480" }} />
+              <LabelList dataKey="value" position="top" formatter={(v: unknown) => fmtB(v as number)} style={{ fontSize: 9, fill: "#8a8480" }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
