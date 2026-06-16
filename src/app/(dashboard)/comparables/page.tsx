@@ -876,7 +876,7 @@ function PeerSearchDrawer({
   const [results,  setResults]  = useState<{ ticker: string; name: string; exchange: string }[]>([]);
   const [searching,setSearching]= useState(false);
   const [added,    setAdded]    = useState<Set<string>>(new Set(existingTickers));
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (!q.trim()) { setResults([]); return; }
