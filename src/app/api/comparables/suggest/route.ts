@@ -16,8 +16,9 @@ export async function GET(req: NextRequest) {
   if (!company) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   // Get user's API key from DB, fallback to env var
+  const userId = session.user.id;
   const userSetting = await db.query.userSettings.findFirst({
-    where: eq(userSettings.userId, session.user.id),
+    where: eq(userSettings.userId, userId),
   });
   const apiKey = userSetting?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
 

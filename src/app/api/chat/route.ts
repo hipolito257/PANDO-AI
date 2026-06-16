@@ -84,8 +84,9 @@ export async function POST(req: NextRequest) {
   if (!message?.trim()) return NextResponse.json({ error: "message required" }, { status: 400 });
 
   // Get user's API key
+  const userId = session.user.id;
   const userSetting = await db.query.userSettings.findFirst({
-    where: eq(userSettings.userId, session.user.id),
+    where: eq(userSettings.userId, userId),
   });
   const apiKey = userSetting?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
 

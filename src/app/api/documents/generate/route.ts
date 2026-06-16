@@ -362,8 +362,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Load user's API key
+  const userId = session.user.id;
   const userSettings = await db.query.userSettings.findFirst({
-    where: (s, { eq }) => eq(s.userId, session.user.id),
+    where: (s, { eq }) => eq(s.userId, userId),
   });
   const userApiKey = userSettings?.anthropicApiKey ?? null;
 

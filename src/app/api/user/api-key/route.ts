@@ -6,16 +6,17 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 // GET /api/user/api-key — get current user's API key
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const userId = session.user.id;
   const settings = await db.query.userSettings.findFirst({
-    where: (s, { eq }) => eq(s.userId, session.user.id),
+    where: eq(userSettings.userId, userId),
   });
 
   return NextResponse.json({
-    userId: session.user.id,
+    userId,
     hasApiKey: !!settings?.anthropicApiKey,
     // Never return the actual key to frontend for security
     lastUpdated: settings?.updatedAt,
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const userId = session.user.id;
   const { apiKey } = await req.json() as { apiKey?: string };
   if (!apiKey?.trim()) {
     return NextResponse.json({ error: "apiKey es requerida" }, { status: 400 });
@@ -41,19 +43,19 @@ export async function POST(req: NextRequest) {
 
   // Check if settings already exist
   const existing = await db.query.userSettings.findFirst({
-    where: (s, { eq }) => eq(s.userId, session.user.id),
+    where: eq(userSettings.userId, userId),
   });
 
   if (existing) {
     // Update
     await db.update(userSettings)
       .set({ anthropicApiKey: trimmedKey, updatedAt: new Date().toISOString() })
-      .where((s) => eq(s.userId, session.user.id));
+      .where(eq(userSettings.userId, userId));
   } else {
     // Create
     await db.insert(userSettings).values({
       id: randomUUID(),
-      userId: session.user.id,
+      userId,
       anthropicApiKey: trimmedKey,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -67,13 +69,14 @@ export async function POST(req: NextRequest) {
 }
 
 // DELETE /api/user/api-key — remove user's API key
-export async function DELETE(req: NextRequest) {
+export async function DELETE(_req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const userId = session.user.id;
   await db.update(userSettings)
     .set({ anthropicApiKey: null, updatedAt: new Date().toISOString() })
-    .where((s) => eq(s.userId, session.user.id));
+    .where(eq(userSettings.userId, userId));
 
   return NextResponse.json({ success: true });
 }
