@@ -25,6 +25,7 @@ type Company = {
   id: string; name: string; slug: string; sector: string | null; country: string;
   stage: string | null; revenueUsd: number | null; revenueGrowth: number | null;
   ebitdaMargin: number | null; employees: number | null; score: number; status: string;
+  createdBy: string | null; updatedBy: string | null;
   signals: { id: string; type: string; severity: string; title: string }[];
   tags: { tag: string }[];
 };
@@ -169,6 +170,9 @@ export default function RadarPage() {
                             <Link href={`/empresa/${c.slug}`} className="font-semibold text-[13px] text-carbon hover:text-orange transition-colors">
                               {c.name}
                             </Link>
+                            {c.createdBy && (
+                              <span className="text-[9px] text-slate ml-1">por {c.createdBy}</span>
+                            )}
                             <button
                               onClick={() => setEditCompany(c as any)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity text-slate hover:text-carbon"

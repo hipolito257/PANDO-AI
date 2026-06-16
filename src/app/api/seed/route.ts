@@ -97,7 +97,7 @@ export async function GET() {
     for (const m of DEMO_MANDATES) {
       const exists = await db.query.mandates.findFirst({ where: eq(mandates.id, m.id) });
       if (!exists) {
-        await db.insert(mandates).values({ ...m, sectors: JSON.stringify(m.sectors), countries: JSON.stringify(m.countries), stages: JSON.stringify(m.stages), maxRevenue: m.maxRevenue ?? null, isActive: true });
+        await db.insert(mandates).values({ ...m, sectors: JSON.stringify(m.sectors), countries: JSON.stringify(m.countries), stages: JSON.stringify(m.stages), maxRevenue: m.maxRevenue ?? null, isActive: true, createdBy: "Sistema PANDO", updatedBy: "Sistema PANDO" });
         mandCreated++;
       }
     }
@@ -107,7 +107,7 @@ export async function GET() {
     let coCreated = 0;
     for (const co of DEMO_COMPANIES) {
       const exists = await db.query.companies.findFirst({ where: eq(companies.id, co.id) });
-      if (!exists) { await db.insert(companies).values({ ...co, addedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); coCreated++; }
+      if (!exists) { await db.insert(companies).values({ ...co, addedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: "Sistema PANDO", updatedBy: "Sistema PANDO" }); coCreated++; }
     }
     results.push(`✓ Empresas: ${coCreated} creadas`);
 

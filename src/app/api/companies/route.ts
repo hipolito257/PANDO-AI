@@ -88,8 +88,8 @@ export async function POST(req: NextRequest) {
     fundingStage:   rest.fundingStage  ?? null,
     score:          rest.score         != null ? Number(rest.score)         : 0,
     status:         rest.status        ?? "monitoring",
-    createdBy:      userId,
-    updatedBy:      userId,
+    createdBy:      userName,
+    updatedBy:      userName,
   });
 
   await logActivity(userId, userName, "added_company", "company", id, name);
@@ -121,7 +121,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (Object.keys(update).length > 0) {
-    update.updatedBy = userId;
+    update.updatedBy = userName;
     await db.update(companies).set(update as any).where(eq(companies.id, id));
   }
 

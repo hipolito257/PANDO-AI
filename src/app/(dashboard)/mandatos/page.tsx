@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/Button";
 type Mandate = {
   id: string; name: string; description: string | null; sectors: string; countries: string;
   stages: string; minRevenue: number | null; maxRevenue: number | null; thesis: string | null;
-  isActive: boolean; createdAt: string; _count: { matches: number }; matches: { companyId: string }[];
+  isActive: boolean; createdAt: string; createdBy: string | null; updatedBy: string | null;
+  _count: { matches: number }; matches: { companyId: string }[];
 };
 
 const SECTOR_OPTIONS = ["Software", "SaaS", "Fintech", "Proptech", "Consumer", "Retail", "Logistics", "Healthcare", "Mobility", "Edtech", "Agritech", "Other"];
@@ -238,6 +239,14 @@ export default function MandatosPage() {
                       "{m.thesis}"
                     </p>
                   )}
+
+                  {/* Audit */}
+                  <div className="mt-3 pt-3 border-t border-chalk flex items-center justify-between text-[10px] text-slate">
+                    <span>Creado por <span className="font-medium text-graphite">{m.createdBy ?? "Sistema PANDO"}</span></span>
+                    {m.updatedBy && m.updatedBy !== m.createdBy && (
+                      <span>Editado por <span className="font-medium text-graphite">{m.updatedBy}</span></span>
+                    )}
+                  </div>
                 </Card>
               );
             })}

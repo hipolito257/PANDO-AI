@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
     maxRevenue:  body.maxRevenue ? Number(body.maxRevenue) : null,
     thesis:      body.thesis || null,
     isActive:    body.isActive ?? true,
-    createdBy:   userId,
-    updatedBy:   userId,
+    createdBy:   userName,
+    updatedBy:   userName,
   });
 
   await logActivity(userId, userName, "added_mandate", id, body.name);
@@ -69,7 +69,7 @@ export async function PATCH(req: NextRequest) {
   const userId   = session.user.id;
   const userName = session.user.name ?? session.user.email ?? "Usuario";
 
-  const updateData: Record<string, unknown> = { ...data, updatedBy: userId };
+  const updateData: Record<string, unknown> = { ...data, updatedBy: userName };
   if (data.sectors)   updateData.sectors   = JSON.stringify(data.sectors);
   if (data.countries) updateData.countries = JSON.stringify(data.countries);
   if (data.stages)    updateData.stages    = JSON.stringify(data.stages);

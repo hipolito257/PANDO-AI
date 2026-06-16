@@ -14,7 +14,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
       {
@@ -35,7 +35,8 @@
     "C:UserspabloAppDataLocalTemppando-next-dev/types/**/*.ts",
     "C:\\Users\\pablo\\AppData\\Local\\Temp\\pando-next-dev/types/**/*.ts",
     "next-env.d.ts",
-    "C:/Users/pablo/AppData/Local/Temp/pando-next-dev/types/**/*.ts"
+    "C:/Users/pablo/AppData/Local/Temp/pando-next-dev/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

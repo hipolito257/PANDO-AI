@@ -2,19 +2,39 @@ import { Topbar } from "@/components/layout/Topbar";
 import { KpiCard, Card, SectionHeader } from "@/components/ui/Card";
 import { SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
 import { Spark } from "@/components/charts/Spark";
-import { VBars } from "@/components/charts/VBars";
 import { Donut } from "@/components/charts/Donut";
 import { db } from "@/lib/db";
-import { desc, asc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { fmtDate, fmtM } from "@/lib/utils";
 import Link from "next/link";
 import type { SignalType } from "@/types";
 import * as schema from "@/lib/schema";
 
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "ahora";
+  if (m < 60) return `hace ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `hace ${h}h`;
+  const d = Math.floor(h / 24);
+  return `hace ${d}d`;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  added_company:      "agregó empresa",
+  edited_company:     "editó empresa",
+  added_mandate:      "creó mandato",
+  edited_mandate:     "editó mandato",
+  uploaded_template:  "subió plantilla",
+  generated_document: "generó documento",
+};
+
 export const revalidate = 0;
 
 async function getDashboardData() {
-  const [allCompanies, allSignals, allMandates, allSources] = await Promise.all([
+  const [allCompanies, allSignals, allMandates, allSources, recentActivity] = await Promise.all([
     db.query.companies.findMany({
       with: { signals: { limit: 2, orderBy: (s, { desc }) => [desc(s.date)] } },
       orderBy: [desc(schema.companies.score)],
@@ -30,12 +50,16 @@ async function getDashboardData() {
     db.query.dataSources.findMany({
       where: (s, { eq }) => eq(s.isEnabled, true),
     }),
+    db.query.activityLog.findMany({
+      orderBy: [desc(schema.activityLog.createdAt)],
+      limit: 12,
+    }),
   ]);
-  return { companies: allCompanies, signals: allSignals, mandates: allMandates, sources: allSources };
+  return { companies: allCompanies, signals: allSignals, mandates: allMandates, sources: allSources, activity: recentActivity };
 }
 
 export default async function DashboardPage() {
-  const { companies, signals, mandates, sources } = await getDashboardData();
+  const { companies, signals, mandates, sources, activity } = await getDashboardData();
 
   const pipeline = companies.filter((c) => c.status === "pipeline");
   const monitoring = companies.filter((c) => c.status === "monitoring");
@@ -46,9 +70,6 @@ export default async function DashboardPage() {
     { label: "Pipeline",     value: pipeline.length,   color: "#202020" },
     { label: "Portafolio",   value: companies.filter(c => c.status === "portfolio").length, color: "#059669" },
   ].filter((s) => s.value > 0);
-
-  const trend = [2, 3, 5, 4, 7, 6, 8, 9, 8, 11, 10, 12];
-  const months = ["E","F","M","A","M","J","J","A","S","O","N","D"];
 
   return (
     <div>
@@ -108,9 +129,26 @@ export default async function DashboardPage() {
                 </div>
               </div>
             </Card>
-            <Card padding="sm">
-              <SectionHeader title="Actividad" subtitle="Empresas agregadas / mes" className="mb-2" />
-              <VBars labels={months} values={trend} width={168} height={80} color="#202020" />
+            <Card padding="none" className="flex flex-col">
+              <div className="px-4 pt-4 pb-3 border-b border-chalk flex-none">
+                <SectionHeader title="Actividad reciente" subtitle="Cambios del equipo" className="mb-0" />
+              </div>
+              <div className="divide-y divide-chalk overflow-y-auto" style={{ maxHeight: 220 }}>
+                {activity.length === 0 ? (
+                  <p className="text-[11px] text-slate px-4 py-3">Sin actividad registrada</p>
+                ) : activity.map((a) => (
+                  <div key={a.id} className="px-4 py-2.5 hover:bg-fog/40 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-[11px] font-medium text-carbon">{a.userName.split(" ")[0]}</span>
+                        <span className="text-[11px] text-slate"> {ACTION_LABELS[a.action] ?? a.action}</span>
+                        {a.entityName && <span className="text-[11px] text-graphite font-medium"> · {a.entityName}</span>}
+                      </div>
+                      <span className="text-[10px] text-slate flex-none">{timeAgo(a.createdAt)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </Card>
           </div>
         </div>
