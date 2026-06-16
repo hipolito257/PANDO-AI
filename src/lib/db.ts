@@ -2,12 +2,6 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
-// Singleton pattern for serverless (Vercel) — reuse connection across invocations
-declare global {
-  // eslint-disable-next-line no-var
-  var __pandoDb: ReturnType<typeof drizzle> | undefined;
-}
-
 function createDb() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
@@ -22,10 +16,15 @@ function createDb() {
   return drizzle(client, { schema });
 }
 
-export const db = globalThis.__pandoDb ?? createDb();
+// Type-safe singleton — preserves schema generics for db.query.*
+const globalForDb = globalThis as unknown as {
+  __pandoDb: ReturnType<typeof createDb> | undefined;
+};
+
+export const db = globalForDb.__pandoDb ?? createDb();
 
 if (process.env.NODE_ENV !== "production") {
-  globalThis.__pandoDb = db;
+  globalForDb.__pandoDb = db;
 }
 
 export * from "./schema";
