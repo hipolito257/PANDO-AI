@@ -184,9 +184,8 @@ async function generateWithAI(
   contextFiles: ContextFile[],
   userApiKey: string | null
 ): Promise<Buffer> {
-  // Use user's API key, fallback to env var, then return original if none
-  const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return templateBuffer; // No key — return original
+  if (!userApiKey) return templateBuffer;
+  const apiKey = userApiKey;
 
   const medRev  = median(peers.map(p => Number(p.evRevenue)).filter(n => !isNaN(n) && n > 0));
   const medEbit = median(peers.map(p => Number(p.evEbitda)).filter(n => !isNaN(n) && n > 0));
