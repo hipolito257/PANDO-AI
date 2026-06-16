@@ -650,10 +650,10 @@ function ChartsPanel({
             <ComposedChart margin={{ top: 15, right: 40, bottom: 30, left: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
               <XAxis dataKey="x" type="number" domain={["auto","auto"]}
-                tickFormatter={(v: number) => `${v.toFixed(0)}%`} tick={{ fontSize: 10 }}
+                tickFormatter={(v: unknown) => `${(v as number).toFixed(0)}%`} tick={{ fontSize: 10 }}
                 label={{ value: "Revenue Growth (%)", position: "insideBottom", offset: -10, style: { fontSize: 10, fill: "#8a8480" } }} />
               <YAxis dataKey="y" type="number" domain={[0,"auto"]}
-                tickFormatter={(v: number) => `${v.toFixed(0)}x`} tick={{ fontSize: 10 }}
+                tickFormatter={(v: unknown) => `${(v as number).toFixed(0)}x`} tick={{ fontSize: 10 }}
                 label={{ value: "EV / Revenue", angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 10, fill: "#8a8480" } }} />
               <RTooltip content={<ScatterTooltip />} />
               {regLineData && (
@@ -688,7 +688,7 @@ function ChartsPanel({
           <BarChart data={barData} margin={{ top: 15, right: 20, bottom: 10, left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={(v: number) => fmtB(v)} tick={{ fontSize: 10 }} />
+            <YAxis tickFormatter={(v: unknown) => fmtB(v as number)} tick={{ fontSize: 10 }} />
             <RTooltip content={<BarTooltip />} />
             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
               {barData.map((d, i) => (
@@ -714,8 +714,8 @@ function ChartsPanel({
             <LineChart data={histChartData} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
               <XAxis dataKey="date" tick={{ fontSize: 9 }} />
-              <YAxis domain={["auto","auto"]} tickFormatter={(v: number) => `${v.toFixed(0)}`} tick={{ fontSize: 10 }} />
-              <RTooltip formatter={(v: number) => [`${v.toFixed(1)}`, ""]} contentStyle={{ fontSize: 11 }} />
+              <YAxis domain={["auto","auto"]} tickFormatter={(v: unknown) => `${(v as number).toFixed(0)}`} tick={{ fontSize: 10 }} />
+              <RTooltip formatter={(v: unknown) => [`${(v as number).toFixed(1)}`, ""]} contentStyle={{ fontSize: 11 }} />
               <ReferenceLine y={100} stroke="#cbd5e1" strokeDasharray="4 4" />
               <Legend wrapperStyle={{ fontSize: 10 }} />
               {Object.keys(historyData).map((ticker, i) => (
