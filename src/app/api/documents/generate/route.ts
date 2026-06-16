@@ -420,7 +420,7 @@ export async function POST(req: NextRequest) {
   const safeName = company.name.replace(/[^a-zA-Z0-9_\-]/g, "_");
   const fileName = `${safeName}_${template.name.replace(/[^a-zA-Z0-9_\-]/g, "_")}.${ext}`;
 
-  return new NextResponse(outBuffer, {
+  return new NextResponse(new Uint8Array(outBuffer), {
     status: 200,
     headers: {
       "Content-Type": mimeMap[ext] ?? "application/octet-stream",
