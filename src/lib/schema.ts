@@ -55,6 +55,8 @@ export const companies = pgTable("Company", {
   status:          text("status").notNull().default("monitoring"),
   addedAt:         text("addedAt").default(sql`now()`),
   updatedAt:       text("updatedAt").default(sql`now()`),
+  createdBy:       text("createdBy"),   // userId who added this company
+  updatedBy:       text("updatedBy"),   // userId who last edited
 });
 
 export const financialSnapshots = pgTable("FinancialSnapshot", {
@@ -166,6 +168,8 @@ export const mandates = pgTable("Mandate", {
   isActive:     boolean("isActive").notNull().default(true),
   createdAt:    text("createdAt").default(sql`now()`),
   updatedAt:    text("updatedAt").default(sql`now()`),
+  createdBy:    text("createdBy"),
+  updatedBy:    text("updatedBy"),
 });
 
 export const mandateMatches = pgTable("MandateMatch", {
@@ -189,6 +193,7 @@ export const documentTemplates = pgTable("DocumentTemplate", {
   fileSize:     integer("fileSize"),
   placeholders: text("placeholders").notNull().default("[]"),
   createdAt:    text("createdAt").default(sql`now()`),
+  createdBy:    text("createdBy"),
 });
 
 // ── Data Sources ──────────────────────────────────────────────────────────────
@@ -210,10 +215,29 @@ export const dataSources = pgTable("DataSource", {
   updatedAt:      text("updatedAt").default(sql`now()`),
 });
 
+// ── Activity Log ──────────────────────────────────────────────────────────────
+
+export const activityLog = pgTable("ActivityLog", {
+  id:         text("id").primaryKey(),
+  userId:     text("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userName:   text("userName").notNull(),
+  action:     text("action").notNull(),   // "added_company" | "edited_company" | "added_mandate" | "uploaded_template" | "generated_document"
+  entityType: text("entityType"),         // "company" | "mandate" | "template" | "document"
+  entityId:   text("entityId"),
+  entityName: text("entityName"),
+  detail:     text("detail"),
+  createdAt:  text("createdAt").default(sql`now()`),
+});
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
-export const usersRelations = relations(users, ({ one }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   settings: one(userSettings, { fields: [users.id], references: [userSettings.userId] }),
+  activity: many(activityLog),
+}));
+
+export const activityLogRelations = relations(activityLog, ({ one }) => ({
+  user: one(users, { fields: [activityLog.userId], references: [users.id] }),
 }));
 
 export const userSettingsRelations = relations(userSettings, ({ one }) => ({

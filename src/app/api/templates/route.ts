@@ -108,6 +108,9 @@ export async function POST(req: NextRequest) {
     filePath = `local:${id}.${ext}`;
   }
 
+  const userId   = session.user.id;
+  const userName = session.user.name ?? session.user.email ?? "Usuario";
+
   await db.insert(documentTemplates).values({
     id,
     name,
@@ -116,7 +119,17 @@ export async function POST(req: NextRequest) {
     filePath,
     fileSize: buffer.length,
     placeholders: JSON.stringify(placeholders),
+    createdBy: userId,
   });
+
+  // Log activity
+  try {
+    const { activityLog } = await import("@/lib/schema");
+    await db.insert(activityLog).values({
+      id: randomUUID(), userId, userName,
+      action: "uploaded_template", entityType: "template", entityId: id, entityName: name,
+    });
+  } catch { /* non-blocking */ }
 
   const row = await db.query.documentTemplates.findFirst({
     where: (t, { eq }) => eq(t.id, id),

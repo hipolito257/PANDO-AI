@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, companies, signals, companyTags, mandateMatches } from "@/lib/db";
+import { db, companies, signals, companyTags, mandateMatches, activityLog } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { eq, desc, like, and, type SQL } from "drizzle-orm";
 import { slugify } from "@/lib/utils";
+import { randomUUID } from "crypto";
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
+async function logActivity(userId: string, userName: string, action: string, entityType: string, entityId: string, entityName: string, detail?: string) {
+  try {
+    await db.insert(activityLog).values({
+      id: randomUUID(), userId, userName, action, entityType, entityId, entityName, detail: detail ?? null,
+    });
+  } catch { /* non-blocking */ }
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -53,8 +62,10 @@ export async function POST(req: NextRequest) {
   const { name, ...rest } = body;
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
-  const id   = uid();
-  const slug = `${slugify(name)}-${Date.now().toString(36)}`;
+  const userId   = session.user.id;
+  const userName = session.user.name ?? session.user.email ?? "Usuario";
+  const id       = uid();
+  const slug     = `${slugify(name)}-${Date.now().toString(36)}`;
 
   await db.insert(companies).values({
     id, name, slug,
@@ -77,7 +88,11 @@ export async function POST(req: NextRequest) {
     fundingStage:   rest.fundingStage  ?? null,
     score:          rest.score         != null ? Number(rest.score)         : 0,
     status:         rest.status        ?? "monitoring",
+    createdBy:      userId,
+    updatedBy:      userId,
   });
+
+  await logActivity(userId, userName, "added_company", "company", id, name);
 
   const company = await db.query.companies.findFirst({ where: eq(companies.id, id) });
   return NextResponse.json(company, { status: 201 });
@@ -91,6 +106,9 @@ export async function PATCH(req: NextRequest) {
   const { id, ...rest } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
+  const userId   = session.user.id;
+  const userName = session.user.name ?? session.user.email ?? "Usuario";
+
   const update: Record<string, unknown> = {};
   const numFields = ["revenueUsd","revenueGrowth","ebitdaUsd","ebitdaMargin","employees","employeeGrowth","totalFunding","lastFundingAmt","score"];
   const strFields = ["name","sector","subsector","country","city","stage","website","linkedinUrl","description","fundingStage","status"];
@@ -103,6 +121,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (Object.keys(update).length > 0) {
+    update.updatedBy = userId;
     await db.update(companies).set(update as any).where(eq(companies.id, id));
   }
 
@@ -110,5 +129,8 @@ export async function PATCH(req: NextRequest) {
     where: eq(companies.id, id),
     with: { signals: { limit: 3 }, tags: true, mandateMatches: { with: { mandate: true } } },
   });
+
+  await logActivity(userId, userName, "edited_company", "company", id, company?.name ?? id);
+
   return NextResponse.json(company);
 }
