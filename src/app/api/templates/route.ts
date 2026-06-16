@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { documentTemplates } from "@/lib/schema";
 import { desc } from "drizzle-orm";
-import { put } from "@vercel/blob";
 import { randomUUID } from "crypto";
 
 // Extract {{placeholder}} names from PPTX/DOCX/XLSX
@@ -87,26 +86,13 @@ export async function POST(req: NextRequest) {
   const placeholders = extractPlaceholders(buffer, ext);
   const id = randomUUID();
 
-  // Upload to Vercel Blob (production) or save locally (dev)
-  let filePath: string;
-
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    // Production: upload to Vercel Blob
-    const blob = await put(`templates/${id}.${ext}`, buffer, {
-      access: "public",
-      contentType: file.type,
-    });
-    filePath = blob.url;
-  } else {
-    // Development: save to local filesystem
-    const path = await import("path");
-    const fs   = await import("fs");
-    const dir  = path.join(process.cwd(), "uploads", "templates");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const localPath = path.join(dir, `${id}.${ext}`);
-    fs.writeFileSync(localPath, buffer);
-    filePath = `local:${id}.${ext}`;
-  }
+  // Store file as base64 data URL in the database (no external storage needed)
+  const mimeMap: Record<string, string> = {
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  };
+  const filePath = `data:${mimeMap[ext] ?? "application/octet-stream"};base64,${buffer.toString("base64")}`;
 
   const userId   = session.user.id;
   const userName = session.user.name ?? session.user.email ?? "Usuario";

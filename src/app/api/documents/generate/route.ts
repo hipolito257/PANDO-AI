@@ -334,15 +334,20 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Read template file (Vercel Blob in prod, local filesystem in dev)
+  // Read template file
   let templateBuffer: Buffer;
-  if (template.filePath.startsWith("http")) {
-    // Production: fetch from Vercel Blob
+  if (template.filePath.startsWith("data:")) {
+    // Base64 data URL stored in DB
+    const base64 = template.filePath.split(",")[1];
+    if (!base64) return NextResponse.json({ error: "Archivo de plantilla inválido" }, { status: 404 });
+    templateBuffer = Buffer.from(base64, "base64");
+  } else if (template.filePath.startsWith("http")) {
+    // Legacy: Vercel Blob URL
     const blobRes = await fetch(template.filePath);
     if (!blobRes.ok) return NextResponse.json({ error: "No se pudo leer la plantilla" }, { status: 404 });
     templateBuffer = Buffer.from(await blobRes.arrayBuffer());
   } else {
-    // Development: read from local filesystem
+    // Legacy: local filesystem (dev)
     const filename = template.filePath.replace("local:", "");
     const localPath = path.join(UPLOADS_DIR, filename);
     if (!fs.existsSync(localPath)) {
