@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { height: 100%; }
+body {
+  height: 100%;
+  background: #efefef;
+  color: #202020;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography ───────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5 {
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #202020;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #e8e8e8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #828282; }
+
+/* ── Selection ────────────────────────────────────────────────────────────── */
+::selection { background: rgba(255, 104, 44, 0.18); color: #202020; }
+
+/* ── Focus ring ───────────────────────────────────────────────────────────── */
+:focus-visible { outline: 2px solid #ff682c; outline-offset: 2px; border-radius: 4px; }
+
+/* ── Animations ───────────────────────────────────────────────────────────── */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideInLeft { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.animate-in { animation: fadeIn 0.2s ease-out; }
+.animate-slide { animation: slideInLeft 0.2s ease-out; }
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+/* ── Print / PDF export ───────────────────────────────────────────────────── */
+@media print {
+  @page { size: A4; margin: 12mm 14mm; }
+
+  /* Hide all navigation chrome */
+  [data-sidebar], nav, header,
+  .no-print, [data-no-print] { display: none !important; }
+
+  /* Full-width layout */
+  body { background: white !important; }
+  main { width: 100% !important; overflow: visible !important; }
+
+  /* The review document */
+  .print-doc {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  /* Avoid page breaks inside key sections */
+  .print-keep { page-break-inside: avoid; break-inside: avoid; }
+
+  /* Page break before second section if needed */
+  .print-break { page-break-before: always; break-before: page; }
+
+  /* Ensure colors print */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
