@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
   const userSetting = await db.query.userSettings.findFirst({
     where: eq(userSettings.userId, userId),
   });
-  const apiKey = userSetting?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+  const apiKey = userSetting?.anthropicApiKey ?? null;
 
   if (!apiKey) {
     return NextResponse.json({
