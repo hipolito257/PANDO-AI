@@ -64,9 +64,15 @@ export default function DocumentosPage() {
   useEffect(() => { loadTemplates(); loadCompanies(); checkApiKey(); }, [loadTemplates, loadCompanies, checkApiKey]);
 
   // ── Upload template ────────────────────────────────────────────────────────
+  const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3 MB
+
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!pendingFile || !uploadName.trim()) return;
+    if (pendingFile.size > MAX_UPLOAD_BYTES) {
+      setUploadErr(`El archivo es demasiado grande (${fmtSize(pendingFile.size)}). El límite es 3 MB. Comprime el archivo en PowerPoint/Word: Archivo → Guardar como → reducir tamaño, o elimina imágenes pesadas.`);
+      return;
+    }
     setUploading(true); setUploadErr(null);
     const fd = new FormData();
     fd.append("file", pendingFile);
