@@ -133,7 +133,12 @@ export async function GET() {
     // ── Mandate Matches ───────────────────────────────────────────────────────────
     let matchCreated = 0;
     for (const mm of DEMO_MATCHES) {
-      try { await db.insert(mandateMatches).values({ id: uid(), ...mm, updatedAt: new Date().toISOString() }); matchCreated++; } catch { /* skip duplicates */ }
+      const exists = await db.query.mandateMatches.findFirst({
+        where: (m, { and, eq }) => and(eq(m.companyId, mm.companyId), eq(m.mandateId, mm.mandateId)),
+      });
+      if (!exists) {
+        try { await db.insert(mandateMatches).values({ id: uid(), ...mm, updatedAt: new Date().toISOString() }); matchCreated++; } catch { /* skip */ }
+      }
     }
     results.push(`✓ Mandate matches: ${matchCreated} creados`);
 

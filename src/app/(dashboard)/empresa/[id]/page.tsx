@@ -243,7 +243,8 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
           <Card>
             <SectionHeader title="Match con mandatos" subtitle="Alineación con los criterios de inversión definidos" className="mb-3" />
             <div className="grid grid-cols-2 gap-3">
-              {company.mandateMatches.map((mm) => (
+              {/* Deduplicate by mandateId — seed may have created duplicates */}
+              {[...new Map(company.mandateMatches.map(mm => [mm.mandateId, mm])).values()].map((mm) => (
                 <div key={mm.id} className="bg-fog rounded-[8px] p-3 border border-chalk">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[12px] font-semibold text-carbon">{(mm as any).mandate.name}</span>
