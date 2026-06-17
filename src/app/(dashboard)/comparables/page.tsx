@@ -158,8 +158,11 @@ function ComparablesPage() {
     });
     const data = await res.json();
     const ok   = data.report?.filter((r: any) => r.ok).length ?? 0;
-    const fail = data.report?.filter((r: any) => !r.ok) ?? [];
-    setRefreshLog(`✓ ${ok} actualizados${fail.length ? ` · ${fail.length} sin datos (${fail.map((f: any) => f.ticker).join(", ")})` : ""}`);
+    const fail: {ticker:string;error?:string}[] = data.report?.filter((r: any) => !r.ok) ?? [];
+    const failMsg = fail.length
+      ? ` · ${fail.length} sin datos: ${fail.map(f => `${f.ticker}${f.error ? ` (${f.error})` : ""}`).join(", ")}`
+      : "";
+    setRefreshLog(`✓ ${ok} actualizados${failMsg}`);
     setRefreshing(false);
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
   }
