@@ -140,12 +140,13 @@ export const publicComps = pgTable("PublicComp", {
 // ── Comp Sets ─────────────────────────────────────────────────────────────────
 
 export const compSets = pgTable("CompSet", {
-  id:        text("id").primaryKey(),
-  name:      text("name").notNull(),
-  companyId: text("companyId").references(() => companies.id, { onDelete: "set null" }),
-  tickers:   text("tickers").notNull().default("[]"),
-  notes:     text("notes"),
-  createdAt: text("createdAt").default(sql`now()`),
+  id:             text("id").primaryKey(),
+  name:           text("name").notNull(),
+  companyId:      text("companyId").references(() => companies.id, { onDelete: "set null" }),
+  tickers:        text("tickers").notNull().default("[]"),
+  notes:          text("notes"),
+  aiDescriptions: text("aiDescriptions"),
+  createdAt:      text("createdAt").default(sql`now()`),
 });
 
 // ── Notes ─────────────────────────────────────────────────────────────────────

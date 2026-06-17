@@ -30,8 +30,10 @@ type PublicComp = {
   roe: number | null; debtToEquity: number | null; beta: number | null;
   lastRefreshed: string | null;
 };
+type AIDesc = { reason: string; businessModel: string; similarity: string };
 type CompSet = {
   id: string; name: string; tickers: string; notes: string | null;
+  aiDescriptions: string | null;
   company: Company | null; comps: PublicComp[];
 };
 type AISuggestion = { ticker: string; name: string; exchange: string; reason: string; businessModel: string; similarity: string };
@@ -176,21 +178,30 @@ function ComparablesPage() {
     if (activeTab === "graficas") loadHistory();
   }, [activeTab, histTickerKey]);
 
-  async function addTicker(ticker: string, name: string, exchange?: string) {
+  async function addTicker(ticker: string, name: string, exchange?: string, aiDesc?: AIDesc) {
     if (tickers.includes(ticker)) return;
     await fetch("/api/comparables/search", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ticker, name, exchange }),
     });
+    // Merge new AI description into existing map
+    const existingDescs: Record<string, AIDesc> = compSet?.aiDescriptions
+      ? JSON.parse(compSet.aiDescriptions) : {};
+    if (aiDesc) existingDescs[ticker] = aiDesc;
+
     if (compSet) {
       await fetch("/api/comparables", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: compSet.id, tickers: [...tickers, ticker] }),
+        body: JSON.stringify({ id: compSet.id, tickers: [...tickers, ticker], aiDescriptions: existingDescs }),
       });
     } else if (selectedCompanyId && selectedCompany) {
       await fetch("/api/comparables", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: `${selectedCompany.name} — Comparables`, companyId: selectedCompanyId, tickers: [ticker] }),
+        body: JSON.stringify({
+          name: `${selectedCompany.name} — Comparables`,
+          companyId: selectedCompanyId, tickers: [ticker],
+          aiDescriptions: Object.keys(existingDescs).length ? existingDescs : undefined,
+        }),
       });
     }
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
@@ -364,7 +375,7 @@ function ComparablesPage() {
 
                   {activeTab === "datos" && (
                     <>
-                      <CompsOverview comps={comps} company={selectedCompany} />
+                      <CompsOverview comps={comps} company={selectedCompany} compSet={compSet} />
                       <MetricsTable comps={comps} company={selectedCompany} />
                     </>
                   )}
@@ -396,7 +407,7 @@ function ComparablesPage() {
 // ══════════════════════════════════════════════════════════════════════════════
 // COMPS OVERVIEW
 // ══════════════════════════════════════════════════════════════════════════════
-function CompsOverview({ comps, company }: { comps: PublicComp[]; company: Company }) {
+function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; company: Company; compSet: CompSet | null }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggle = (ticker: string) => setExpanded(prev => {
     const next = new Set(prev);
@@ -404,7 +415,9 @@ function CompsOverview({ comps, company }: { comps: PublicComp[]; company: Compa
     return next;
   });
 
-  const hasDescriptions = comps.some(c => c.description);
+  const aiDescs: Record<string, AIDesc> = compSet?.aiDescriptions
+    ? JSON.parse(compSet.aiDescriptions) : {};
+  const hasDescriptions = comps.some(c => aiDescs[c.ticker] || c.description);
 
   return (
     <div className="bg-paper rounded-[10px] border border-chalk overflow-hidden">
@@ -441,14 +454,24 @@ function CompsOverview({ comps, company }: { comps: PublicComp[]; company: Compa
       <div className="divide-y divide-chalk">
         {comps.map((c, i) => {
           const isExp = expanded.has(c.ticker);
-          const desc = c.description;
-          const TRUNCATE = 220;
-          const isTruncatable = desc && desc.length > TRUNCATE;
+          const ai = aiDescs[c.ticker];
+          const TRUNCATE = 280;
+
+          // Prefer AI-generated business model description; fall back to Yahoo Finance
+          const mainDesc = ai?.businessModel || c.description || null;
+          const isTruncatable = mainDesc && mainDesc.length > TRUNCATE;
+
+          const simColor = ai?.similarity?.startsWith("Alta")
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : ai?.similarity?.startsWith("Media")
+            ? "bg-amber-50 text-amber-700 border-amber-200"
+            : "bg-fog text-slate border-chalk";
+
           return (
             <div key={c.ticker} className="px-4 py-3 hover:bg-fog/30 transition-colors">
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-[6px] bg-fog border border-chalk flex items-center justify-center text-[10px] font-bold font-mono text-carbon shrink-0 mt-0.5"
-                  style={{ background: COLORS[i % COLORS.length] + "18", color: COLORS[i % COLORS.length], borderColor: COLORS[i % COLORS.length] + "30" }}>
+                <div className="w-8 h-8 rounded-[6px] flex items-center justify-center text-[10px] font-bold font-mono shrink-0 mt-0.5"
+                  style={{ background: COLORS[i % COLORS.length] + "18", color: COLORS[i % COLORS.length], border: `1px solid ${COLORS[i % COLORS.length]}30` }}>
                   {c.ticker.slice(0,2)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -462,10 +485,16 @@ function CompsOverview({ comps, company }: { comps: PublicComp[]; company: Compa
                     {c.sector && <span className="text-[9px] text-slate bg-fog border border-chalk px-1.5 py-0.5 rounded-full">{c.sector}</span>}
                   </div>
 
-                  {desc ? (
+                  {/* Reason line (AI only) */}
+                  {ai?.reason && (
+                    <p className="text-[11px] font-medium text-carbon mb-1">{ai.reason}</p>
+                  )}
+
+                  {/* Main description */}
+                  {mainDesc ? (
                     <div>
                       <p className="text-[11px] text-graphite leading-relaxed">
-                        {isTruncatable && !isExp ? desc.slice(0, TRUNCATE) + "…" : desc}
+                        {isTruncatable && !isExp ? mainDesc.slice(0, TRUNCATE) + "…" : mainDesc}
                       </p>
                       {isTruncatable && (
                         <button onClick={() => toggle(c.ticker)}
@@ -476,11 +505,18 @@ function CompsOverview({ comps, company }: { comps: PublicComp[]; company: Compa
                     </div>
                   ) : (
                     <p className="text-[11px] text-slate italic">
-                      Sin descripción — presiona "Actualizar datos" para cargar el perfil de Yahoo Finance
+                      Sin descripción — agrega esta empresa desde "✨ IA Sugerir" para obtener una descripción contextual, o presiona "Actualizar datos"
                     </p>
                   )}
 
-                  {/* Key metrics row */}
+                  {/* Similarity badge (AI only) */}
+                  {ai?.similarity && (
+                    <span className={`mt-1.5 inline-block text-[9px] font-medium px-2 py-0.5 rounded-full border ${simColor}`}>
+                      Similitud: {ai.similarity}
+                    </span>
+                  )}
+
+                  {/* Key metrics */}
                   {c.lastRefreshed && (
                     <div className="flex gap-4 mt-2 flex-wrap">
                       {c.marketCapUsd != null && <span className="text-[10px] text-slate">Mkt Cap: <span className="font-semibold text-carbon">{fmtB(c.marketCapUsd)}</span></span>}
@@ -1209,7 +1245,7 @@ function AISuggestPanel({
 }: {
   companyId: string; existingTickers: string[];
   onClose: () => void;
-  onAdd: (ticker: string, name: string, exchange?: string) => Promise<void>;
+  onAdd: (ticker: string, name: string, exchange?: string, aiDesc?: AIDesc) => Promise<void>;
 }) {
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState("");
@@ -1233,7 +1269,11 @@ function AISuggestPanel({
 
   async function handleAdd(s: AISuggestion) {
     if (added.has(s.ticker)) return;
-    await onAdd(s.ticker, s.name, s.exchange);
+    await onAdd(s.ticker, s.name, s.exchange, {
+      reason: s.reason,
+      businessModel: s.businessModel,
+      similarity: s.similarity,
+    });
     setAdded(prev => new Set([...prev, s.ticker]));
   }
 

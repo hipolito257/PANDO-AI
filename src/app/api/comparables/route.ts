@@ -39,11 +39,15 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name, companyId, tickers = [], notes } = await req.json();
+  const { name, companyId, tickers = [], notes, aiDescriptions } = await req.json();
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
   const id = uid();
-  await db.insert(compSets).values({ id, name, companyId: companyId || null, tickers: JSON.stringify(tickers), notes: notes || null });
+  await db.insert(compSets).values({
+    id, name, companyId: companyId || null, tickers: JSON.stringify(tickers),
+    notes: notes || null,
+    aiDescriptions: aiDescriptions ? JSON.stringify(aiDescriptions) : null,
+  });
 
   const set = await db.query.compSets.findFirst({ where: eq(compSets.id, id), with: { company: true } });
   return NextResponse.json(set, { status: 201 });
@@ -54,14 +58,15 @@ export async function PATCH(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, name, companyId, tickers, notes } = await req.json();
+  const { id, name, companyId, tickers, notes, aiDescriptions } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const update: Record<string, unknown> = {};
-  if (name      !== undefined) update.name      = name;
-  if (companyId !== undefined) update.companyId = companyId;
-  if (tickers   !== undefined) update.tickers   = JSON.stringify(tickers);
-  if (notes     !== undefined) update.notes     = notes;
+  if (name           !== undefined) update.name           = name;
+  if (companyId      !== undefined) update.companyId      = companyId;
+  if (tickers        !== undefined) update.tickers        = JSON.stringify(tickers);
+  if (notes          !== undefined) update.notes          = notes;
+  if (aiDescriptions !== undefined) update.aiDescriptions = JSON.stringify(aiDescriptions);
 
   await db.update(compSets).set(update as any).where(eq(compSets.id, id));
   const set = await db.query.compSets.findFirst({ where: eq(compSets.id, id), with: { company: true } });
