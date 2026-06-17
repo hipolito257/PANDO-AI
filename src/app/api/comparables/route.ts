@@ -21,10 +21,16 @@ export async function GET(req: NextRequest) {
   });
 
   const allTickers = [...new Set(sets.flatMap(s => JSON.parse(s.tickers) as string[]))];
-  const pubData = allTickers.length > 0
-    ? await db.query.publicComps.findMany({ where: inArray(publicComps.ticker, allTickers) })
-    : [];
-  const pubMap = Object.fromEntries(pubData.map(p => [p.ticker, p]));
+  let pubData: any[] = [];
+  if (allTickers.length > 0) {
+    try {
+      pubData = await db.query.publicComps.findMany({ where: inArray(publicComps.ticker, allTickers) });
+    } catch {
+      // New columns may not exist yet in DB — silently skip extra metrics
+      pubData = [];
+    }
+  }
+  const pubMap = Object.fromEntries(pubData.map((p: any) => [p.ticker, p]));
 
   const result = sets.map(s => ({
     ...s,
@@ -62,13 +68,19 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const update: Record<string, unknown> = {};
-  if (name           !== undefined) update.name           = name;
-  if (companyId      !== undefined) update.companyId      = companyId;
-  if (tickers        !== undefined) update.tickers        = JSON.stringify(tickers);
-  if (notes          !== undefined) update.notes          = notes;
+  if (name      !== undefined) update.name      = name;
+  if (companyId !== undefined) update.companyId = companyId;
+  if (tickers   !== undefined) update.tickers   = JSON.stringify(tickers);
+  if (notes     !== undefined) update.notes     = notes;
   if (aiDescriptions !== undefined) update.aiDescriptions = JSON.stringify(aiDescriptions);
 
-  await db.update(compSets).set(update as any).where(eq(compSets.id, id));
+  // Try with all fields; if aiDescriptions column missing, retry without it
+  try {
+    await db.update(compSets).set(update as any).where(eq(compSets.id, id));
+  } catch {
+    const { aiDescriptions: _dropped, ...fallback } = update;
+    await db.update(compSets).set(fallback as any).where(eq(compSets.id, id));
+  }
   const set = await db.query.compSets.findFirst({ where: eq(compSets.id, id), with: { company: true } });
   return NextResponse.json(set);
 }

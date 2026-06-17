@@ -180,30 +180,45 @@ function ComparablesPage() {
 
   async function addTicker(ticker: string, name: string, exchange?: string, aiDesc?: AIDesc) {
     if (tickers.includes(ticker)) return;
+
+    // Step 1: ensure publicComp record exists
     await fetch("/api/comparables/search", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ticker, name, exchange }),
     });
-    // Merge new AI description into existing map
-    const existingDescs: Record<string, AIDesc> = compSet?.aiDescriptions
-      ? JSON.parse(compSet.aiDescriptions) : {};
-    if (aiDesc) existingDescs[ticker] = aiDesc;
 
+    // Step 2: save tickers ONLY (critical — no aiDescriptions, so no migration dependency)
+    let savedCompSetId = compSet?.id;
     if (compSet) {
-      await fetch("/api/comparables", {
+      const r = await fetch("/api/comparables", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: compSet.id, tickers: [...tickers, ticker], aiDescriptions: existingDescs }),
+        body: JSON.stringify({ id: compSet.id, tickers: [...tickers, ticker] }),
       });
+      if (!r.ok) { console.error("PATCH tickers failed", await r.text()); return; }
     } else if (selectedCompanyId && selectedCompany) {
-      await fetch("/api/comparables", {
+      const r = await fetch("/api/comparables", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: `${selectedCompany.name} — Comparables`,
           companyId: selectedCompanyId, tickers: [ticker],
-          aiDescriptions: Object.keys(existingDescs).length ? existingDescs : undefined,
         }),
       });
+      if (!r.ok) { console.error("POST compSet failed", await r.text()); return; }
+      const created = await r.json();
+      savedCompSetId = created?.id;
     }
+
+    // Step 3: save AI description separately (optional — silently skips if column missing)
+    if (aiDesc && savedCompSetId) {
+      const existingDescs: Record<string, AIDesc> = compSet?.aiDescriptions
+        ? JSON.parse(compSet.aiDescriptions) : {};
+      existingDescs[ticker] = aiDesc;
+      fetch("/api/comparables", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: savedCompSetId, aiDescriptions: existingDescs }),
+      }).catch(() => { /* non-critical */ });
+    }
+
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
     setRefreshLog("");
   }
