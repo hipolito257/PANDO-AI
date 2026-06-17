@@ -449,7 +449,7 @@ export async function GET(req: NextRequest) {
           description: descWithNote ?? null,
           fundingStage: comp.fundingStage ?? null,
           totalFunding: comp.totalFunding ?? null,
-          status: "pipeline",
+          status: "monitoring",
           score: comp.thesisScore ? Math.round(comp.thesisScore * 10) : 0, // 0-100 scale
           confidence: comp.thesisScore ? comp.thesisScore / 10 : 0.3,
           createdBy: "PANDO Auto-Discovery",

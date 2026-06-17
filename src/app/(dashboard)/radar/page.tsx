@@ -75,14 +75,26 @@ export default function RadarPage() {
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { fetch("/api/mandatos").then(r => r.json()).then(setMandates); }, []);
 
-  async function approveCompany(id: string) {
+  // Radar → Pipeline: el equipo decide seguir activamente esta empresa
+  async function moveToPipeline(id: string) {
+    await fetch(`/api/companies`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "pipeline" }) });
+    loadAll();
+  }
+
+  // Pipeline → Radar: regresa a monitoreo si se decide no seguir
+  async function moveToRadar(id: string) {
     await fetch(`/api/companies`, { method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, status: "monitoring" }) });
     loadAll();
   }
 
-  async function archiveCompany(id: string) {
-    if (!confirm("¿Archivar esta empresa? Se quitará del pipeline.")) return;
+  // Archivar: quitar del radar o pipeline
+  async function archiveCompany(id: string, context: "radar" | "pipeline") {
+    const msg = context === "pipeline"
+      ? "¿Archivar esta empresa? Saldrá del pipeline."
+      : "¿Quitar esta empresa del radar?";
+    if (!confirm(msg)) return;
     await fetch(`/api/companies/${id}`, { method: "DELETE" }).catch(() =>
       fetch(`/api/companies`, { method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status: "inactive" }) })
@@ -97,7 +109,7 @@ export default function RadarPage() {
     <div>
       <Topbar
         title="Radar"
-        subtitle={`${companies.length} monitoreadas · ${pipelineCompanies.length} en pipeline`}
+        subtitle={`${companies.length} en radar · ${pipelineCompanies.length} en pipeline activo`}
         actions={
           <div className="flex items-center gap-2">
             <CrunchbaseImport onImported={load} />
@@ -191,6 +203,7 @@ export default function RadarPage() {
                     <th className="px-3 py-3 text-right font-medium">Score</th>
                     <th className="px-3 py-3 text-left font-medium">Top señal</th>
                     <th className="px-3 py-3 text-center font-medium">Trend</th>
+                    <th className="px-3 py-3 text-center font-medium">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-chalk">
@@ -248,6 +261,26 @@ export default function RadarPage() {
                         <td className="px-3 py-3 flex justify-center">
                           <Spark values={[50, 55, 58, 62, 65, 68, 70, c.score]} width={56} height={20} color={c.score >= 85 ? "#059669" : "#ff682c"} />
                         </td>
+                        <td className="px-3 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => moveToPipeline(c.id)}
+                              title="Mover a Pipeline"
+                              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-orange text-white rounded-[6px] hover:bg-orange/90 transition-colors whitespace-nowrap"
+                            >
+                              Pipeline →
+                            </button>
+                            <button
+                              onClick={() => archiveCompany(c.id, "radar")}
+                              title="Quitar del radar"
+                              className="p-1 text-slate hover:text-red-500 transition-colors"
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -264,20 +297,17 @@ export default function RadarPage() {
           <Card padding="none">
             <div className="px-5 py-3 border-b border-chalk bg-fog/30 flex items-center justify-between">
               <div>
-                <p className="text-[13px] font-semibold text-carbon">Pipeline — Auto-discovery</p>
-                <p className="text-[11px] text-slate">Empresas descubiertas automáticamente por PANDO via Google News + IA · Revisa y aprueba las relevantes</p>
+                <p className="text-[13px] font-semibold text-carbon">Pipeline activo</p>
+                <p className="text-[11px] text-slate">Empresas en evaluación activa · Promovidas desde el Radar por el equipo</p>
               </div>
-              {pipelineCompanies.length === 0 && (
-                <span className="text-[11px] text-slate bg-fog border border-chalk px-3 py-1.5 rounded-[7px]">
-                  El cron corre a las 8am — vuelve mañana
-                </span>
-              )}
             </div>
             {pipelineCompanies.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-40 text-slate">
-                <p className="text-[32px] mb-2">🔍</p>
-                <p className="text-[14px] font-medium text-carbon">Sin empresas en pipeline</p>
-                <p className="text-[12px] mt-1">El sistema buscará empresas nuevas automáticamente cada mañana</p>
+              <div className="flex flex-col items-center justify-center h-48 text-slate">
+                <p className="text-[32px] mb-2">🎯</p>
+                <p className="text-[14px] font-medium text-carbon">Pipeline vacío</p>
+                <p className="text-[12px] mt-1 text-center max-w-[280px]">
+                  Cuando una empresa del Radar te interese, dale clic en <strong className="text-carbon">Pipeline →</strong> para moverla aquí
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -288,6 +318,7 @@ export default function RadarPage() {
                       <th className="px-3 py-3 text-left font-medium">Sector / País</th>
                       <th className="px-3 py-3 text-left font-medium">Descripción</th>
                       <th className="px-3 py-3 text-left font-medium">Etapa / Fondeo</th>
+                      <th className="px-3 py-3 text-right font-medium">Score</th>
                       <th className="px-3 py-3 text-center font-medium">Acciones</th>
                     </tr>
                   </thead>
@@ -295,29 +326,34 @@ export default function RadarPage() {
                     {pipelineCompanies.map((c) => (
                       <tr key={c.id} className="hover:bg-fog/30 transition-colors">
                         <td className="px-5 py-3">
-                          <p className="text-[13px] font-semibold text-carbon">{c.name}</p>
-                          <p className="text-[9px] text-slate mt-0.5">Auto-descubierta · {c.createdBy}</p>
+                          <Link href={`/empresa/${c.slug}`} className="text-[13px] font-semibold text-carbon hover:text-orange transition-colors">
+                            {c.name}
+                          </Link>
+                          {c.createdBy && <p className="text-[9px] text-slate mt-0.5">{c.createdBy}</p>}
                         </td>
                         <td className="px-3 py-3">
                           <div className="text-[12px] text-graphite">{c.sector ?? "—"}</div>
                           <div className="text-[10px] text-slate">{c.country}</div>
                         </td>
-                        <td className="px-3 py-3 max-w-[300px]">
+                        <td className="px-3 py-3 max-w-[280px]">
                           <p className="text-[11px] text-graphite line-clamp-2">{(c as any).description ?? "—"}</p>
                         </td>
                         <td className="px-3 py-3">
                           <p className="text-[12px] text-carbon">{(c as any).fundingStage ?? "—"}</p>
                           {(c as any).totalFunding && <p className="text-[10px] text-slate">${(c as any).totalFunding}M</p>}
                         </td>
+                        <td className="px-3 py-3 text-right">
+                          <ScoreBadge score={c.score} />
+                        </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => approveCompany(c.id)}
-                              className="px-3 py-1.5 text-[11px] font-medium bg-emerald-600 text-white rounded-[6px] hover:bg-emerald-700 transition-colors">
-                              ✓ Agregar al Radar
+                            <button onClick={() => moveToRadar(c.id)}
+                              className="px-2.5 py-1 text-[11px] font-medium border border-chalk text-graphite rounded-[6px] hover:border-carbon hover:text-carbon transition-colors whitespace-nowrap">
+                              ← Radar
                             </button>
-                            <button onClick={() => archiveCompany(c.id)}
-                              className="px-3 py-1.5 text-[11px] font-medium border border-chalk text-slate rounded-[6px] hover:border-carbon hover:text-carbon transition-colors">
-                              Descartar
+                            <button onClick={() => archiveCompany(c.id, "pipeline")}
+                              className="px-2.5 py-1 text-[11px] font-medium border border-chalk text-slate rounded-[6px] hover:border-red-300 hover:text-red-500 transition-colors">
+                              Archivar
                             </button>
                           </div>
                         </td>
