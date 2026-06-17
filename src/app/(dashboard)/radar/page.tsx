@@ -226,8 +226,8 @@ export default function RadarPage() {
                             </button>
                           </div>
                           <div className="flex gap-1 mt-1">
-                            {c.tags.slice(0, 2).map((t) => (
-                              <span key={t.tag} className="text-[9px] bg-fog border border-chalk rounded-full px-1.5 py-0.5 text-slate">{t.tag}</span>
+                            {[...new Set(c.tags.map(t => t.tag))].slice(0, 2).map((tag) => (
+                              <span key={tag} className="text-[9px] bg-fog border border-chalk rounded-full px-1.5 py-0.5 text-slate">{tag}</span>
                             ))}
                           </div>
                         </td>

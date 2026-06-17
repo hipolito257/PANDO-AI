@@ -121,7 +121,12 @@ export async function GET() {
 
     // ── Tags ──────────────────────────────────────────────────────────────────────
     for (const t of DEMO_TAGS) {
-      try { await db.insert(companyTags).values({ id: uid(), ...t }); } catch { /* skip duplicates */ }
+      const exists = await db.query.companyTags.findFirst({
+        where: (ct, { and, eq }) => and(eq(ct.companyId, t.companyId), eq(ct.tag, t.tag)),
+      });
+      if (!exists) {
+        try { await db.insert(companyTags).values({ id: uid(), ...t }); } catch { /* skip */ }
+      }
     }
     results.push("✓ Tags creados");
 

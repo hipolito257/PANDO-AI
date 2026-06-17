@@ -84,7 +84,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
                 {company.city && <Badge variant="default">{company.city}</Badge>}
                 {company.stage && <Badge variant="yellow">{company.stage}</Badge>}
                 {company.fundingStage && <Badge variant="orange">{company.fundingStage}</Badge>}
-                {company.tags.map((t) => <Badge key={t.tag} variant="default">{t.tag}</Badge>)}
+                {[...new Set(company.tags.map(t => t.tag))].map((tag) => <Badge key={tag} variant="default">{tag}</Badge>)}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-center shrink-0 ml-8">
