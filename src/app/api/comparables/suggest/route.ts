@@ -5,6 +5,75 @@ import { auth } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+// ── Yahoo Finance crumb (same approach as refresh route) ──────────────────────
+async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null> {
+  for (const url of ["https://fc.yahoo.com", "https://consent.yahoo.com"]) {
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA }, cache: "no-store", signal: AbortSignal.timeout(6000), redirect: "follow",
+      });
+      const setCookies: string[] =
+        (res.headers as any).getSetCookie?.() ??
+        (res.headers.get("set-cookie") ?? "").split(/,(?=\s*\w+=)/).map((s: string) => s.trim());
+      const cookieMap: Record<string, string> = {};
+      for (const h of setCookies) {
+        const m = h.match(/^([^=]+)=([^;]*)/);
+        if (m) cookieMap[m[1].trim()] = m[2].trim();
+      }
+      const cookieStr = Object.entries(cookieMap)
+        .filter(([k]) => /^A[0-9S]/.test(k))
+        .map(([k, v]) => `${k}=${v}`).join("; ");
+      if (!cookieStr) continue;
+      for (const qhost of ["query1", "query2"]) {
+        try {
+          const cr = await fetch(`https://${qhost}.finance.yahoo.com/v1/test/getcrumb`, {
+            headers: { "User-Agent": UA, Accept: "*/*", Cookie: cookieStr },
+            cache: "no-store", signal: AbortSignal.timeout(6000),
+          });
+          if (!cr.ok) continue;
+          const crumb = (await cr.text()).trim();
+          if (!crumb || crumb.startsWith("{") || crumb.length > 50) continue;
+          return { crumb, cookie: cookieStr };
+        } catch { /* try next */ }
+      }
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+// ── Validate a ticker against Yahoo Finance ───────────────────────────────────
+// Returns true only if Yahoo has real market data for this ticker (i.e., it's
+// an active publicly traded security). Private companies, delisted stocks, and
+// bad tickers will return false.
+async function validateTicker(
+  ticker: string,
+  crumb: string,
+  cookie: string
+): Promise<boolean> {
+  for (const host of ["query1", "query2"]) {
+    try {
+      const url =
+        `https://${host}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}` +
+        `?modules=price&crumb=${encodeURIComponent(crumb)}`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA, Accept: "application/json", Cookie: cookie },
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const result = json?.quoteSummary?.result?.[0];
+      if (!result) continue;
+      // Must have a real market cap or price to be considered public
+      const price = result?.price;
+      if (price?.regularMarketPrice?.raw) return true;
+    } catch { /* try next host */ }
+  }
+  return false;
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -17,9 +86,7 @@ export async function GET(req: NextRequest) {
   if (!company) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const userId = session.user.id;
-  const userSetting = await db.query.userSettings.findFirst({
-    where: eq(userSettings.userId, userId),
-  });
+  const userSetting = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, userId) });
   const apiKey = userSetting?.anthropicApiKey ?? null;
 
   if (!apiKey) {
@@ -42,39 +109,70 @@ Target private company:
 - Stage: ${company.fundingStage ?? company.stage ?? "Unknown"}
 - Revenue: ${company.revenueUsd ? `$${company.revenueUsd}M USD` : "Unknown"}
 
-${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}SELECTION CRITERIA (apply unless overridden above):
-1. Select publicly listed companies that sell THE SAME PRODUCT OR SERVICE as the target — prioritize what they sell, not the business model structure. For example, if the target sells eyeglasses, select all public companies that sell eyeglasses worldwide, regardless of whether they are direct-to-consumer, wholesale, online, or brick-and-mortar.
-2. Geography does NOT matter — include companies from any country or exchange (US, Europe, Asia, LATAM, etc.) as long as they are publicly traded.
-3. Prioritize companies whose core revenue comes from the same product/service category as the target.
-4. Include 6–10 companies. If there are many direct product comparables, prefer those over indirect ones.
+${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}CRITICAL REQUIREMENTS — NON-NEGOTIABLE:
+⚠️  ONLY suggest companies that are ACTIVELY TRADED on a major stock exchange RIGHT NOW.
+⚠️  The ticker MUST be valid and have live market data on Yahoo Finance today.
+⚠️  Do NOT suggest: private companies, pre-IPO companies, unicorns, SPACs, delisted stocks, recently acquired companies, or any company without a current stock ticker.
+⚠️  Verify in your training data that each company is publicly listed. If you are not 100% sure a company is public and actively traded, do NOT include it.
 
-For each company, write:
-- "reason": 1 sentence explaining WHY it is a comparable (what specific product/service matches)
-- "businessModel": 1–2 sentences describing how this public company makes money and how its model compares to the target (similarities and key differences)
-- "similarity": rate the product/service similarity as "Alta", "Media", or "Baja" with a brief justification
+SELECTION CRITERIA:
+1. Select publicly listed companies that sell THE SAME PRODUCT OR SERVICE as the target — prioritize what they sell, not the business model structure. For example, if the target sells eyeglasses, select all public companies that sell eyeglasses worldwide, regardless of channel.
+2. Geography does NOT matter — include companies from any country or exchange (NYSE, NASDAQ, LSE, TSE, HKEx, etc.).
+3. Include 8–12 companies to allow for some to be filtered out. The more direct the product/service match, the better.
 
-Return ONLY a JSON array (no markdown, no preamble, no explanation):
-[{"ticker":"LGN","name":"Luxottica Group","exchange":"NYSE","reason":"Global eyewear manufacturer and retailer — same product category","businessModel":"Vertically integrated: designs, manufactures, and retails eyewear brands (Ray-Ban, Oakley). Similar to the target in selling eyeglasses; differs in that Luxottica owns the full supply chain and has massive wholesale distribution.","similarity":"Alta — ambas venden lentes ópticos al consumidor final"}]`;
+For each company provide:
+- "ticker": the exact stock ticker as listed on its primary exchange (e.g. "LVMH.PA", "7203.T", "AAPL")
+- "name": full company name
+- "exchange": exchange name (NYSE, NASDAQ, TSE, LSE, HKEx, etc.)
+- "reason": 1 sentence — what specific product/service matches the target
+- "businessModel": 1–2 sentences describing the business model and similarities/differences vs. target
+- "similarity": "Alta", "Media", or "Baja" with a brief justification
 
+Return ONLY a valid JSON array (no markdown, no preamble):
+[{"ticker":"EL","name":"Estée Lauder Companies","exchange":"NYSE","reason":"Global beauty company selling direct-to-consumer cosmetics","businessModel":"Sells luxury beauty products through retail and DTC channels. Similar in DTC approach; differs in having massive wholesale and travel retail distribution.","similarity":"Media — misma categoría pero diferente posicionamiento de precio"}]`;
+
+  // ── Step 1: Get AI suggestions ────────────────────────────────────────────
+  let rawSuggestions: any[] = [];
   try {
     const msg = await client.messages.create({
-      model: "claude-haiku-4-5",
+      model: "claude-sonnet-4-5",
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
     });
-
     const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "[]";
-
-    let suggestions;
     try {
-      suggestions = JSON.parse(text);
+      rawSuggestions = JSON.parse(text);
     } catch {
       const match = text.match(/\[[\s\S]*?\]/);
-      suggestions = match ? JSON.parse(match[0]) : [];
+      rawSuggestions = match ? JSON.parse(match[0]) : [];
     }
-
-    return NextResponse.json({ suggestions });
   } catch (e: any) {
     return NextResponse.json({ error: e.message, suggestions: [] }, { status: 500 });
   }
+
+  if (!rawSuggestions.length) {
+    return NextResponse.json({ suggestions: [] });
+  }
+
+  // ── Step 2: Validate each ticker against Yahoo Finance ────────────────────
+  // Only return tickers that actually have live market data — filters out
+  // private companies, delisted stocks, and hallucinated tickers.
+  const auth2 = await getYahooCrumb();
+  if (!auth2) {
+    // If we can't get a crumb, return raw suggestions with a warning
+    return NextResponse.json({ suggestions: rawSuggestions, warning: "Could not validate tickers against Yahoo Finance" });
+  }
+
+  const validationResults = await Promise.all(
+    rawSuggestions.map(async (s: any) => ({
+      ...s,
+      _valid: await validateTicker(s.ticker, auth2.crumb, auth2.cookie),
+    }))
+  );
+
+  const suggestions = validationResults
+    .filter(s => s._valid)
+    .map(({ _valid, ...s }) => s);
+
+  return NextResponse.json({ suggestions });
 }
