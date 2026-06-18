@@ -119,9 +119,12 @@ function ComparablesPage() {
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
-    fetch("/api/companies?limit=100")
+    fetch("/api/companies?limit=200")
       .then(r => r.json())
-      .then(d => Array.isArray(d) ? setCompanies(d) : setCompanies([]));
+      // Exclude exits (public/acquired/closed) and inactive — keep monitoring + pipeline
+      .then(d => Array.isArray(d)
+        ? setCompanies(d.filter((c: Company) => !["public","acquired","closed","inactive"].includes(c.status)))
+        : setCompanies([]));
   }, []);
 
   const loadCompSet = useCallback(async (cid: string) => {

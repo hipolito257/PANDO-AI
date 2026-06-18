@@ -57,16 +57,17 @@ export default function RadarPage() {
     if (country) params.set("country", country);
     if (stage) params.set("stage", stage);
     if (mandateId) params.set("mandate", mandateId);
-    const [main, pipeline, exited] = await Promise.all([
+    const [main, exited] = await Promise.all([
       fetch(`/api/companies?${params}`).then(r => r.json()),
-      fetch("/api/companies?status=pipeline&limit=100").then(r => r.json()),
-      fetch("/api/companies?status=exited&limit=100").then(r => r.json()).catch(() => []),
+      fetch(`/api/companies?${new URLSearchParams({ ...Object.fromEntries(params), limit: "200" })}`).then(r => r.json()).catch(() => []),
     ]);
     const mainData = Array.isArray(main) ? main : (main.companies ?? []);
-    // Filter out pipeline + exited from main view
-    setCompanies(mainData.filter((c: Company) => c.status !== "pipeline" && !EXIT_STATUSES.includes(c.status)));
-    setPipeline(Array.isArray(pipeline) ? pipeline : (pipeline.companies ?? []));
-    setExited(Array.isArray(exited) ? exited : (exited.companies ?? []));
+    // Radar tab: all active companies (monitoring + pipeline). Exits go to Salidas.
+    setCompanies(mainData.filter((c: Company) => !EXIT_STATUSES.includes(c.status) && c.status !== "inactive"));
+    // Pipeline tab: only pipeline-status companies (for management actions)
+    setPipeline(mainData.filter((c: Company) => c.status === "pipeline"));
+    // Salidas tab: exit statuses
+    setExited(mainData.filter((c: Company) => EXIT_STATUSES.includes(c.status)));
     setLoading(false);
   }, [q, sector, country, stage, mandateId]);
 
