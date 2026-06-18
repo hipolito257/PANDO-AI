@@ -38,7 +38,7 @@ export default function RadarPage() {
   const [exitedCompanies, setExited]      = useState<Company[]>([]);
   const [mandates, setMandates]           = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading]             = useState(true);
-  const [activeTab, setActiveTab]         = useState<"radar"|"pipeline"|"salidas">("radar");
+  const [activeTab, setActiveTab]         = useState<"radar"|"pipeline"|"salidas"|"scan">("radar");
 
   const [q, setQ]             = useState("");
   const [sector, setSector]   = useState("");
@@ -129,6 +129,7 @@ export default function RadarPage() {
             { key: "radar",    label: `📡 Radar (${companies.length})` },
             { key: "pipeline", label: `🔍 Pipeline${pipelineCompanies.length > 0 ? ` (${pipelineCompanies.length})` : ""}` },
             { key: "salidas",  label: `🏁 Salidas${exitedCompanies.length > 0 ? ` (${exitedCompanies.length})` : ""}` },
+            { key: "scan",     label: "📄 Scan" },
           ] as const).map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-1.5 text-[12px] font-medium rounded-[7px] transition-all ${
@@ -409,7 +410,271 @@ export default function RadarPage() {
           </Card>
         )}
 
+        {/* ── SCAN tab ── */}
+        {activeTab === "scan" && <ScanTab onCompaniesAdded={loadAll} />}
+
       </div>
+    </div>
+  );
+}
+
+// ── SCAN TAB ──────────────────────────────────────────────────────────────────
+type ScanResult = {
+  summary: string;
+  keyInsights: string[];
+  companies: { name: string; sector: string; country: string; description: string; fundingStage?: string; totalFunding?: number; mandateFit: number; mandateFitNote: string }[];
+  signals: { companyName: string; type: string; title: string; detail: string }[];
+  companiesAdded: number;
+  signalsAdded: number;
+  filename: string;
+};
+
+function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
+  const [file, setFile]         = useState<File | null>(null);
+  const [prompt, setPrompt]     = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [result, setResult]     = useState<ScanResult | null>(null);
+  const [error, setError]       = useState("");
+  const [dragOver, setDragOver] = useState(false);
+
+  function handleFile(f: File) {
+    if (f.type !== "application/pdf") { setError("Solo se aceptan archivos PDF."); return; }
+    if (f.size > 20 * 1024 * 1024) { setError("El archivo es muy grande (máx. 20MB). Prueba con un fragmento del documento."); return; }
+    setFile(f);
+    setError("");
+    setResult(null);
+  }
+
+  async function handleScan() {
+    if (!file) return;
+    setScanning(true);
+    setError("");
+    setResult(null);
+    setProgress("Leyendo el PDF...");
+
+    try {
+      // Read PDF as base64 in the browser
+      const arrayBuffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+
+      setProgress("Enviando a Claude para análisis...");
+      const res = await fetch("/api/radar/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdfBase64: base64, userPrompt: prompt || null, filename: file.name }),
+      });
+
+      setProgress("Procesando resultados...");
+      const data = await res.json();
+
+      if (!res.ok) { setError(data.error ?? "Error al procesar el documento."); setScanning(false); setProgress(""); return; }
+
+      setResult(data);
+      if (data.companiesAdded > 0) onCompaniesAdded();
+    } catch (e: any) {
+      setError(e.message ?? "Error inesperado.");
+    }
+    setScanning(false);
+    setProgress("");
+  }
+
+  const fitColor = (score: number) =>
+    score >= 8 ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+    : score >= 6 ? "text-amber-700 bg-amber-50 border-amber-200"
+    : "text-slate bg-fog border-chalk";
+
+  const signalIcon: Record<string, string> = {
+    funding_due: "💰", strategic_buyer_interest: "🤝", exec_change: "👤",
+    revenue_inflection: "📈", risk_flag: "⚠️",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Upload card */}
+      <Card>
+        <p className="text-[13px] font-semibold text-carbon mb-1">Escanear documento con IA</p>
+        <p className="text-[11px] text-slate mb-4">
+          Sube un PDF — newsletters de VCs, reportes de industria, pitch decks, deal flow — y Claude extraerá empresas y señales relevantes para el Radar.
+        </p>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+          onClick={() => document.getElementById("pdf-upload-input")?.click()}
+          className={`border-2 border-dashed rounded-[10px] p-8 text-center cursor-pointer transition-colors ${
+            dragOver ? "border-orange bg-orange/5" : file ? "border-emerald-400 bg-emerald-50/40" : "border-chalk hover:border-carbon/30 hover:bg-fog/40"
+          }`}
+        >
+          <input id="pdf-upload-input" type="file" accept="application/pdf" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+          {file ? (
+            <div>
+              <p className="text-[28px] mb-1">📄</p>
+              <p className="text-[13px] font-semibold text-carbon">{file.name}</p>
+              <p className="text-[11px] text-slate mt-0.5">{(file.size / 1024 / 1024).toFixed(1)} MB · haz clic para cambiar</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-[28px] mb-2">📄</p>
+              <p className="text-[13px] font-medium text-carbon">Arrastra un PDF aquí o haz clic para seleccionar</p>
+              <p className="text-[11px] text-slate mt-1">Hasta 20MB · newsletters, reportes, pitch decks, deal flow</p>
+            </div>
+          )}
+        </div>
+
+        {/* Optional prompt */}
+        <div className="mt-4">
+          <label className="block text-[11px] font-medium text-slate mb-1.5">
+            Instrucciones adicionales para este documento <span className="text-slate font-normal">(opcional)</span>
+          </label>
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            rows={2}
+            placeholder="Ej: Enfócate en empresas de Fintech B2B con más de $5M en funding. Ignora empresas de consumo."
+            className="w-full px-3 py-2 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon resize-none"
+          />
+        </div>
+
+        {error && <p className="mt-3 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-[7px] px-3 py-2">{error}</p>}
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={handleScan}
+            disabled={!file || scanning}
+            className="flex items-center gap-2 px-4 py-2 text-[12px] font-medium bg-carbon text-white rounded-[8px] hover:opacity-85 disabled:opacity-40 transition-opacity"
+          >
+            {scanning ? (
+              <>
+                <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
+                {progress || "Analizando..."}
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                Escanear con IA
+              </>
+            )}
+          </button>
+          {scanning && <p className="text-[11px] text-slate animate-pulse">{progress}</p>}
+        </div>
+      </Card>
+
+      {/* Results */}
+      {result && (
+        <div className="space-y-4">
+
+          {/* Summary + Key Insights */}
+          <Card>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-8 h-8 rounded-[7px] bg-carbon flex items-center justify-center text-white text-[14px] shrink-0">📄</div>
+              <div>
+                <p className="text-[13px] font-semibold text-carbon">{result.filename}</p>
+                <p className="text-[10px] text-slate mt-0.5">
+                  {result.companiesAdded} empresa{result.companiesAdded !== 1 ? "s" : ""} agregada{result.companiesAdded !== 1 ? "s" : ""} al Radar
+                  {result.signalsAdded > 0 ? ` · ${result.signalsAdded} señal${result.signalsAdded !== 1 ? "es" : ""} detectada${result.signalsAdded !== 1 ? "s" : ""}` : ""}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-[11px] font-semibold text-graphite uppercase tracking-wide mb-2">Resumen ejecutivo</p>
+              <p className="text-[12px] text-graphite leading-relaxed">{result.summary}</p>
+            </div>
+
+            {result.keyInsights.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold text-graphite uppercase tracking-wide mb-2">Key insights</p>
+                <ul className="space-y-1.5">
+                  {result.keyInsights.map((insight, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[12px] text-graphite">
+                      <span className="text-orange mt-0.5 shrink-0">→</span>
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
+
+          {/* Companies found */}
+          {result.companies.length > 0 && (
+            <Card padding="none">
+              <div className="px-5 py-3 border-b border-chalk bg-fog/30">
+                <p className="text-[13px] font-semibold text-carbon">
+                  Empresas encontradas — {result.companiesAdded} agregadas al Radar
+                </p>
+                <p className="text-[11px] text-slate">Score de fit calculado contra los mandatos activos del fondo</p>
+              </div>
+              <div className="divide-y divide-chalk">
+                {result.companies.map((co, i) => (
+                  <div key={i} className="px-5 py-3 flex items-start gap-4">
+                    <div className="w-7 h-7 rounded-[6px] bg-carbon/8 border border-chalk flex items-center justify-center text-[10px] font-bold text-carbon shrink-0 mt-0.5">
+                      {co.name.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <span className="text-[13px] font-semibold text-carbon">{co.name}</span>
+                        {co.sector && <span className="text-[9px] bg-fog border border-chalk rounded-full px-1.5 py-0.5 text-slate">{co.sector}</span>}
+                        <span className="text-[9px] text-slate">{co.country}</span>
+                        {co.fundingStage && <span className="text-[9px] bg-orange/10 text-orange border border-orange/20 rounded-full px-1.5 py-0.5">{co.fundingStage}</span>}
+                        {co.totalFunding && <span className="text-[9px] text-emerald-700">${co.totalFunding}M</span>}
+                      </div>
+                      <p className="text-[11px] text-graphite leading-relaxed">{co.description}</p>
+                      <p className="text-[10px] text-slate mt-1 italic">{co.mandateFitNote}</p>
+                    </div>
+                    <div className={`text-[11px] font-semibold px-2 py-1 rounded-[6px] border shrink-0 ${fitColor(co.mandateFit)}`}>
+                      {co.mandateFit}/10
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Signals for existing companies */}
+          {result.signals.length > 0 && (
+            <Card padding="none">
+              <div className="px-5 py-3 border-b border-chalk bg-fog/30">
+                <p className="text-[13px] font-semibold text-carbon">Señales detectadas para empresas del Radar</p>
+                <p className="text-[11px] text-slate">Información relevante sobre empresas que ya monitoreas</p>
+              </div>
+              <div className="divide-y divide-chalk">
+                {result.signals.map((sig, i) => (
+                  <div key={i} className="px-5 py-3 flex items-start gap-3">
+                    <span className="text-[16px] shrink-0 mt-0.5">{signalIcon[sig.type] ?? "📌"}</span>
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-[12px] font-semibold text-carbon">{sig.companyName}</span>
+                        <span className="text-[9px] bg-fog border border-chalk rounded-full px-1.5 py-0.5 text-slate">{sig.type.replace(/_/g, " ")}</span>
+                      </div>
+                      <p className="text-[12px] font-medium text-carbon">{sig.title}</p>
+                      <p className="text-[11px] text-graphite mt-0.5">{sig.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {result.companies.length === 0 && result.signals.length === 0 && (
+            <Card>
+              <div className="text-center py-6">
+                <p className="text-[28px] mb-2">🔍</p>
+                <p className="text-[13px] font-medium text-carbon">No se encontraron empresas o señales relevantes</p>
+                <p className="text-[12px] text-slate mt-1">Prueba ajustando el prompt o sube un documento diferente</p>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }
