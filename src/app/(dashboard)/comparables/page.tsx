@@ -108,6 +108,7 @@ function ComparablesPage() {
   const [loadingSet,  setLoadingSet]  = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const [refreshLog,  setRefreshLog]  = useState("");
+  const [refreshErrors, setRefreshErrors] = useState<Record<string, string>>({});
   const [activeTab,   setActiveTab]   = useState<"datos"|"graficas"|"valuacion">("datos");
   const [showSearch,  setShowSearch]  = useState(false);
   const [showAI,      setShowAI]      = useState(false);
@@ -159,10 +160,14 @@ function ComparablesPage() {
     const data = await res.json();
     const ok   = data.report?.filter((r: any) => r.ok).length ?? 0;
     const fail: {ticker:string;error?:string}[] = data.report?.filter((r: any) => !r.ok) ?? [];
+    // Build ticker → error map for inline display in table
+    const errMap: Record<string, string> = {};
+    fail.forEach(f => { errMap[f.ticker] = f.error ?? "no data"; });
+    setRefreshErrors(errMap);
     const failMsg = fail.length
-      ? ` · ${fail.length} sin datos: ${fail.map(f => `${f.ticker}${f.error ? ` (${f.error})` : ""}`).join(", ")}`
+      ? ` · ${fail.length} failed: ${fail.map(f => `${f.ticker}${f.error ? ` (${f.error})` : ""}`).join(", ")}`
       : "";
-    setRefreshLog(`✓ ${ok} actualizados${failMsg}`);
+    setRefreshLog(`✓ ${ok} updated${failMsg}`);
     setRefreshing(false);
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
   }
@@ -251,7 +256,7 @@ function ComparablesPage() {
                     className={refreshing ? "animate-spin" : ""}>
                     <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
                   </svg>
-                  {refreshing ? "Actualizando..." : "Actualizar datos"}
+                  {refreshing ? "Refreshing..." : "Refresh data"}
                 </button>
               </>
             )}
@@ -394,7 +399,7 @@ function ComparablesPage() {
                   {activeTab === "datos" && (
                     <>
                       <CompsOverview comps={comps} company={selectedCompany} compSet={compSet} />
-                      <MetricsTable comps={comps} company={selectedCompany} />
+                      <MetricsTable comps={comps} company={selectedCompany} refreshErrors={refreshErrors} />
                     </>
                   )}
                   {activeTab === "graficas" && mounted && (
@@ -567,25 +572,25 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
 type ColKey = "marketCap"|"ev"|"revenue"|"growth"|"ebitda"|"grossMargin"|"operatingMargin"|"ebitdaMargin"|"netMargin"|"fcf"|"evRev"|"evEbitda"|"pe"|"ps"|"pb"|"roe"|"de"|"beta"|"r40";
 
 const ALL_COLS: { key: ColKey; label: string; group: string }[] = [
-  { key: "marketCap",       label: "Mkt Cap",       group: "Tamaño" },
-  { key: "ev",              label: "EV",             group: "Tamaño" },
-  { key: "revenue",         label: "Revenue",        group: "Tamaño" },
-  { key: "fcf",             label: "FCF",            group: "Tamaño" },
-  { key: "growth",          label: "Crec. Rev.",     group: "Crecimiento" },
-  { key: "ebitda",          label: "EBITDA",         group: "Rentabilidad" },
-  { key: "grossMargin",     label: "Mg. Bruto",      group: "Márgenes" },
-  { key: "operatingMargin", label: "Mg. Operativo",  group: "Márgenes" },
-  { key: "ebitdaMargin",    label: "Mg. EBITDA",     group: "Márgenes" },
-  { key: "netMargin",       label: "Mg. Neto",       group: "Márgenes" },
-  { key: "roe",             label: "ROE",            group: "Rentabilidad" },
-  { key: "evRev",           label: "EV/Rev",         group: "Múltiplos" },
-  { key: "evEbitda",        label: "EV/EBITDA",      group: "Múltiplos" },
-  { key: "pe",              label: "P/E",            group: "Múltiplos" },
-  { key: "ps",              label: "P/S",            group: "Múltiplos" },
-  { key: "pb",              label: "P/B",            group: "Múltiplos" },
-  { key: "de",              label: "Deuda/Capital",  group: "Balance" },
-  { key: "beta",            label: "Beta",           group: "Mercado" },
-  { key: "r40",             label: "R40",            group: "Salud" },
+  { key: "marketCap",       label: "Mkt Cap",        group: "Size" },
+  { key: "ev",              label: "EV",              group: "Size" },
+  { key: "revenue",         label: "Revenue",         group: "Size" },
+  { key: "fcf",             label: "FCF",             group: "Size" },
+  { key: "growth",          label: "Rev. Growth",     group: "Growth" },
+  { key: "ebitda",          label: "EBITDA",          group: "Profitability" },
+  { key: "grossMargin",     label: "Gross Margin",    group: "Margins" },
+  { key: "operatingMargin", label: "Op. Margin",      group: "Margins" },
+  { key: "ebitdaMargin",    label: "EBITDA Margin",   group: "Margins" },
+  { key: "netMargin",       label: "Net Margin",      group: "Margins" },
+  { key: "roe",             label: "ROE",             group: "Profitability" },
+  { key: "evRev",           label: "EV/Rev",          group: "Multiples" },
+  { key: "evEbitda",        label: "EV/EBITDA",       group: "Multiples" },
+  { key: "pe",              label: "P/E",             group: "Multiples" },
+  { key: "ps",              label: "P/S",             group: "Multiples" },
+  { key: "pb",              label: "P/B",             group: "Multiples" },
+  { key: "de",              label: "Debt/Equity",     group: "Balance" },
+  { key: "beta",            label: "Beta",            group: "Market" },
+  { key: "r40",             label: "Rule of 40",      group: "Health" },
 ];
 
 const DEFAULT_COLS: ColKey[] = ["marketCap","ev","revenue","growth","ebitda","grossMargin","ebitdaMargin","evRev","evEbitda","pe","r40"];
@@ -593,7 +598,7 @@ const DEFAULT_COLS: ColKey[] = ["marketCap","ev","revenue","growth","ebitda","gr
 // ══════════════════════════════════════════════════════════════════════════════
 // METRICS TABLE
 // ══════════════════════════════════════════════════════════════════════════════
-function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Company }) {
+function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicComp[]; company: Company; refreshErrors?: Record<string, string> }) {
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
   const [showColPicker, setShowColPicker] = useState(false);
   const hasData = comps.some(c => c.lastRefreshed);
@@ -697,7 +702,7 @@ function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Compan
       <div className="px-4 py-3 border-b border-chalk flex items-center justify-between">
         <div>
           <p className="text-[13px] font-semibold text-carbon">Tabla de múltiplos</p>
-          <p className="text-[11px] text-slate">{comps.length} peers públicos · datos de Yahoo Finance</p>
+          <p className="text-[11px] text-slate">{comps.length} public peers · Yahoo Finance data</p>
         </div>
         <div className="flex items-center gap-2">
           {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">Sin datos — actualizar</span>}
@@ -733,7 +738,7 @@ function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Compan
                   ))}
                   <button onClick={() => setVisibleCols(new Set(DEFAULT_COLS))}
                     className="mt-1 text-[10px] text-slate hover:text-carbon underline">
-                    Restaurar por defecto
+                    Restore defaults
                   </button>
                 </div>
               </>
@@ -745,7 +750,7 @@ function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Compan
         <table className="w-full">
           <thead>
             <tr className="text-[9px] text-slate uppercase tracking-wide border-b border-chalk bg-fog/40">
-              <th className="px-3 py-2.5 text-left font-semibold sticky left-0 bg-fog/40">Empresa</th>
+              <th className="px-3 py-2.5 text-left font-semibold sticky left-0 bg-fog/40">Company</th>
               {cols.map(c => (
                 <th key={c.key} className={`px-3 py-2.5 text-right font-semibold whitespace-nowrap ${isMultiple(c.key) ? "bg-carbon/5" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
                   {c.label}
@@ -781,7 +786,17 @@ function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Compan
                       {comp.ticker.slice(0,2)}
                     </div>
                     <div>
-                      <p className="text-[12px] font-medium text-carbon">{comp.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[12px] font-medium text-carbon">{comp.name}</p>
+                        {refreshErrors[comp.ticker] && (
+                          <span className="text-[9px] text-red-500 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded font-medium" title={refreshErrors[comp.ticker]}>
+                            {refreshErrors[comp.ticker] === "ticker no encontrado" ? "not found" :
+                             refreshErrors[comp.ticker] === "rate limit — intenta de nuevo" ? "rate limit" :
+                             refreshErrors[comp.ticker] === "sin datos en Yahoo Finance" ? "no data" :
+                             "error"}
+                          </span>
+                        )}
+                      </div>
                       <a href={`https://finance.yahoo.com/quote/${comp.ticker}`} target="_blank" rel="noopener noreferrer"
                         className="text-[9px] font-mono text-slate hover:text-orange">{comp.ticker} · {comp.exchange ?? ""}</a>
                     </div>
@@ -798,7 +813,7 @@ function MetricsTable({ comps, company }: { comps: PublicComp[]; company: Compan
           {hasData && (
             <tfoot>
               <tr className="border-t-2 border-carbon/20 bg-fog/60 text-[11px] font-semibold">
-                <td className="px-3 py-2.5 text-carbon sticky left-0 bg-fog/60">Mediana del set</td>
+                <td className="px-3 py-2.5 text-carbon sticky left-0 bg-fog/60">Set Median</td>
                 {cols.map(c => (
                   <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3 text-carbon" : isR40(c.key) ? "bg-blue-50/60 text-blue-700" : "text-carbon"}`}>
                     {medianVal(c.key)}
@@ -1111,7 +1126,7 @@ function ValuationPanel({ comps, company }: { comps: PublicComp[]; company: Comp
                 </div>
                 <div className="flex justify-between text-[10px] mt-1.5">
                   <span className="text-slate">P25: <span className="font-semibold text-carbon">{fmtB(m.low)}</span></span>
-                  <span className="font-semibold text-carbon">Mediana: {fmtB(m.mid)}</span>
+                  <span className="font-semibold text-carbon">Median: {fmtB(m.mid)}</span>
                   <span className="text-slate">P75: <span className="font-semibold text-carbon">{fmtB(m.high)}</span></span>
                 </div>
               </div>
