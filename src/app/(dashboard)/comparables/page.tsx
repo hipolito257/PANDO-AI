@@ -102,6 +102,7 @@ const COLORS = ["#202020","#ea5c2b","#6366f1","#0ea5e9","#10b981","#f59e0b","#ec
 // ══════════════════════════════════════════════════════════════════════════════
 function ComparablesPage() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [companySearch, setCompanySearch] = useState("");
 
   const [companies,   setCompanies]   = useState<Company[]>([]);
   const [compSet,     setCompSet]     = useState<CompSet | null>(null);
@@ -270,27 +271,66 @@ function ComparablesPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Company sidebar */}
         <aside className="w-[220px] shrink-0 border-r border-chalk bg-paper overflow-y-auto flex flex-col">
-          <div className="p-3 border-b border-chalk">
-            <p className="text-[10px] text-slate uppercase tracking-wider font-semibold">Radar de empresas</p>
-            <p className="text-[10px] text-slate mt-0.5">{companies.length} monitoreadas</p>
+          {/* Search box */}
+          <div className="p-2 border-b border-chalk">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input
+                type="text"
+                placeholder="Buscar empresa..."
+                value={companySearch}
+                onChange={e => setCompanySearch(e.target.value)}
+                className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-fog border border-chalk rounded-[7px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon"
+              />
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {companies.map(c => (
-              <button key={c.id} onClick={() => selectCompany(c.id)}
-                className={`w-full text-left px-2.5 py-2 rounded-[8px] transition-all
-                  ${selectedCompanyId === c.id ? "bg-carbon text-white" : "hover:bg-fog text-carbon"}`}>
-                <div className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-[5px] flex items-center justify-center text-[9px] font-bold shrink-0
-                    ${selectedCompanyId === c.id ? "bg-white/20 text-white" : "bg-orange/10 text-orange"}`}>
-                    {c.name.slice(0, 2).toUpperCase()}
+
+          <div className="flex-1 overflow-y-auto py-1">
+            {(() => {
+              const q = companySearch.toLowerCase();
+              const filtered = companies.filter(c => c.name.toLowerCase().includes(q) || (c.sector ?? "").toLowerCase().includes(q));
+              const radar    = filtered.filter(c => c.status === "monitoring");
+              const pipeline = filtered.filter(c => c.status === "pipeline");
+
+              const renderGroup = (label: string, dot: string, items: Company[]) => items.length === 0 ? null : (
+                <div key={label}>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+                    <span className="text-[9px] font-semibold text-slate uppercase tracking-wider">{label} ({items.length})</span>
                   </div>
-                  <div className="min-w-0">
-                    <p className={`text-[12px] font-medium truncate ${selectedCompanyId === c.id ? "text-white" : "text-carbon"}`}>{c.name}</p>
-                    <p className={`text-[10px] truncate ${selectedCompanyId === c.id ? "text-white/50" : "text-slate"}`}>{c.sector ?? c.country}</p>
+                  <div className="space-y-0.5 px-2 mb-1">
+                    {items.map(c => (
+                      <button key={c.id} onClick={() => selectCompany(c.id)}
+                        className={`w-full text-left px-2.5 py-2 rounded-[8px] transition-all
+                          ${selectedCompanyId === c.id ? "bg-carbon text-white" : "hover:bg-fog text-carbon"}`}>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-6 h-6 rounded-[5px] flex items-center justify-center text-[9px] font-bold shrink-0
+                            ${selectedCompanyId === c.id ? "bg-white/20 text-white" : "bg-orange/10 text-orange"}`}>
+                            {c.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className={`text-[12px] font-medium truncate ${selectedCompanyId === c.id ? "text-white" : "text-carbon"}`}>{c.name}</p>
+                            <p className={`text-[10px] truncate ${selectedCompanyId === c.id ? "text-white/50" : "text-slate"}`}>{c.sector ?? c.country}</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
-              </button>
-            ))}
+              );
+
+              return (
+                <>
+                  {renderGroup("Radar", "bg-orange", radar)}
+                  {renderGroup("Pipeline", "bg-blue-500", pipeline)}
+                  {filtered.length === 0 && (
+                    <p className="text-[11px] text-slate text-center py-6 px-3">Sin resultados para "{companySearch}"</p>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </aside>
 
