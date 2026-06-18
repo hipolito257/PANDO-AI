@@ -47,6 +47,7 @@ export default function RadarPage() {
   const [mandateId, setMandateId] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editCompany, setEditCompany] = useState<Company | null>(null);
+  const [exitModal, setExitModal] = useState<Company | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -62,8 +63,8 @@ export default function RadarPage() {
       fetch(`/api/companies?${new URLSearchParams({ ...Object.fromEntries(params), limit: "200" })}`).then(r => r.json()).catch(() => []),
     ]);
     const mainData = Array.isArray(main) ? main : (main.companies ?? []);
-    // Radar tab: all active companies (monitoring + pipeline). Exits go to Salidas.
-    setCompanies(mainData.filter((c: Company) => !EXIT_STATUSES.includes(c.status) && c.status !== "inactive"));
+    // Radar tab: ONLY monitoring-status companies. Pipeline has its own tab.
+    setCompanies(mainData.filter((c: Company) => c.status === "monitoring"));
     // Pipeline tab: only pipeline-status companies (for management actions)
     setPipeline(mainData.filter((c: Company) => c.status === "pipeline"));
     // Salidas tab: exit statuses
@@ -87,6 +88,14 @@ export default function RadarPage() {
   async function moveToRadar(id: string) {
     await fetch(`/api/companies`, { method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, status: "monitoring" }) });
+    loadAll();
+  }
+
+  // Pipeline → Exit: el equipo confirma la salida con tipo
+  async function moveToExit(id: string, exitType: "public" | "acquired" | "closed") {
+    await fetch(`/api/companies`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: exitType }) });
+    setExitModal(null);
     loadAll();
   }
 
@@ -353,6 +362,10 @@ export default function RadarPage() {
                               className="px-2.5 py-1 text-[11px] font-medium border border-chalk text-graphite rounded-[6px] hover:border-carbon hover:text-carbon transition-colors whitespace-nowrap">
                               ← Radar
                             </button>
+                            <button onClick={() => setExitModal(c)}
+                              className="px-2.5 py-1 text-[11px] font-medium bg-emerald-600 text-white rounded-[6px] hover:bg-emerald-700 transition-colors whitespace-nowrap">
+                              🏁 Salida
+                            </button>
                             <button onClick={() => archiveCompany(c.id, "pipeline")}
                               className="px-2.5 py-1 text-[11px] font-medium border border-chalk text-slate rounded-[6px] hover:border-red-300 hover:text-red-500 transition-colors">
                               Archivar
@@ -413,6 +426,41 @@ export default function RadarPage() {
 
         {/* ── SCAN tab ── */}
         {activeTab === "scan" && <ScanTab onCompaniesAdded={loadAll} />}
+
+        {/* ── EXIT MODAL ── */}
+        {exitModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-carbon/40 backdrop-blur-sm">
+            <div className="bg-paper rounded-[14px] border border-chalk shadow-xl p-6 w-[400px]">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-[8px] bg-emerald-100 flex items-center justify-center text-[18px]">🏁</div>
+                <div>
+                  <p className="text-[14px] font-semibold text-carbon">Confirmar salida</p>
+                  <p className="text-[11px] text-slate">{exitModal.name}</p>
+                </div>
+              </div>
+              <p className="text-[12px] text-graphite mb-4 leading-relaxed">
+                Selecciona el tipo de salida. Esta acción moverá la empresa a la sección de <strong>Salidas</strong> y no aparecerá más en el Pipeline.
+              </p>
+              <div className="space-y-2 mb-5">
+                {[
+                  { type: "public"   as const, label: "📈 IPO / Salida a bolsa",      desc: "La empresa cotiza en mercado público" },
+                  { type: "acquired" as const, label: "🤝 Adquisición / M&A",          desc: "La empresa fue adquirida por un tercero" },
+                  { type: "closed"   as const, label: "❌ Cierre de operaciones",      desc: "La empresa cerró o entró en quiebra" },
+                ].map(opt => (
+                  <button key={opt.type} onClick={() => moveToExit(exitModal.id, opt.type)}
+                    className="w-full text-left px-4 py-3 border border-chalk rounded-[9px] hover:border-carbon hover:bg-fog transition-colors">
+                    <p className="text-[12px] font-semibold text-carbon">{opt.label}</p>
+                    <p className="text-[10px] text-slate mt-0.5">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setExitModal(null)}
+                className="w-full px-4 py-2 text-[12px] text-slate border border-chalk rounded-[8px] hover:bg-fog transition-colors">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

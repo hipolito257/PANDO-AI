@@ -11,6 +11,7 @@ export type SignalType =
   | "revenue_inflection"
   | "regulatory_change"
   | "exit_rumor"
+  | "exit_signal"
   | "strategic_buyer_interest";
 
 export type MandateTier = "strong" | "candidate" | "weak";
@@ -43,6 +44,7 @@ export const SIGNAL_LABELS: Record<SignalType, string> = {
   revenue_inflection: "Inflexión de Revenue",
   regulatory_change: "Cambio Regulatorio",
   exit_rumor: "Rumor de Salida",
+  exit_signal: "⚠️ Señal de Salida — Confirmar",
   strategic_buyer_interest: "Interés Comprador Estratégico",
 };
 
@@ -54,6 +56,7 @@ export const SIGNAL_COLORS: Record<SignalType, string> = {
   revenue_inflection: "#ff682c",
   regulatory_change: "#0369a1",
   exit_rumor: "#db2777",
+  exit_signal: "#059669",
   strategic_buyer_interest: "#0891b2",
 };
 

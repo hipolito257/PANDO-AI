@@ -94,6 +94,17 @@ const SIGNAL_QUERIES = [
   '"ecommerce" OR "marketplace" latinoamerica startup serie 2025',
 ];
 
+// ── Queries específicas para detectar exits en LATAM ─────────────────────────
+// Estas se agregan al pool general de headlines para alimentar el extraction model
+const EXIT_DISCOVERY_QUERIES = [
+  'startup latinoamerica IPO bolsa 2025 2026',
+  'startup LATAM "oferta pública" debut bursátil 2025 2026',
+  'startup latinoamerica "adquirida por" "comprada por" 2025 2026',
+  'fintech LATAM "acquired" merger acquisition 2025 2026',
+  'startup latinoamerica unicornio adquisición exit 2026',
+  'startup latinoamerica "cierra" "shutdown" "cesa operaciones" 2025 2026',
+];
+
 async function fetchQueriesParallel(queries: string[]): Promise<string[]> {
   const BATCH = 5;
   const headlines: string[] = [];
@@ -126,23 +137,72 @@ function detectSignalType(title: string): string | null {
   return null;
 }
 
-// ── Exit detection ─────────────────────────────────────────────────────────────
-function detectExitStatus(titles: string[]): "public" | "acquired" | "closed" | null {
+// ── Exit signal detection (keyword pre-filter, NO auto status change) ──────────
+// This only creates a signal for human review — never changes company status.
+// Exit keywords that indicate a POTENTIAL exit event worth flagging
+function mightHaveExitSignal(titles: string[]): boolean {
   const text = titles.join(" ").toLowerCase();
-  if (
-    text.includes("ipo") || text.includes("oferta pública") || text.includes("sale a bolsa") ||
-    text.includes("salió a bolsa") || text.includes("cotiza en") || text.includes("debut bursátil") ||
-    text.includes("listing") || text.includes("nasdaq") || text.includes("nyse") && text.includes("debut")
-  ) return "public";
-  if (
-    text.includes("adquirida por") || text.includes("comprada por") || text.includes("adquisición de") ||
-    text.includes("fusión con") || text.includes("merger") || text.includes("acquired by")
-  ) return "acquired";
-  if (
+  return (
+    text.includes("ipo") || text.includes("oferta pública inicial") ||
+    text.includes("sale a bolsa") || text.includes("salió a bolsa") ||
+    text.includes("debut bursátil") || text.includes("cotiza en bolsa") ||
+    text.includes("adquirida por") || text.includes("comprada por") ||
+    text.includes("acquired by") || text.includes("merger with") ||
     text.includes("cierra operaciones") || text.includes("cesa operaciones") ||
-    text.includes("quiebra") || text.includes("bancarrota") || text.includes("shutdown")
-  ) return "closed";
-  return null;
+    text.includes("quiebra definitiva") || text.includes("bancarrota") ||
+    text.includes("shutdown") || text.includes("wind down")
+  );
+}
+
+// ── Claude validates if headlines CONFIRM a real exit event ───────────────────
+// Only called when mightHaveExitSignal() is true — avoids false positives.
+// Returns null if Claude is not confident, or an exit signal object.
+async function validateExitWithClaude(
+  companyName: string,
+  headlines: string[],
+  apiKey: string
+): Promise<{ confirmed: boolean; type: "public" | "acquired" | "closed" | null; confidence: number; summary: string } | null> {
+  const prompt = `You are a strict PE analyst verifying exit events. Read these news headlines about "${companyName}" and determine if they CONFIRM a real exit event.
+
+Headlines:
+${headlines.map((h, i) => `${i + 1}. ${h}`).join("\n")}
+
+EXIT TYPES:
+- "public": Company completed an IPO or started trading on a stock exchange
+- "acquired": Company was acquired / merged / bought by another entity
+- "closed": Company shut down operations, declared bankruptcy, or ceased business
+
+STRICT RULES:
+1. Only return confirmed: true if the headlines provide CLEAR evidence of a completed exit
+2. A rumor, speculation, or intent to exit is NOT enough — must be confirmed
+3. If headlines just mention a company name alongside an acquiring company without explicit acquisition language, that's NOT enough
+4. "Fundraising" or "new investment" is NOT an exit — it's the opposite
+5. Be very conservative — a false positive is much worse than a false negative
+
+Return ONLY this JSON (no markdown):
+{"confirmed": false, "type": null, "confidence": 0.0, "summary": "reason"}
+
+If confirmed, example:
+{"confirmed": true, "type": "acquired", "confidence": 0.92, "summary": "Multiple headlines confirm Kushki was acquired by Mastercard for $125M in March 2026"}`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-5",
+        max_tokens: 300,
+        messages: [{ role: "user", content: prompt }],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text: string = data?.content?.[0]?.text ?? "{}";
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    return JSON.parse(match[0]);
+  } catch { return null; }
 }
 
 // ── Funding extraction ─────────────────────────────────────────────────────────
@@ -342,22 +402,33 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Exit detection
-      const exitStatus = detectExitStatus(allTitles);
-      if (exitStatus && co.status !== exitStatus) {
-        await db.update(companies).set({ status: exitStatus, updatedAt: new Date().toISOString() }).where(eq(companies.id, co.id));
-        await db.insert(signals).values({
-          id: randomUUID(), companyId: co.id,
-          type: "strategic_buyer_interest",
-          title: exitStatus === "public"
-            ? `${co.name} habría salido a bolsa`
-            : exitStatus === "acquired"
-            ? `${co.name} habría sido adquirida`
-            : `${co.name} habría cerrado operaciones`,
-          detail: `Detectado automáticamente via noticias. Verificar y actualizar status manualmente.`,
-          severity: "high", isRead: false, date: new Date().toISOString(),
-        });
-        totalExits++;
+      // ── Exit detection: conservative, requires Claude confirmation ──────────
+      // Step 1: cheap keyword pre-filter to avoid Claude calls on every company
+      if (mightHaveExitSignal(allTitles) && systemApiKey) {
+        // Step 2: Claude validates — only flags if confidence >= 0.85
+        const exitValidation = await validateExitWithClaude(co.name, allTitles, systemApiKey);
+        if (exitValidation?.confirmed && exitValidation.confidence >= 0.85 && exitValidation.type) {
+          // ⚠️ NEVER auto-change status — create a high-severity signal for human review
+          const exitTypeLabel =
+            exitValidation.type === "public"   ? "IPO / Salida a bolsa"          :
+            exitValidation.type === "acquired" ? "Adquisición / Fusión"           :
+                                                 "Cierre de operaciones";
+          // Check we haven't already created this signal
+          const existingExitSignal = await db.query.signals.findFirst({
+            where: (s, { eq: eqS }) => eqS(s.companyId, co.id) && eqS(s.type, "exit_signal"),
+          });
+          if (!existingExitSignal) {
+            await db.insert(signals).values({
+              id: randomUUID(), companyId: co.id,
+              type: "exit_signal",
+              title: `⚠️ Posible ${exitTypeLabel} detectado — requiere confirmación`,
+              detail: `${exitValidation.summary} (Confianza: ${Math.round(exitValidation.confidence * 100)}%). Ir al Pipeline y confirmar con el botón 🏁 Salida si corresponde.`,
+              severity: "high", isRead: false, date: new Date().toISOString(),
+            });
+            totalExits++;
+            signalsAdded++;
+          }
+        }
       }
 
       // Funding update from news
@@ -400,7 +471,7 @@ export async function GET(req: NextRequest) {
     // ── 2b. Queries de VCs (paralelo en lotes) ────────────────────────────
     const vcHeadlines = await fetchQueriesParallel(VC_QUERIES);
 
-    // ── 2c. Queries de señales / sectores (paralelo en lotes) ─────────────
+    // ── 2c. Queries de señales / sectores + exits (paralelo en lotes) ────────
     const sectorQueries = radarSectors
       .slice(0, 4)
       .map(s => `startup "${s}" latinoamerica ronda inversión 2025`);
@@ -410,17 +481,21 @@ export async function GET(req: NextRequest) {
       ...sectorQueries,
     ]);
 
+    // ── 2d. Queries de exits en LATAM ─────────────────────────────────────
+    const exitHeadlines = await fetchQueriesParallel(EXIT_DISCOVERY_QUERIES);
+
     // ── Combinar y deduplicar ─────────────────────────────────────────────
     const allHeadlines = [...new Set([
       ...latamHeadlines,
       ...vcHeadlines,
       ...signalHeadlines,
+      ...exitHeadlines,
     ])];
 
-    // ── 2d. Claude extrae empresas candidatas (Paso 1) ────────────────────
+    // ── 2e. Claude extrae empresas candidatas (Paso 1) ────────────────────
     const candidates = await extractCompaniesFromHeadlines(allHeadlines, existingNames, systemApiKey);
 
-    // ── 2e. Claude filtra por tesis de inversión (Paso 2) ─────────────────
+    // ── 2f. Claude filtra por tesis de inversión (Paso 2) ─────────────────
     const qualified = candidates.length > 0
       ? await scoreAndFilterCompanies(candidates, systemApiKey, radarSectors)
       : [];
@@ -428,7 +503,7 @@ export async function GET(req: NextRequest) {
     filteredOut = candidates.length - qualified.length;
     scored = candidates.length;
 
-    // ── 2f. Insertar las que pasan el filtro ──────────────────────────────
+    // ── 2g. Insertar las que pasan el filtro ──────────────────────────────
     for (const comp of qualified) {
       if (!comp.name || comp.name.length < 2) continue;
       const slug = comp.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -473,7 +548,7 @@ export async function GET(req: NextRequest) {
     totalExits,
     totalFundingUpdates,
     discovery: {
-      headlineSources: systemApiKey ? 4 : 0, // LATAM feeds + VC queries + signal queries + sector queries
+      headlineSources: systemApiKey ? 5 : 0, // LATAM feeds + VC queries + signal queries + sector queries + exit queries
       candidatesExtracted: scored,
       filteredByThesis: filteredOut,
       added: discovered,
