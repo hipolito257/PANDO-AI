@@ -83,7 +83,7 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
               : "text-graphite hover:bg-fog hover:text-carbon"
           )}
         >
-          <span className="w-4 h-4 flex-none flex items-center justify-center">⚙️</span>
+          <span className="w-4 h-4 flex-none flex items-center justify-center opacity-70"><IconGear /></span>
           <span>Configuración</span>
         </Link>
         <button
@@ -173,6 +173,14 @@ function IconLogout() {
       <path d="M6 2H2.5A1.5 1.5 0 001 3.5v7A1.5 1.5 0 002.5 12H6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
       <polyline points="9,4.5 13,7 9,9.5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
       <line x1="13" y1="7" x2="5.5" y2="7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconGear() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.5 2.5l1.1 1.1M10.4 10.4l1.1 1.1M11.5 2.5l-1.1 1.1M3.6 10.4l-1.1 1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }

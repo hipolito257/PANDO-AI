@@ -7,6 +7,11 @@ import { Button } from "@/components/ui/Button";
 import { Spark } from "@/components/charts/Spark";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
 import { WebsiteLink } from "@/components/ui/WebsiteLink";
+import {
+  IconRadarTab, IconPipeline, IconFlag, IconDocument,
+  IconTrendingUp, IconMerge, IconXCircle, IconTarget,
+  IconSearch, IconFunding, IconPerson, IconAlertTriangle,
+} from "@/components/ui/Icons";
 import { fmtM } from "@/lib/utils";
 import Link from "next/link";
 import type { SignalType } from "@/types";
@@ -147,16 +152,17 @@ export default function RadarPage() {
         {/* Tabs */}
         <div className="flex items-center gap-1 bg-paper border border-chalk rounded-[10px] p-1 w-fit">
           {([
-            { key: "radar",    label: `📡 Radar (${companies.length})` },
-            { key: "pipeline", label: `🔍 Pipeline${pipelineCompanies.length > 0 ? ` (${pipelineCompanies.length})` : ""}` },
-            { key: "salidas",  label: `🏁 Salidas${exitedCompanies.length > 0 ? ` (${exitedCompanies.length})` : ""}` },
-            { key: "scan",     label: "📄 Scan" },
-          ] as const).map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-1.5 text-[12px] font-medium rounded-[7px] transition-all ${
-                activeTab === tab.key ? "bg-carbon text-white shadow-sm" : "text-slate hover:text-carbon"
+            { key: "radar"    as const, Icon: IconRadarTab, label: `Radar (${companies.length})` },
+            { key: "pipeline" as const, Icon: IconPipeline,  label: `Pipeline${pipelineCompanies.length > 0 ? ` (${pipelineCompanies.length})` : ""}` },
+            { key: "salidas"  as const, Icon: IconFlag,       label: `Salidas${exitedCompanies.length > 0 ? ` (${exitedCompanies.length})` : ""}` },
+            { key: "scan"     as const, Icon: IconDocument,  label: "Scan" },
+          ]).map(({ key, Icon, label }) => (
+            <button key={key} onClick={() => setActiveTab(key)}
+              className={`px-4 py-1.5 text-[12px] font-medium rounded-[7px] transition-all flex items-center gap-1.5 ${
+                activeTab === key ? "bg-carbon text-white shadow-sm" : "text-slate hover:text-carbon"
               }`}>
-              {tab.label}
+              <Icon size={12} />
+              {label}
             </button>
           ))}
         </div>
@@ -327,7 +333,7 @@ export default function RadarPage() {
             </div>
             {pipelineCompanies.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-slate">
-                <p className="text-[32px] mb-2">🎯</p>
+                <IconTarget size={40} className="text-chalk mb-3" />
                 <p className="text-[14px] font-medium text-carbon">Pipeline vacío</p>
                 <p className="text-[12px] mt-1 text-center max-w-[280px]">
                   Cuando una empresa del Radar te interese, dale clic en <strong className="text-carbon">Pipeline →</strong> para moverla aquí
@@ -376,8 +382,9 @@ export default function RadarPage() {
                               ← Radar
                             </button>
                             <button onClick={() => setExitModal(c)}
-                              className="px-2.5 py-1 text-[11px] font-medium bg-emerald-600 text-white rounded-[6px] hover:bg-emerald-700 transition-colors whitespace-nowrap">
-                              🏁 Salida
+                              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-emerald-600 text-white rounded-[6px] hover:bg-emerald-700 transition-colors whitespace-nowrap">
+                              <IconFlag size={10} />
+                              Salida
                             </button>
                             <button onClick={() => archiveCompany(c.id, "pipeline")}
                               className="px-2.5 py-1 text-[11px] font-medium border border-chalk text-slate rounded-[6px] hover:border-red-300 hover:text-red-500 transition-colors">
@@ -403,7 +410,7 @@ export default function RadarPage() {
             </div>
             {exitedCompanies.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-slate">
-                <p className="text-[32px] mb-2">🏁</p>
+                <IconFlag size={36} className="text-chalk mb-3" />
                 <p className="text-[14px] font-medium text-carbon">Sin salidas detectadas aún</p>
                 <p className="text-[12px] mt-1">Aparecerán aquí cuando el sistema detecte un IPO, adquisición o cierre</p>
               </div>
@@ -445,7 +452,9 @@ export default function RadarPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-carbon/40 backdrop-blur-sm">
             <div className="bg-paper rounded-[14px] border border-chalk shadow-xl p-6 w-[400px]">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-9 h-9 rounded-[8px] bg-emerald-100 flex items-center justify-center text-[18px]">🏁</div>
+                <div className="w-9 h-9 rounded-[8px] bg-emerald-100 flex items-center justify-center">
+                  <IconFlag size={18} className="text-emerald-700" />
+                </div>
                 <div>
                   <p className="text-[14px] font-semibold text-carbon">Confirmar salida</p>
                   <p className="text-[11px] text-slate">{exitModal.name}</p>
@@ -456,14 +465,17 @@ export default function RadarPage() {
               </p>
               <div className="space-y-2 mb-5">
                 {[
-                  { type: "public"   as const, label: "📈 IPO / Salida a bolsa",      desc: "La empresa cotiza en mercado público" },
-                  { type: "acquired" as const, label: "🤝 Adquisición / M&A",          desc: "La empresa fue adquirida por un tercero" },
-                  { type: "closed"   as const, label: "❌ Cierre de operaciones",      desc: "La empresa cerró o entró en quiebra" },
-                ].map(opt => (
-                  <button key={opt.type} onClick={() => moveToExit(exitModal.id, opt.type)}
-                    className="w-full text-left px-4 py-3 border border-chalk rounded-[9px] hover:border-carbon hover:bg-fog transition-colors">
-                    <p className="text-[12px] font-semibold text-carbon">{opt.label}</p>
-                    <p className="text-[10px] text-slate mt-0.5">{opt.desc}</p>
+                  { type: "public"   as const, Icon: IconTrendingUp, iconCls: "text-emerald-600", label: "IPO / Salida a bolsa",   desc: "La empresa cotiza en mercado público" },
+                  { type: "acquired" as const, Icon: IconMerge,       iconCls: "text-blue-600",   label: "Adquisición / M&A",       desc: "La empresa fue adquirida por un tercero" },
+                  { type: "closed"   as const, Icon: IconXCircle,     iconCls: "text-red-500",    label: "Cierre de operaciones",   desc: "La empresa cerró o entró en quiebra" },
+                ].map(({ type, Icon, iconCls, label, desc }) => (
+                  <button key={type} onClick={() => moveToExit(exitModal.id, type)}
+                    className="w-full text-left px-4 py-3 border border-chalk rounded-[9px] hover:border-carbon hover:bg-fog transition-colors flex items-center gap-3">
+                    <Icon size={18} className={iconCls} />
+                    <div>
+                      <p className="text-[12px] font-semibold text-carbon">{label}</p>
+                      <p className="text-[10px] text-slate mt-0.5">{desc}</p>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -548,9 +560,12 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
     : score >= 6 ? "text-amber-700 bg-amber-50 border-amber-200"
     : "text-slate bg-fog border-chalk";
 
-  const signalIcon: Record<string, string> = {
-    funding_due: "💰", strategic_buyer_interest: "🤝", exec_change: "👤",
-    revenue_inflection: "📈", risk_flag: "⚠️",
+  const signalIconMap: Record<string, JSX.Element> = {
+    funding_due:              <IconFunding size={14} className="text-emerald-600" />,
+    strategic_buyer_interest: <IconMerge size={14} className="text-blue-600" />,
+    exec_change:              <IconPerson size={14} className="text-amber-600" />,
+    revenue_inflection:       <IconTrendingUp size={14} className="text-emerald-600" />,
+    risk_flag:                <IconAlertTriangle size={14} className="text-red-500" />,
   };
 
   return (
@@ -576,13 +591,13 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           {file ? (
             <div>
-              <p className="text-[28px] mb-1">📄</p>
+              <div className="flex justify-center mb-2"><IconDocument size={32} className="text-emerald-500" /></div>
               <p className="text-[13px] font-semibold text-carbon">{file.name}</p>
               <p className="text-[11px] text-slate mt-0.5">{(file.size / 1024 / 1024).toFixed(1)} MB · haz clic para cambiar</p>
             </div>
           ) : (
             <div>
-              <p className="text-[28px] mb-2">📄</p>
+              <div className="flex justify-center mb-2"><IconDocument size={32} className="text-slate" /></div>
               <p className="text-[13px] font-medium text-carbon">Arrastra un PDF aquí o haz clic para seleccionar</p>
               <p className="text-[11px] text-slate mt-1">Hasta 20MB · newsletters, reportes, pitch decks, deal flow</p>
             </div>
@@ -636,7 +651,9 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
           {/* Summary + Key Insights */}
           <Card>
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-8 h-8 rounded-[7px] bg-carbon flex items-center justify-center text-white text-[14px] shrink-0">📄</div>
+              <div className="w-8 h-8 rounded-[7px] bg-carbon flex items-center justify-center shrink-0">
+                <IconDocument size={14} className="text-white" />
+              </div>
               <div>
                 <p className="text-[13px] font-semibold text-carbon">{result.filename}</p>
                 <p className="text-[10px] text-slate mt-0.5">
@@ -711,7 +728,7 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
               <div className="divide-y divide-chalk">
                 {result.signals.map((sig, i) => (
                   <div key={i} className="px-5 py-3 flex items-start gap-3">
-                    <span className="text-[16px] shrink-0 mt-0.5">{signalIcon[sig.type] ?? "📌"}</span>
+                    <span className="shrink-0 mt-0.5">{signalIconMap[sig.type] ?? <IconDocument size={14} className="text-slate" />}</span>
                     <div>
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-[12px] font-semibold text-carbon">{sig.companyName}</span>
@@ -729,7 +746,7 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
           {result.companies.length === 0 && result.signals.length === 0 && (
             <Card>
               <div className="text-center py-6">
-                <p className="text-[28px] mb-2">🔍</p>
+                <IconSearch size={36} className="text-chalk mx-auto mb-3" />
                 <p className="text-[13px] font-medium text-carbon">No se encontraron empresas o señales relevantes</p>
                 <p className="text-[12px] text-slate mt-1">Prueba ajustando el prompt o sube un documento diferente</p>
               </div>

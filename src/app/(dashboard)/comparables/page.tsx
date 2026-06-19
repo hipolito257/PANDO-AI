@@ -4,6 +4,10 @@ import { Topbar } from "@/components/layout/Topbar";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
 import { WebsiteLink } from "@/components/ui/WebsiteLink";
 import {
+  IconBarChart, IconLineChart, IconDiamond,
+  IconSparkle, IconSearch, IconAlertTriangle,
+} from "@/components/ui/Icons";
+import {
   ResponsiveContainer,
   ComposedChart, ScatterChart, Scatter, Line,
   BarChart, Bar, Cell, LabelList,
@@ -339,7 +343,7 @@ function ComparablesPage() {
           {!selectedCompany ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <p className="text-[40px] mb-3">📊</p>
+                <IconBarChart size={44} className="text-chalk mx-auto mb-3" />
                 <p className="text-[15px] font-semibold text-carbon">Selecciona una empresa del radar</p>
                 <p className="text-[12px] text-slate mt-1">Elige una empresa para ver su análisis de comparables públicos</p>
               </div>
@@ -388,8 +392,9 @@ function ComparablesPage() {
                   ))}
                   <div className="flex gap-1.5 ml-auto">
                     <button onClick={() => setShowAI(true)}
-                      className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-carbon/5 border border-chalk rounded-[6px] hover:border-carbon transition-colors">
-                      ✨ IA Sugerir
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium bg-carbon/5 border border-chalk rounded-[6px] hover:border-carbon transition-colors">
+                      <IconSparkle size={11} />
+                      IA Sugerir
                     </button>
                     <button onClick={() => setShowSearch(true)}
                       className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-carbon text-white rounded-[6px] hover:opacity-85 transition-opacity">
@@ -398,8 +403,9 @@ function ComparablesPage() {
                   </div>
                 </div>
                 {!hasData && tickers.length > 0 && (
-                  <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-[6px] px-2.5 py-1 inline-block">
-                    ⚠️ Sin datos de mercado — presiona "Actualizar datos" para jalar Yahoo Finance
+                  <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-[6px] px-2.5 py-1 inline-flex items-center gap-1.5">
+                    <IconAlertTriangle size={11} className="shrink-0" />
+                    Sin datos de mercado — presiona "Actualizar datos" para jalar Yahoo Finance
                   </p>
                 )}
               </div>
@@ -407,15 +413,16 @@ function ComparablesPage() {
               {/* Empty peers state */}
               {tickers.length === 0 && !loadingSet && (
                 <div className="bg-paper rounded-[12px] border border-chalk p-10 text-center">
-                  <p className="text-[32px] mb-3">🔍</p>
+                  <IconSearch size={40} className="text-chalk mx-auto mb-3" />
                   <p className="text-[14px] font-semibold text-carbon">Sin peers configurados</p>
                   <p className="text-[12px] text-slate mt-1 mb-4">
                     Agrega empresas públicas comparables para generar el análisis de valuación
                   </p>
                   <div className="flex gap-2 justify-center">
                     <button onClick={() => setShowAI(true)}
-                      className="px-4 py-2 text-[12px] font-medium bg-carbon text-white rounded-btn hover:opacity-85">
-                      ✨ Sugerir con IA
+                      className="flex items-center gap-1.5 px-4 py-2 text-[12px] font-medium bg-carbon text-white rounded-btn hover:opacity-85">
+                      <IconSparkle size={12} />
+                      Sugerir con IA
                     </button>
                     <button onClick={() => setShowSearch(true)}
                       className="px-4 py-2 text-[12px] font-medium bg-fog border border-chalk text-graphite rounded-btn hover:border-carbon">
@@ -429,11 +436,16 @@ function ComparablesPage() {
               {tickers.length > 0 && (
                 <>
                   <div className="flex gap-1 bg-paper border border-chalk rounded-[10px] p-1 w-fit">
-                    {(["datos","graficas","valuacion"] as const).map(tab => (
-                      <button key={tab} onClick={() => setActiveTab(tab)}
-                        className={`px-4 py-1.5 text-[12px] font-medium rounded-[7px] transition-all
-                          ${activeTab === tab ? "bg-carbon text-white shadow-sm" : "text-slate hover:text-carbon"}`}>
-                        {tab === "datos" ? "📊 Datos" : tab === "graficas" ? "📈 Gráficas" : "💰 Valuación"}
+                    {([
+                      { key: "datos"    as const, Icon: IconBarChart,   label: "Datos" },
+                      { key: "graficas" as const, Icon: IconLineChart,  label: "Gráficas" },
+                      { key: "valuacion"as const, Icon: IconDiamond,    label: "Valuación" },
+                    ]).map(({ key, Icon, label }) => (
+                      <button key={key} onClick={() => setActiveTab(key)}
+                        className={`px-4 py-1.5 text-[12px] font-medium rounded-[7px] transition-all flex items-center gap-1.5
+                          ${activeTab === key ? "bg-carbon text-white shadow-sm" : "text-slate hover:text-carbon"}`}>
+                        <Icon size={12} />
+                        {label}
                       </button>
                     ))}
                   </div>
@@ -899,7 +911,7 @@ function ChartsPanel({
   if (!hasData) {
     return (
       <div className="bg-paper rounded-[10px] border border-chalk p-10 text-center">
-        <p className="text-[28px] mb-2">📈</p>
+        <IconLineChart size={32} className="text-chalk mx-auto mb-3" />
         <p className="text-[13px] font-medium text-carbon">Sin datos de mercado</p>
         <p className="text-[12px] text-slate mt-1">Presiona "Actualizar datos" para jalar los múltiplos de Yahoo Finance</p>
       </div>
@@ -1119,7 +1131,7 @@ function ValuationPanel({ comps, company }: { comps: PublicComp[]; company: Comp
   if (!methods.length) {
     return (
       <div className="bg-paper rounded-[10px] border border-chalk p-8 text-center">
-        <p className="text-[28px] mb-2">💰</p>
+        <IconDiamond size={32} className="text-chalk mx-auto mb-3" />
         <p className="text-[13px] font-medium text-carbon">Sin datos suficientes para valuación</p>
         <p className="text-[12px] text-slate mt-1">
           Actualiza los datos de mercado y asegúrate de que {company.name} tiene Revenue / EBITDA configurados
@@ -1354,7 +1366,10 @@ function AISuggestPanel({
       <div className="relative ml-auto w-[480px] h-full bg-paper shadow-2xl flex flex-col">
         <div className="p-4 border-b border-chalk flex items-center justify-between">
           <div>
-            <h3 className="text-[14px] font-semibold text-carbon">✨ Sugerencias de IA</h3>
+            <h3 className="text-[14px] font-semibold text-carbon flex items-center gap-1.5">
+                <IconSparkle size={13} className="text-orange" />
+                Sugerencias de IA
+              </h3>
             <p className="text-[11px] text-slate">Claude analiza tu empresa y sugiere peers públicos comparables</p>
           </div>
           <button onClick={onClose} className="text-slate hover:text-carbon text-[20px] leading-none w-7 h-7 flex items-center justify-center">×</button>
@@ -1374,14 +1389,14 @@ function AISuggestPanel({
             className="w-full flex items-center justify-center gap-2 py-2 bg-carbon text-white text-[12px] font-medium rounded-[8px] hover:opacity-85 disabled:opacity-50 transition-opacity">
             {loading
               ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/></svg>Analizando con IA...</>
-              : <><span>✨</span>{fetched ? "Sugerir de nuevo" : "Sugerir comparables"}</>}
+              : <><IconSparkle size={13} />{fetched ? "Sugerir de nuevo" : "Sugerir comparables"}</>}
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {!fetched && !loading && (
             <div className="text-center py-10">
-              <p className="text-[32px] mb-2">🔍</p>
+              <IconSearch size={40} className="text-chalk mx-auto mb-3" />
               <p className="text-[13px] font-medium text-carbon">Listo para analizar</p>
               <p className="text-[11px] text-slate mt-1">Opcionalmente escribe instrucciones arriba<br />y presiona "Sugerir comparables"</p>
             </div>
@@ -1398,7 +1413,7 @@ function AISuggestPanel({
 
           {noKeyMsg && (
             <div className="bg-amber-50 border border-amber-200 rounded-[10px] p-4 mt-2">
-              <p className="text-[13px] font-semibold text-amber-800">⚙️ API key no configurada</p>
+              <p className="text-[13px] font-semibold text-amber-800">API key no configurada</p>
               <p className="text-[11px] text-amber-700 mt-1">{noKeyMsg}</p>
               <a href="/settings" className="mt-2 inline-block text-[11px] font-semibold text-amber-700 underline">Ir a Configuración →</a>
             </div>

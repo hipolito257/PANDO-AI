@@ -142,7 +142,12 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
           <div className="flex items-center gap-3 pt-1 border-t border-chalk text-[10px] text-slate">
             {dur && <span>Duración: {dur}</span>}
             <span className={`font-medium ${running ? "text-amber-600" : ok ? "text-emerald-600" : "text-red-500"}`}>
-              {running ? "⏳ En ejecución…" : ok ? "Estado: OK" : `Error: ${latest.errorMsg ?? "desconocido"}`}
+              {running ? (
+              <span className="inline-flex items-center gap-1">
+                <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
+                En ejecución…
+              </span>
+            ) : ok ? "Estado: OK" : `Error: ${latest.errorMsg ?? "desconocido"}`}
             </span>
             {logs.length > 1 && (
               <span className="ml-auto">

@@ -16,6 +16,8 @@ import { EmpresaActions } from "@/components/company/EmpresaActions";
 import { NotesPanel } from "@/components/company/NotesPanel";
 import { NewsRefreshButton } from "@/components/company/NewsRefreshButton";
 import { WebsiteLink } from "@/components/ui/WebsiteLink";
+import { CompanyLogo } from "@/components/company/CompanyLogo";
+import { CompanyHeroBg } from "@/components/company/CompanyHeroBg";
 
 // Thin wrapper — keeps empresa page as a server component
 function NotesSection({ companyId }: { companyId: string }) {
@@ -69,10 +71,12 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
       <div className="p-6 space-y-4">
         {/* Header */}
-        <Card>
+        <Card className="relative overflow-hidden">
+          <CompanyHeroBg website={company.website} name={company.name} />
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
+                <CompanyLogo name={company.name} website={company.website} size="lg" />
                 <h2 className="text-[22px] font-semibold text-carbon tracking-tight font-poly">{company.name}</h2>
                 <StatusBadge status={company.status} />
                 <ScoreBadge score={company.score} />

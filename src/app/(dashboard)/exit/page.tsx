@@ -3,6 +3,7 @@ import { Card, SectionHeader } from "@/components/ui/Card";
 import { Badge, SignalBadge } from "@/components/ui/Badge";
 import { MarkReadOnMount } from "@/components/signals/MarkReadOnMount";
 import { WebsiteLink } from "@/components/ui/WebsiteLink";
+import { IconTrendingUp, IconMerge, IconXCircle, IconBell, IconFlag } from "@/components/ui/Icons";
 import { db } from "@/lib/db";
 import { desc, inArray } from "drizzle-orm";
 import * as schema from "@/lib/schema";
@@ -12,11 +13,17 @@ import type { SignalType } from "@/types";
 
 export const revalidate = 0;
 
-const EXIT_LABEL: Record<string, { label: string; color: string; emoji: string }> = {
-  public:   { label: "IPO / Bolsa",       color: "text-emerald-700 bg-emerald-50 border-emerald-200", emoji: "📈" },
-  acquired: { label: "Adquirida",         color: "text-blue-700 bg-blue-50 border-blue-200",         emoji: "🤝" },
-  closed:   { label: "Cerró operaciones", color: "text-red-700 bg-red-50 border-red-200",             emoji: "❌" },
+const EXIT_LABEL: Record<string, { label: string; color: string; iconCls: string }> = {
+  public:   { label: "IPO / Bolsa",       color: "text-emerald-700 bg-emerald-50 border-emerald-200", iconCls: "text-emerald-600" },
+  acquired: { label: "Adquirida",         color: "text-blue-700 bg-blue-50 border-blue-200",         iconCls: "text-blue-600" },
+  closed:   { label: "Cerró operaciones", color: "text-red-700 bg-red-50 border-red-200",             iconCls: "text-red-500" },
 };
+
+const EXIT_ICON = {
+  public:   IconTrendingUp,
+  acquired: IconMerge,
+  closed:   IconXCircle,
+} as const;
 
 // Estimated EV multiple by sector (revenue multiple)
 const SECTOR_MULTIPLE: Record<string, number> = {
@@ -92,7 +99,7 @@ export default async function ExitPage() {
         {exitAlerts.length > 0 && (
           <Card>
             <SectionHeader
-              title="⚠️ Señales de salida pendientes de confirmación"
+              title="Señales de salida pendientes de confirmación"
               subtitle="El cron detectó posibles eventos de salida. Revisar y confirmar manualmente desde el Pipeline."
               className="mb-3"
             />
@@ -101,7 +108,7 @@ export default async function ExitPage() {
                 const sig = c.signals[0];
                 return (
                   <div key={c.id} className="flex items-center gap-4 p-3 bg-amber-50 border border-amber-200 rounded-[9px]">
-                    <span className="text-[18px]">🔔</span>
+                    <IconBell size={18} className="text-amber-600 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <Link href={`/empresa/${c.slug}`} className="text-[13px] font-semibold text-carbon hover:text-orange transition-colors">
@@ -126,7 +133,7 @@ export default async function ExitPage() {
         {exitedCompanies.length === 0 ? (
           <Card>
             <div className="flex flex-col items-center justify-center h-48 text-slate">
-              <p className="text-[40px] mb-3">🏁</p>
+              <IconFlag size={44} className="text-chalk mb-3" />
               <p className="text-[15px] font-semibold text-carbon">Sin salidas registradas aún</p>
               <p className="text-[12px] mt-2 text-center max-w-[300px]">
                 Cuando una empresa del Pipeline complete un exit (IPO, adquisición o cierre), aparecerá aquí con todos los detalles.
@@ -146,12 +153,13 @@ export default async function ExitPage() {
               );
               const exitDate = exitSignal?.date ?? c.signals[0]?.date ?? null;
 
+              const ExitIcon = EXIT_ICON[c.status as keyof typeof EXIT_ICON] ?? IconFlag;
               return (
                 <Card key={c.id}>
                   <div className="flex items-start gap-4">
-                    {/* Exit type badge */}
-                    <div className="shrink-0 w-11 h-11 rounded-[10px] bg-fog border border-chalk flex items-center justify-center text-[22px]">
-                      {exitInfo.emoji}
+                    {/* Exit type icon */}
+                    <div className={`shrink-0 w-11 h-11 rounded-[10px] border flex items-center justify-center ${exitInfo.color}`}>
+                      <ExitIcon size={22} className={exitInfo.iconCls} />
                     </div>
 
                     {/* Main info */}
