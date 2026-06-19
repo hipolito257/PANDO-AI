@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactElement } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Card } from "@/components/ui/Card";
 import { SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
@@ -560,7 +560,7 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
     : score >= 6 ? "text-amber-700 bg-amber-50 border-amber-200"
     : "text-slate bg-fog border-chalk";
 
-  const signalIconMap = {
+  const signalIconMap: Record<string, ReactElement> = {
     funding_due:              <IconFunding size={14} className="text-emerald-600" />,
     strategic_buyer_interest: <IconMerge size={14} className="text-blue-600" />,
     exec_change:              <IconPerson size={14} className="text-amber-600" />,
