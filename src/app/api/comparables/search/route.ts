@@ -41,14 +41,20 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { ticker, name, exchange, sector, description } = await req.json();
+  const { ticker, name, exchange, sector, description, website } = await req.json();
   if (!ticker || !name) return NextResponse.json({ error: "ticker and name required" }, { status: 400 });
 
   const existing = await db.query.publicComps.findFirst({ where: eq(publicComps.ticker, ticker) });
-  if (existing) return NextResponse.json(existing);
+  if (existing) {
+    // Backfill website if we now have it and it was missing
+    if (website && !existing.website) {
+      await db.update(publicComps).set({ website } as any).where(eq(publicComps.ticker, ticker));
+    }
+    return NextResponse.json({ ...existing, website: website ?? existing.website });
+  }
 
   const id = uid();
-  await db.insert(publicComps).values({ id, ticker, name, exchange: exchange ?? null, sector: sector ?? null, description: description ?? null });
+  await db.insert(publicComps).values({ id, ticker, name, exchange: exchange ?? null, sector: sector ?? null, description: description ?? null, website: website ?? null } as any);
   const created = await db.query.publicComps.findFirst({ where: eq(publicComps.ticker, ticker) });
   return NextResponse.json(created, { status: 201 });
 }

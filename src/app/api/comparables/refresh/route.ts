@@ -122,6 +122,7 @@ async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
         roe:             fd.returnOnEquity?.raw ?? null,
         debtToEquity:    fd.debtToEquity?.raw ?? null,
         beta:            sd.beta?.raw ?? ks.beta?.raw ?? null,
+        website:         ap.website ?? null,
         description:     ap.longBusinessSummary ?? null,
         lastRefreshed:   new Date().toISOString(),
       };

@@ -124,12 +124,13 @@ For each company provide:
 - "ticker": the exact stock ticker as listed on its primary exchange (e.g. "LVMH.PA", "7203.T", "AAPL")
 - "name": full company name
 - "exchange": exchange name (NYSE, NASDAQ, TSE, LSE, HKEx, etc.)
+- "website": the company's main website URL (e.g. "https://www.apple.com", "https://www.mercadolibre.com") — required, never omit
 - "reason": 1 sentence — what specific product/service matches the target
 - "businessModel": 1–2 sentences describing the business model and similarities/differences vs. target
 - "similarity": "Alta", "Media", or "Baja" with a brief justification
 
 Return ONLY a valid JSON array (no markdown, no preamble):
-[{"ticker":"EL","name":"Estée Lauder Companies","exchange":"NYSE","reason":"Global beauty company selling direct-to-consumer cosmetics","businessModel":"Sells luxury beauty products through retail and DTC channels. Similar in DTC approach; differs in having massive wholesale and travel retail distribution.","similarity":"Media — misma categoría pero diferente posicionamiento de precio"}]`;
+[{"ticker":"EL","name":"Estée Lauder Companies","exchange":"NYSE","website":"https://www.esteelauder.com","reason":"Global beauty company selling direct-to-consumer cosmetics","businessModel":"Sells luxury beauty products through retail and DTC channels. Similar in DTC approach; differs in having massive wholesale and travel retail distribution.","similarity":"Media — misma categoría pero diferente posicionamiento de precio"}]`;
 
   // ── Step 1: Get AI suggestions ────────────────────────────────────────────
   let rawSuggestions: any[] = [];

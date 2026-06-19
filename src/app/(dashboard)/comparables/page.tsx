@@ -21,7 +21,7 @@ type Company = {
 };
 type PublicComp = {
   id: string; ticker: string; name: string; sector: string | null;
-  exchange: string | null; description: string | null;
+  exchange: string | null; website: string | null; description: string | null;
   marketCapUsd: number | null; evUsd: number | null;
   revenueUsd: number | null; ebitdaUsd: number | null;
   revenueGrowth: number | null; grossMargin: number | null;
@@ -38,7 +38,7 @@ type CompSet = {
   aiDescriptions: string | null;
   company: Company | null; comps: PublicComp[];
 };
-type AISuggestion = { ticker: string; name: string; exchange: string; reason: string; businessModel: string; similarity: string };
+type AISuggestion = { ticker: string; name: string; exchange: string; website?: string; reason: string; businessModel: string; similarity: string };
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmtB = (n: number | null | undefined) => {
@@ -192,13 +192,13 @@ function ComparablesPage() {
     if (activeTab === "graficas") loadHistory();
   }, [activeTab, histTickerKey]);
 
-  async function addTicker(ticker: string, name: string, exchange?: string, aiDesc?: AIDesc) {
+  async function addTicker(ticker: string, name: string, exchange?: string, aiDesc?: AIDesc, website?: string | null) {
     if (tickers.includes(ticker)) return;
 
-    // Step 1: ensure publicComp record exists
+    // Step 1: ensure publicComp record exists (pass website so logo is available immediately)
     await fetch("/api/comparables/search", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticker, name, exchange }),
+      body: JSON.stringify({ ticker, name, exchange, website: website ?? null }),
     });
 
     // Step 2: save tickers ONLY (critical — no aiDescriptions, so no migration dependency)
@@ -531,10 +531,7 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
           return (
             <div key={c.ticker} className="px-4 py-3 hover:bg-fog/30 transition-colors">
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-[6px] flex items-center justify-center text-[10px] font-bold font-mono shrink-0 mt-0.5"
-                  style={{ background: COLORS[i % COLORS.length] + "18", color: COLORS[i % COLORS.length], border: `1px solid ${COLORS[i % COLORS.length]}30` }}>
-                  {c.ticker.slice(0,2)}
-                </div>
+                <CompanyLogo name={c.name} website={c.website} size="md" className="mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-[13px] font-semibold text-carbon">{c.name}</span>
@@ -818,9 +815,7 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
               <tr key={comp.ticker} className="hover:bg-fog/40 transition-colors">
                 <td className="px-3 py-2.5 sticky left-0 bg-paper">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded bg-fog border border-chalk flex items-center justify-center text-[9px] font-bold text-slate shrink-0">
-                      {comp.ticker.slice(0,2)}
-                    </div>
+                    <CompanyLogo name={comp.name} website={comp.website} size="sm" />
                     <div>
                       <div className="flex items-center gap-1.5">
                         <p className="text-[12px] font-medium text-carbon">{comp.name}</p>
@@ -1263,9 +1258,7 @@ function PeerSearchDrawer({
           )}
           {!searching && results.map(r => (
             <div key={r.ticker} className="flex items-center gap-3 p-3 bg-fog rounded-[8px] border border-chalk hover:border-carbon/30 transition-colors">
-              <div className="w-9 h-9 rounded-[6px] bg-paper border border-chalk flex items-center justify-center text-[10px] font-bold font-mono text-carbon shrink-0">
-                {r.ticker.slice(0, 3)}
-              </div>
+              <CompanyLogo name={r.name} size="md" />
               <div className="flex-1 min-w-0">
                 <p className="text-[12px] font-semibold text-carbon truncate">{r.name}</p>
                 <p className="text-[10px] font-mono text-slate">{r.ticker} · {r.exchange}</p>
@@ -1314,7 +1307,7 @@ function AISuggestPanel({
 }: {
   companyId: string; existingTickers: string[];
   onClose: () => void;
-  onAdd: (ticker: string, name: string, exchange?: string, aiDesc?: AIDesc) => Promise<void>;
+  onAdd: (ticker: string, name: string, exchange?: string, aiDesc?: AIDesc, website?: string | null) => Promise<void>;
 }) {
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState("");
@@ -1342,7 +1335,7 @@ function AISuggestPanel({
       reason: s.reason,
       businessModel: s.businessModel,
       similarity: s.similarity,
-    });
+    }, s.website ?? null);
     setAdded(prev => new Set([...prev, s.ticker]));
   }
 
@@ -1419,9 +1412,7 @@ function AISuggestPanel({
               <div key={s.ticker} className="p-3 bg-fog rounded-[8px] border border-chalk hover:border-carbon/30 transition-colors space-y-2">
                 {/* Header row */}
                 <div className="flex items-start gap-2">
-                  <div className="w-9 h-9 rounded-[6px] bg-paper border border-chalk flex items-center justify-center text-[10px] font-bold font-mono text-carbon shrink-0">
-                    {s.ticker.slice(0,3)}
-                  </div>
+                  <CompanyLogo name={s.name} website={s.website} size="md" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="text-[12px] font-semibold text-carbon">{s.name}</p>

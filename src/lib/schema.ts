@@ -114,6 +114,7 @@ export const publicComps = pgTable("PublicComp", {
   name:          text("name").notNull(),
   sector:        text("sector"),
   exchange:      text("exchange"),
+  website:       text("website"),
   description:   text("description"),
   marketCapUsd:  doublePrecision("marketCapUsd"),
   evUsd:         doublePrecision("evUsd"),
