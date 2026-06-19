@@ -54,25 +54,24 @@ export default function RadarPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    // Main radar: exclude pipeline and exited
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    if (sector) params.set("sector", sector);
-    if (country) params.set("country", country);
-    if (stage) params.set("stage", stage);
-    if (mandateId) params.set("mandate", mandateId);
-    const [main, exited] = await Promise.all([
-      fetch(`/api/companies?${params}`).then(r => r.json()),
-      fetch(`/api/companies?${new URLSearchParams({ ...Object.fromEntries(params), limit: "200" })}`).then(r => r.json()).catch(() => []),
-    ]);
-    const mainData = Array.isArray(main) ? main : (main.companies ?? []);
-    // Radar tab: ONLY monitoring-status companies. Pipeline has its own tab.
-    setCompanies(mainData.filter((c: Company) => c.status === "monitoring"));
-    // Pipeline tab: only pipeline-status companies (for management actions)
-    setPipeline(mainData.filter((c: Company) => c.status === "pipeline"));
-    // Salidas tab: exit statuses
-    setExited(mainData.filter((c: Company) => EXIT_STATUSES.includes(c.status)));
-    setLoading(false);
+    try {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (sector) params.set("sector", sector);
+      if (country) params.set("country", country);
+      if (stage) params.set("stage", stage);
+      if (mandateId) params.set("mandate", mandateId);
+      const res = await fetch(`/api/companies?${params}`);
+      const main = res.ok ? await res.json() : [];
+      const mainData = Array.isArray(main) ? main : (main.companies ?? []);
+      setCompanies(mainData.filter((c: Company) => c.status === "monitoring"));
+      setPipeline(mainData.filter((c: Company) => c.status === "pipeline"));
+      setExited(mainData.filter((c: Company) => EXIT_STATUSES.includes(c.status)));
+    } catch {
+      // Network/API error — show empty state instead of infinite spinner
+    } finally {
+      setLoading(false);
+    }
   }, [q, sector, country, stage, mandateId]);
 
   const load = loadAll;
