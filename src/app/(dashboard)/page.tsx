@@ -3,8 +3,9 @@ import { KpiCard, Card, SectionHeader } from "@/components/ui/Card";
 import { SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
 import { Spark } from "@/components/charts/Spark";
 import { Donut } from "@/components/charts/Donut";
+import { DailyDigest } from "@/components/dashboard/DailyDigest";
 import { db } from "@/lib/db";
-import { desc } from "drizzle-orm";
+import { desc, gte, lte, and } from "drizzle-orm";
 import { fmtDate, fmtM } from "@/lib/utils";
 import Link from "next/link";
 import type { SignalType } from "@/types";
@@ -34,7 +35,12 @@ const ACTION_LABELS: Record<string, string> = {
 export const revalidate = 0;
 
 async function getDashboardData() {
-  const [allCompanies, allSignals, allMandates, allSources, recentActivity] = await Promise.all([
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const [allCompanies, allSignals, allMandates, allSources, recentActivity, todayCronLogs] = await Promise.all([
     db.query.companies.findMany({
       with: { signals: { limit: 2, orderBy: (s, { desc }) => [desc(s.date)] } },
       orderBy: [desc(schema.companies.score)],
@@ -54,12 +60,19 @@ async function getDashboardData() {
       orderBy: [desc(schema.activityLog.createdAt)],
       limit: 12,
     }),
+    db.query.cronLogs.findMany({
+      where: and(
+        gte(schema.cronLogs.ranAt, todayStart.toISOString()),
+        lte(schema.cronLogs.ranAt, todayEnd.toISOString()),
+      ),
+      orderBy: [desc(schema.cronLogs.ranAt)],
+    }).catch(() => []),
   ]);
-  return { companies: allCompanies, signals: allSignals, mandates: allMandates, sources: allSources, activity: recentActivity };
+  return { companies: allCompanies, signals: allSignals, mandates: allMandates, sources: allSources, activity: recentActivity, cronLogs: todayCronLogs };
 }
 
 export default async function DashboardPage() {
-  const { companies, signals, mandates, sources, activity } = await getDashboardData();
+  const { companies, signals, mandates, sources, activity, cronLogs } = await getDashboardData();
 
   const pipeline = companies.filter((c) => c.status === "pipeline");
   const monitoring = companies.filter((c) => c.status === "monitoring");
@@ -83,6 +96,9 @@ export default async function DashboardPage() {
           <KpiCard label="Señales esta semana" value={signals.length} delta={signals.length > 5 ? 22 : -5} sub={`${highSignals.length} alta prioridad`} />
           <KpiCard label="Conectores activos" value={sources.length} sub="de 15 disponibles" />
         </div>
+
+        {/* Daily digest */}
+        <DailyDigest logs={cronLogs as any} />
 
         {/* Row 2 */}
         <div className="grid grid-cols-3 gap-4">

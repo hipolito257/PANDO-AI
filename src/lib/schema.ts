@@ -299,3 +299,21 @@ export const mandateMatchesRelations = relations(mandateMatches, ({ one }) => ({
 export const compSetsRelations = relations(compSets, ({ one }) => ({
   company: one(companies, { fields: [compSets.companyId], references: [companies.id] }),
 }));
+
+// ── Cron Logs ─────────────────────────────────────────────────────────────────
+
+export const cronLogs = pgTable("CronLog", {
+  id:                  text("id").primaryKey(),
+  ranAt:               text("ranAt").notNull(),
+  durationMs:          integer("durationMs"),
+  companiesScanned:    integer("companiesScanned").notNull().default(0),
+  newsAdded:           integer("newsAdded").notNull().default(0),
+  signalsAdded:        integer("signalsAdded").notNull().default(0),
+  exitsDetected:       integer("exitsDetected").notNull().default(0),
+  fundingUpdates:      integer("fundingUpdates").notNull().default(0),
+  discovered:          integer("discovered").notNull().default(0),
+  candidatesExtracted: integer("candidatesExtracted").notNull().default(0),
+  filteredByThesis:    integer("filteredByThesis").notNull().default(0),
+  status:              text("status").notNull().default("ok"),
+  errorMsg:            text("errorMsg"),
+});

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { companies, newsItems, signals } from "@/lib/schema";
+import { companies, newsItems, signals, cronLogs } from "@/lib/schema";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 
@@ -359,6 +359,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const startedAt = Date.now();
   const systemApiKey = process.env.ANTHROPIC_API_KEY ?? null;
   const cos = await db.query.companies.findMany();
   const activeCompanies = cos.filter(c => !["public","acquired","closed"].includes(c.status));
@@ -539,16 +540,34 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const durationMs = Date.now() - startedAt;
+
+  await db.insert(cronLogs).values({
+    id:                  uid(),
+    ranAt:               new Date().toISOString(),
+    durationMs,
+    companiesScanned:    activeCompanies.length,
+    newsAdded:           totalNews,
+    signalsAdded:        totalSignals,
+    exitsDetected:       totalExits,
+    fundingUpdates:      totalFundingUpdates,
+    discovered,
+    candidatesExtracted: scored,
+    filteredByThesis:    filteredOut,
+    status:              "ok",
+  }).catch(() => {/* non-fatal */});
+
   return NextResponse.json({
     ok: true,
     ran: new Date().toISOString(),
+    durationMs,
     companies: activeCompanies.length,
     totalNews,
     totalSignals,
     totalExits,
     totalFundingUpdates,
     discovery: {
-      headlineSources: systemApiKey ? 5 : 0, // LATAM feeds + VC queries + signal queries + sector queries + exit queries
+      headlineSources: systemApiKey ? 5 : 0,
       candidatesExtracted: scored,
       filteredByThesis: filteredOut,
       added: discovered,
