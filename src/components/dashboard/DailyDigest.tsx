@@ -54,6 +54,7 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
 
   // Most recent run
   const latest = logs[0];
+  const running = latest.status === "running";
   const ok = latest.status === "ok";
   const dur = fmtDuration(latest.durationMs);
 
@@ -65,7 +66,7 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-chalk/30 transition-colors text-left"
       >
         {/* Status dot */}
-        <span className={`w-1.5 h-1.5 rounded-full flex-none ${ok ? "bg-emerald-500" : "bg-red-500"}`} />
+        <span className={`w-1.5 h-1.5 rounded-full flex-none ${running ? "bg-amber-400 animate-pulse" : ok ? "bg-emerald-500" : "bg-red-500"}`} />
 
         {/* Label */}
         <span className="text-[11px] font-semibold text-carbon uppercase tracking-wide flex-none">
@@ -77,13 +78,19 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
 
         {/* Chips */}
         <div className="flex items-center gap-1.5 flex-1 flex-wrap">
-          {latest.newsAdded > 0 && <Chip label="noticias" value={latest.newsAdded} />}
-          {latest.signalsAdded > 0 && <Chip label="señales" value={latest.signalsAdded} accent />}
-          {latest.discovered > 0 && <Chip label="empresas nuevas" value={latest.discovered} accent />}
-          {latest.fundingUpdates > 0 && <Chip label="funding" value={latest.fundingUpdates} />}
-          {latest.exitsDetected > 0 && <Chip label="exits" value={latest.exitsDetected} />}
-          {latest.newsAdded === 0 && latest.signalsAdded === 0 && latest.discovered === 0 && (
-            <span className="text-[11px] text-slate">Sin cambios hoy</span>
+          {running ? (
+            <span className="text-[11px] text-amber-600 font-medium">Ejecutando ahora…</span>
+          ) : (
+            <>
+              {latest.newsAdded > 0 && <Chip label="noticias" value={latest.newsAdded} />}
+              {latest.signalsAdded > 0 && <Chip label="señales" value={latest.signalsAdded} accent />}
+              {latest.discovered > 0 && <Chip label="empresas nuevas" value={latest.discovered} accent />}
+              {latest.fundingUpdates > 0 && <Chip label="funding" value={latest.fundingUpdates} />}
+              {latest.exitsDetected > 0 && <Chip label="exits" value={latest.exitsDetected} />}
+              {latest.newsAdded === 0 && latest.signalsAdded === 0 && latest.discovered === 0 && (
+                <span className="text-[11px] text-slate">Sin cambios hoy</span>
+              )}
+            </>
           )}
         </div>
 
@@ -134,8 +141,8 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
           {/* Footer */}
           <div className="flex items-center gap-3 pt-1 border-t border-chalk text-[10px] text-slate">
             {dur && <span>Duración: {dur}</span>}
-            <span className={`font-medium ${ok ? "text-emerald-600" : "text-red-500"}`}>
-              {ok ? "Estado: OK" : `Error: ${latest.errorMsg ?? "desconocido"}`}
+            <span className={`font-medium ${running ? "text-amber-600" : ok ? "text-emerald-600" : "text-red-500"}`}>
+              {running ? "⏳ En ejecución…" : ok ? "Estado: OK" : `Error: ${latest.errorMsg ?? "desconocido"}`}
             </span>
             {logs.length > 1 && (
               <span className="ml-auto">

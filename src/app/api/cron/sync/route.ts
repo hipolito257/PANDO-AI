@@ -44,12 +44,14 @@ async function fetchGoogleNews(query: string): Promise<{ title: string; url: str
   } catch { return []; }
 }
 
-// ── Fuentes RSS especializadas en LATAM tech ─────────────────────────────────
+// ── Fuentes RSS especializadas en LATAM tech ──────────────────────────────────
 const LATAM_RSS_FEEDS = [
-  { url: "https://contxto.com/en/feed/",          name: "Contxto EN" },
-  { url: "https://contxto.com/es/feed/",          name: "Contxto ES" },
-  { url: "https://www.larepublica.co/feed",        name: "La República" },
-  { url: "https://www.eleconomista.com.mx/rss/tecnologia.xml", name: "El Economista MX" },
+  { url: "https://contxto.com/en/feed/",                              name: "Contxto EN" },
+  { url: "https://contxto.com/es/feed/",                              name: "Contxto ES" },
+  { url: "https://www.larepublica.co/feed",                           name: "La República" },
+  { url: "https://www.eleconomista.com.mx/rss/tecnologia.xml",        name: "El Economista MX" },
+  { url: "https://www.pulso.social/feed/",                            name: "Pulso Social" },
+  { url: "https://startups.com.br/feed/",                             name: "Startups BR" },
 ];
 
 async function fetchLatamFeeds(): Promise<{ title: string; url: string; date: string; source: string }[]> {
@@ -68,8 +70,7 @@ async function fetchLatamFeeds(): Promise<{ title: string; url: string; date: st
   return results.flatMap(r => (r.status === "fulfilled" ? r.value : []));
 }
 
-// ── Queries de discovery ampliadas ────────────────────────────────────────────
-// Se ejecutan en lotes paralelos para no exceder el timeout de Vercel
+// ── Queries de discovery ──────────────────────────────────────────────────────
 const VC_QUERIES = [
   '"Kaszek" invierte startup',
   '"Softbank LATAM" inversión startup',
@@ -79,6 +80,12 @@ const VC_QUERIES = [
   '"Y Combinator" LATAM startup 2025',
   '"Accel" LATAM startup inversión',
   '"a16z" latinoamerica startup',
+  '"Monashees" startup inversión',
+  '"Valor Capital" startup LATAM',
+  '"QED Investors" fintech LATAM',
+  '"Ribbit Capital" fintech latinoamerica',
+  '"Base10" LATAM startup',
+  '"Endeavor" startup latinoamerica inversión',
 ];
 
 const SIGNAL_QUERIES = [
@@ -94,8 +101,6 @@ const SIGNAL_QUERIES = [
   '"ecommerce" OR "marketplace" latinoamerica startup serie 2025',
 ];
 
-// ── Queries específicas para detectar exits en LATAM ─────────────────────────
-// Estas se agregan al pool general de headlines para alimentar el extraction model
 const EXIT_DISCOVERY_QUERIES = [
   'startup latinoamerica IPO bolsa 2025 2026',
   'startup LATAM "oferta pública" debut bursátil 2025 2026',
@@ -137,9 +142,19 @@ function detectSignalType(title: string): string | null {
   return null;
 }
 
-// ── Exit signal detection (keyword pre-filter, NO auto status change) ──────────
-// This only creates a signal for human review — never changes company status.
-// Exit keywords that indicate a POTENTIAL exit event worth flagging
+// ── Score delta per signal ────────────────────────────────────────────────────
+function signalScoreDelta(type: string, severity: string, title: string): number {
+  const t = title.toLowerCase();
+  // Negative signals (layoffs, cuts) reduce score
+  if (type === "exec_change" && (t.includes("despido") || t.includes("recorte") || t.includes("reduce personal") || t.includes("layoff"))) {
+    return -3;
+  }
+  if (severity === "high") return 5;
+  if (severity === "medium") return 2;
+  return 1;
+}
+
+// ── Exit detection helpers ────────────────────────────────────────────────────
 function mightHaveExitSignal(titles: string[]): boolean {
   const text = titles.join(" ").toLowerCase();
   return (
@@ -154,9 +169,6 @@ function mightHaveExitSignal(titles: string[]): boolean {
   );
 }
 
-// ── Claude validates if headlines CONFIRM a real exit event ───────────────────
-// Only called when mightHaveExitSignal() is true — avoids false positives.
-// Returns null if Claude is not confident, or an exit signal object.
 async function validateExitWithClaude(
   companyName: string,
   headlines: string[],
@@ -180,17 +192,14 @@ STRICT RULES:
 5. Be very conservative — a false positive is much worse than a false negative
 
 Return ONLY this JSON (no markdown):
-{"confirmed": false, "type": null, "confidence": 0.0, "summary": "reason"}
-
-If confirmed, example:
-{"confirmed": true, "type": "acquired", "confidence": 0.92, "summary": "Multiple headlines confirm Kushki was acquired by Mastercard for $125M in March 2026"}`;
+{"confirmed": false, "type": null, "confidence": 0.0, "summary": "reason"}`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 300,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -205,7 +214,7 @@ If confirmed, example:
   } catch { return null; }
 }
 
-// ── Funding extraction ─────────────────────────────────────────────────────────
+// ── Funding extraction ────────────────────────────────────────────────────────
 function extractFundingFromTitles(titles: string[]): { amount: number | null; stage: string | null } {
   const text = titles.join(" ");
   const amtMatch = text.match(/\$\s*(\d+(?:\.\d+)?)\s*(millones|M|MM|mil millones|B)/i) ??
@@ -228,7 +237,127 @@ function extractFundingFromTitles(titles: string[]): { amount: number | null; st
   return { amount, stage };
 }
 
-// ── Tipos para extracción y scoring ───────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+type CompanyRow = Awaited<ReturnType<typeof db.query.companies.findMany>>[number];
+
+type CompanyResult = {
+  company: string;
+  newsAdded: number;
+  signalsAdded: number;
+  exitsDetected: number;
+  fundingUpdated: boolean;
+};
+
+// ── Procesa una empresa individual ────────────────────────────────────────────
+async function processCompany(
+  co: CompanyRow,
+  systemApiKey: string | null,
+  sevenDaysAgo: string,
+): Promise<CompanyResult> {
+  let newsAdded = 0;
+  let signalsAdded = 0;
+  let exitsDetected = 0;
+  let fundingUpdated = false;
+  let scoreAdjustment = 0;
+  const allTitles: string[] = [];
+
+  try {
+    const items = await fetchGoogleNews(`"${co.name}"`);
+
+    for (const item of items) {
+      allTitles.push(item.title);
+
+      const exists = await db.query.newsItems.findFirst({
+        where: (n, { eq }) => eq(n.url, item.url),
+      });
+      if (exists) continue;
+
+      await db.insert(newsItems).values({
+        id: uid(), companyId: co.id,
+        title: item.title, source: item.source, url: item.url,
+        date: item.date, sentiment: guessSentiment(item.title),
+      });
+      newsAdded++;
+
+      const signalType = detectSignalType(item.title);
+      if (signalType) {
+        // Dedup: skip if same type already exists within the last 7 days
+        const recent = await db.query.signals.findFirst({
+          where: (s, { and, eq, gte }) => and(
+            eq(s.companyId, co.id),
+            eq(s.type, signalType),
+            gte(s.date, sevenDaysAgo),
+          ),
+        });
+        if (!recent) {
+          const severity = signalType === "funding_due" || signalType === "strategic_buyer_interest" ? "high" : "medium";
+          await db.insert(signals).values({
+            id: randomUUID(), companyId: co.id,
+            type: signalType, title: item.title.slice(0, 120),
+            detail: `Detectado automáticamente via Google News: ${item.source}`,
+            severity, isRead: false, date: item.date,
+          });
+          signalsAdded++;
+          scoreAdjustment += signalScoreDelta(signalType, severity, item.title);
+        }
+      }
+    }
+
+    // Exit detection: keyword pre-filter → Claude confirms
+    if (mightHaveExitSignal(allTitles) && systemApiKey) {
+      const exitValidation = await validateExitWithClaude(co.name, allTitles, systemApiKey);
+      if (exitValidation?.confirmed && exitValidation.confidence >= 0.85 && exitValidation.type) {
+        const exitTypeLabel =
+          exitValidation.type === "public"   ? "IPO / Salida a bolsa"   :
+          exitValidation.type === "acquired" ? "Adquisición / Fusión"   :
+                                               "Cierre de operaciones";
+        const existingExitSignal = await db.query.signals.findFirst({
+          where: (s, { and, eq }) => and(eq(s.companyId, co.id), eq(s.type, "exit_signal")),
+        });
+        if (!existingExitSignal) {
+          await db.insert(signals).values({
+            id: randomUUID(), companyId: co.id,
+            type: "exit_signal",
+            title: `⚠️ Posible ${exitTypeLabel} detectado — requiere confirmación`,
+            detail: `${exitValidation.summary} (Confianza: ${Math.round(exitValidation.confidence * 100)}%). Confirmar en Pipeline con 🏁 Salida.`,
+            severity: "high", isRead: false, date: new Date().toISOString(),
+          });
+          exitsDetected++;
+          signalsAdded++;
+          scoreAdjustment += 5;
+        }
+      }
+    }
+
+    // Funding update from title keywords
+    if (allTitles.some(t => t.toLowerCase().includes("ronda") || t.toLowerCase().includes("levanta") || t.toLowerCase().includes("millones"))) {
+      const { amount, stage } = extractFundingFromTitles(allTitles);
+      const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+      if (amount && amount > (co.lastFundingAmt ?? 0)) {
+        updates.lastFundingAmt = amount;
+        updates.lastFundingDate = new Date().toISOString().slice(0, 10);
+        updates.totalFunding = (co.totalFunding ?? 0) + amount;
+        fundingUpdated = true;
+      }
+      if (stage) updates.fundingStage = stage;
+      if (Object.keys(updates).length > 1) {
+        await db.update(companies).set(updates as any).where(eq(companies.id, co.id));
+      }
+    }
+
+    // Apply score delta (clamped 0–100)
+    if (scoreAdjustment !== 0) {
+      const newScore = Math.min(100, Math.max(0, (co.score ?? 0) + scoreAdjustment));
+      await db.update(companies)
+        .set({ score: newScore, updatedAt: new Date().toISOString() })
+        .where(eq(companies.id, co.id));
+    }
+  } catch { /* skip failed company silently */ }
+
+  return { company: co.name, newsAdded, signalsAdded, exitsDetected, fundingUpdated };
+}
+
+// ── Extraction / scoring types ────────────────────────────────────────────────
 type ExtractedCompany = {
   name: string;
   sector: string;
@@ -240,7 +369,6 @@ type ExtractedCompany = {
   thesisNote?: string;
 };
 
-// ── PASO 1: Extraer empresas de headlines con Claude ─────────────────────────
 async function extractCompaniesFromHeadlines(
   headlines: string[],
   existingNames: Set<string>,
@@ -264,20 +392,19 @@ For each company found, provide:
 - fundingStage: if mentioned (Seed, Serie A, Serie B, Serie C, Growth, etc.)
 - totalFunding: funding amount in USD millions if clearly mentioned (number only, no symbols)
 
-Skip companies that already exist in this list: ${JSON.stringify([...existingNames].slice(0, 50))}
+Skip companies that already exist in this list: ${JSON.stringify([...existingNames])}
 
 Headlines:
 ${headlines.map((h, i) => `${i + 1}. ${h}`).join("\n")}
 
-Return ONLY a valid JSON array. If no companies found, return [].
-Example: [{"name":"Konfio","sector":"Fintech","country":"México","description":"Plataforma de crédito para PYMEs","fundingStage":"Serie D","totalFunding":110}]`;
+Return ONLY a valid JSON array. If no companies found, return [].`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 2000,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -292,7 +419,6 @@ Example: [{"name":"Konfio","sector":"Fintech","country":"México","description":
   } catch { return []; }
 }
 
-// ── PASO 2: Scoring contra tesis de inversión ────────────────────────────────
 async function scoreAndFilterCompanies(
   candidates: ExtractedCompany[],
   apiKey: string,
@@ -300,7 +426,6 @@ async function scoreAndFilterCompanies(
 ): Promise<ExtractedCompany[]> {
   if (!candidates.length) return [];
 
-  // Sectores prioritarios: los del radar + defaults
   const prioritySectors = [...new Set([
     ...radarSectors,
     "Fintech", "SaaS", "Logistics", "Healthtech", "Marketplace",
@@ -335,13 +460,12 @@ ${JSON.stringify(candidates, null, 2)}`;
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         max_tokens: 2500,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(30000),
     });
-    // If scoring fails for any reason, fall back to returning all candidates
     if (!res.ok) return candidates;
     const data = await res.json();
     const text: string = data?.content?.[0]?.text ?? "[]";
@@ -362,97 +486,50 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const systemApiKey = process.env.ANTHROPIC_API_KEY ?? null;
   const cos = await db.query.companies.findMany();
-  const activeCompanies = cos.filter(c => !["public","acquired","closed"].includes(c.status));
+  const activeCompanies = cos.filter(c => !["public", "acquired", "closed"].includes(c.status));
 
-  const report: Record<string, unknown>[] = [];
+  // ── Guardar CronLog al inicio con status "running" ────────────────────────
+  // Si la función hace timeout, el registro "running" queda en DB (visible en el widget)
+  const cronLogId = uid();
+  await db.insert(cronLogs).values({
+    id: cronLogId,
+    ranAt: new Date().toISOString(),
+    durationMs: null,
+    companiesScanned: activeCompanies.length,
+    newsAdded: 0,
+    signalsAdded: 0,
+    exitsDetected: 0,
+    fundingUpdates: 0,
+    discovered: 0,
+    candidatesExtracted: 0,
+    filteredByThesis: 0,
+    status: "running",
+  }).catch(() => {});
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   let totalNews = 0;
   let totalSignals = 0;
   let totalExits = 0;
   let totalFundingUpdates = 0;
+  const report: Record<string, unknown>[] = [];
 
-  // ── PHASE 1: Actualizar empresas existentes ───────────────────────────────
-  for (const co of activeCompanies) {
-    let newsAdded = 0;
-    let signalsAdded = 0;
-    const allTitles: string[] = [];
-
-    try {
-      const items = await fetchGoogleNews(`"${co.name}"`);
-      for (const item of items) {
-        allTitles.push(item.title);
-        const exists = await db.query.newsItems.findFirst({ where: (n, { eq }) => eq(n.url, item.url) });
-        if (exists) continue;
-
-        await db.insert(newsItems).values({
-          id: uid(), companyId: co.id,
-          title: item.title, source: item.source, url: item.url,
-          date: item.date, sentiment: guessSentiment(item.title),
-        });
-        newsAdded++;
-
-        const signalType = detectSignalType(item.title);
-        if (signalType) {
-          await db.insert(signals).values({
-            id: randomUUID(), companyId: co.id,
-            type: signalType, title: item.title.slice(0, 120),
-            detail: `Detectado automáticamente via Google News: ${item.source}`,
-            severity: signalType === "funding_due" || signalType === "strategic_buyer_interest" ? "high" : "medium",
-            isRead: false, date: item.date,
-          });
-          signalsAdded++;
-        }
-      }
-
-      // ── Exit detection: conservative, requires Claude confirmation ──────────
-      // Step 1: cheap keyword pre-filter to avoid Claude calls on every company
-      if (mightHaveExitSignal(allTitles) && systemApiKey) {
-        // Step 2: Claude validates — only flags if confidence >= 0.85
-        const exitValidation = await validateExitWithClaude(co.name, allTitles, systemApiKey);
-        if (exitValidation?.confirmed && exitValidation.confidence >= 0.85 && exitValidation.type) {
-          // ⚠️ NEVER auto-change status — create a high-severity signal for human review
-          const exitTypeLabel =
-            exitValidation.type === "public"   ? "IPO / Salida a bolsa"          :
-            exitValidation.type === "acquired" ? "Adquisición / Fusión"           :
-                                                 "Cierre de operaciones";
-          // Check we haven't already created this signal
-          const existingExitSignal = await db.query.signals.findFirst({
-            where: (s, { eq: eqS }) => eqS(s.companyId, co.id) && eqS(s.type, "exit_signal"),
-          });
-          if (!existingExitSignal) {
-            await db.insert(signals).values({
-              id: randomUUID(), companyId: co.id,
-              type: "exit_signal",
-              title: `⚠️ Posible ${exitTypeLabel} detectado — requiere confirmación`,
-              detail: `${exitValidation.summary} (Confianza: ${Math.round(exitValidation.confidence * 100)}%). Ir al Pipeline y confirmar con el botón 🏁 Salida si corresponde.`,
-              severity: "high", isRead: false, date: new Date().toISOString(),
-            });
-            totalExits++;
-            signalsAdded++;
-          }
-        }
-      }
-
-      // Funding update from news
-      if (allTitles.some(t => t.toLowerCase().includes("ronda") || t.toLowerCase().includes("levanta") || t.toLowerCase().includes("millones"))) {
-        const { amount, stage } = extractFundingFromTitles(allTitles);
-        const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-        if (amount && amount > (co.lastFundingAmt ?? 0)) {
-          updates.lastFundingAmt = amount;
-          updates.lastFundingDate = new Date().toISOString().slice(0, 10);
-          updates.totalFunding = (co.totalFunding ?? 0) + amount;
-          totalFundingUpdates++;
-        }
-        if (stage) updates.fundingStage = stage;
-        if (Object.keys(updates).length > 1) {
-          await db.update(companies).set(updates as any).where(eq(companies.id, co.id));
-        }
-      }
-    } catch { /* skip failed companies */ }
-
-    report.push({ company: co.name, news: newsAdded, signals: signalsAdded });
-    totalNews += newsAdded;
-    totalSignals += signalsAdded;
-    await sleep(300);
+  // ── PHASE 1: Actualizar empresas — en batches paralelos de 5 ─────────────
+  const BATCH = 5;
+  for (let i = 0; i < activeCompanies.length; i += BATCH) {
+    const batch = activeCompanies.slice(i, i + BATCH);
+    const results = await Promise.all(
+      batch.map(co => processCompany(co, systemApiKey, sevenDaysAgo))
+    );
+    for (const r of results) {
+      totalNews    += r.newsAdded;
+      totalSignals += r.signalsAdded;
+      totalExits   += r.exitsDetected;
+      if (r.fundingUpdated) totalFundingUpdates++;
+      report.push({ company: r.company, news: r.newsAdded, signals: r.signalsAdded });
+    }
+    // Small pause between batches to respect Google News rate limits
+    if (i + BATCH < activeCompanies.length) await sleep(500);
   }
 
   // ── PHASE 2: Discovery con fuentes ampliadas + scoring ────────────────────
@@ -465,38 +542,24 @@ export async function GET(req: NextRequest) {
     const existingSlugs = new Set(cos.map(c => c.slug));
     const radarSectors = [...new Set(activeCompanies.map(c => c.sector).filter(Boolean) as string[])];
 
-    // ── 2a. Fuentes especializadas LATAM (paralelo) ───────────────────────
-    const latamFeedItems = await fetchLatamFeeds();
-    const latamHeadlines = latamFeedItems.map(i => i.title);
-
-    // ── 2b. Queries de VCs (paralelo en lotes) ────────────────────────────
-    const vcHeadlines = await fetchQueriesParallel(VC_QUERIES);
-
-    // ── 2c. Queries de señales / sectores + exits (paralelo en lotes) ────────
-    const sectorQueries = radarSectors
-      .slice(0, 4)
-      .map(s => `startup "${s}" latinoamerica ronda inversión 2025`);
-
-    const signalHeadlines = await fetchQueriesParallel([
-      ...SIGNAL_QUERIES,
-      ...sectorQueries,
+    const [latamFeedItems, vcHeadlines, signalHeadlines, exitHeadlines] = await Promise.all([
+      fetchLatamFeeds(),
+      fetchQueriesParallel(VC_QUERIES),
+      fetchQueriesParallel([
+        ...SIGNAL_QUERIES,
+        ...radarSectors.slice(0, 4).map(s => `startup "${s}" latinoamerica ronda inversión 2025`),
+      ]),
+      fetchQueriesParallel(EXIT_DISCOVERY_QUERIES),
     ]);
 
-    // ── 2d. Queries de exits en LATAM ─────────────────────────────────────
-    const exitHeadlines = await fetchQueriesParallel(EXIT_DISCOVERY_QUERIES);
-
-    // ── Combinar y deduplicar ─────────────────────────────────────────────
     const allHeadlines = [...new Set([
-      ...latamHeadlines,
+      ...latamFeedItems.map(i => i.title),
       ...vcHeadlines,
       ...signalHeadlines,
       ...exitHeadlines,
     ])];
 
-    // ── 2e. Claude extrae empresas candidatas (Paso 1) ────────────────────
     const candidates = await extractCompaniesFromHeadlines(allHeadlines, existingNames, systemApiKey);
-
-    // ── 2f. Claude filtra por tesis de inversión (Paso 2) ─────────────────
     const qualified = candidates.length > 0
       ? await scoreAndFilterCompanies(candidates, systemApiKey, radarSectors)
       : [];
@@ -504,13 +567,11 @@ export async function GET(req: NextRequest) {
     filteredOut = candidates.length - qualified.length;
     scored = candidates.length;
 
-    // ── 2g. Insertar las que pasan el filtro ──────────────────────────────
     for (const comp of qualified) {
       if (!comp.name || comp.name.length < 2) continue;
       const slug = comp.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       if (existingNames.has(comp.name.toLowerCase()) || existingSlugs.has(slug)) continue;
 
-      // Incluir nota de tesis en la descripción
       const descWithNote = comp.thesisNote
         ? `${comp.description} [Tesis: ${comp.thesisNote} Score: ${comp.thesisScore}/10]`
         : comp.description;
@@ -526,7 +587,7 @@ export async function GET(req: NextRequest) {
           fundingStage: comp.fundingStage ?? null,
           totalFunding: comp.totalFunding ?? null,
           status: "monitoring",
-          score: comp.thesisScore ? Math.round(comp.thesisScore * 10) : 0, // 0-100 scale
+          score: comp.thesisScore ? Math.round(comp.thesisScore * 10) : 0,
           confidence: comp.thesisScore ? comp.thesisScore / 10 : 0.3,
           createdBy: "PANDO Auto-Discovery",
           updatedBy: "PANDO Auto-Discovery",
@@ -540,22 +601,22 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Actualizar CronLog con resultados finales ─────────────────────────────
   const durationMs = Date.now() - startedAt;
-
-  await db.insert(cronLogs).values({
-    id:                  uid(),
-    ranAt:               new Date().toISOString(),
-    durationMs,
-    companiesScanned:    activeCompanies.length,
-    newsAdded:           totalNews,
-    signalsAdded:        totalSignals,
-    exitsDetected:       totalExits,
-    fundingUpdates:      totalFundingUpdates,
-    discovered,
-    candidatesExtracted: scored,
-    filteredByThesis:    filteredOut,
-    status:              "ok",
-  }).catch(() => {/* non-fatal */});
+  await db.update(cronLogs)
+    .set({
+      durationMs,
+      newsAdded:           totalNews,
+      signalsAdded:        totalSignals,
+      exitsDetected:       totalExits,
+      fundingUpdates:      totalFundingUpdates,
+      discovered,
+      candidatesExtracted: scored,
+      filteredByThesis:    filteredOut,
+      status:              "ok",
+    })
+    .where(eq(cronLogs.id, cronLogId))
+    .catch(() => {});
 
   return NextResponse.json({
     ok: true,
@@ -567,7 +628,6 @@ export async function GET(req: NextRequest) {
     totalExits,
     totalFundingUpdates,
     discovery: {
-      headlineSources: systemApiKey ? 5 : 0,
       candidatesExtracted: scored,
       filteredByThesis: filteredOut,
       added: discovered,
