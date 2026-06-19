@@ -6,13 +6,13 @@ import { cn } from "@/lib/utils";
 import { signOut } from "next-auth/react";
 
 const NAV = [
-  { href: "/",           label: "Dashboard",    icon: "⬛" },
-  { href: "/radar",      label: "Radar",         icon: "📡", badge: 3 },
-  { href: "/mandatos",   label: "Mandatos",      icon: "🎯" },
-  { href: "/comparables", label: "Comparables",  icon: "⚖️" },
-  { href: "/exit",       label: "Exit",          icon: "🚀" },
-  { href: "/documentos",  label: "Documentos",    icon: "📄" },
-  { href: "/conectores", label: "Conectores",    icon: "🔌" },
+  { href: "/",            label: "Dashboard"  },
+  { href: "/radar",       label: "Radar"      },
+  { href: "/mandatos",    label: "Mandatos"   },
+  { href: "/comparables", label: "Comparables"},
+  { href: "/exit",        label: "Exit"       },
+  { href: "/documentos",  label: "Documentos" },
+  { href: "/conectores",  label: "Conectores" },
 ];
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -25,7 +25,9 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   "/conectores":  <IconConectores />,
 };
 
-export function Sidebar() {
+type Badges = { radar?: number; exit?: number };
+
+export function Sidebar({ badges = {} }: { badges?: Badges }) {
   const pathname = usePathname();
 
   return (
@@ -54,11 +56,17 @@ export function Sidebar() {
                 {ICON_MAP[item.href]}
               </span>
               <span className="flex-1">{item.label}</span>
-              {item.badge && !active && (
-                <span className="bg-orange text-white text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center">
-                  {item.badge}
-                </span>
-              )}
+              {(() => {
+                const count =
+                  item.href === "/radar" ? (badges.radar ?? 0) :
+                  item.href === "/exit"  ? (badges.exit  ?? 0) : 0;
+                if (!count || active) return null;
+                return (
+                  <span className="bg-orange text-white text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                    {count > 99 ? "99+" : count}
+                  </span>
+                );
+              })()}
             </Link>
           );
         })}
