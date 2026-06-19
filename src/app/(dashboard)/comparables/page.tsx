@@ -803,26 +803,39 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
     }
   }
 
-  function exportCSV() {
-    const esc = (v: string) => `"${(v ?? "—").replace(/"/g, '""')}"`;
-    const colLabels = cols.map(c => c.label);
-    const header = ["Company", "Ticker", "Tipo", ...colLabels];
-    const rows: string[][] = [
-      [company.name, "—", "PRIVADA (Target)", ...cols.map(c => rawPrivateVal(c.key))],
-      ...comps.map(comp => [
-        comp.name, comp.ticker, `Público (${comp.exchange ?? ""})`,
-        ...cols.map(c => rawCompVal(comp, c.key)),
-      ]),
-    ];
-    if (hasData) rows.push(["Set Median", "—", "Mediana", ...cols.map(c => rawMedianVal(c.key))]);
-    const csv = [header, ...rows].map(row => row.map(esc).join(",")).join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `comps_${company.name.toLowerCase().replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const [exporting, setExporting] = useState(false);
+
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      const colLabels = cols.map(c => c.label);
+      const headers = ["Company", "Ticker", "Tipo", ...colLabels];
+      const rows = [
+        { cells: [company.name, "—", "PRIVADA (Target)", ...cols.map(c => rawPrivateVal(c.key))], type: "private" as const },
+        ...comps.map(comp => ({
+          cells: [comp.name, comp.ticker, `Público (${comp.exchange ?? ""})`, ...cols.map(c => rawCompVal(comp, c.key))],
+          type: "public" as const,
+        })),
+        ...(hasData ? [{ cells: ["Set Median", "—", "Mediana", ...cols.map(c => rawMedianVal(c.key))], type: "median" as const }] : []),
+      ];
+
+      const res = await fetch("/api/comparables/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ headers, rows, companyName: company.name }),
+      });
+      if (!res.ok) return;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `comps_${company.name.toLowerCase().replace(/[^a-z0-9]/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   }
 
   const isMultiple = (k: ColKey) => ["evRev","evEbitda"].includes(k);
@@ -840,14 +853,18 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
         </div>
         <div className="flex items-center gap-2">
           {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">Sin datos — actualizar</span>}
-          <button onClick={exportCSV}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-chalk rounded-[7px] hover:border-emerald-500 hover:text-emerald-700 bg-white transition-colors">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <line x1="6" y1="1" x2="6" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              <polyline points="3,5.5 6,8.5 9,5.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M1 9.5v1a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-            </svg>
-            Exportar
+          <button onClick={exportExcel} disabled={exporting}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-chalk rounded-[7px] hover:border-emerald-500 hover:text-emerald-700 bg-white transition-colors disabled:opacity-50">
+            {exporting ? (
+              <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <line x1="6" y1="1" x2="6" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                <polyline points="3,5.5 6,8.5 9,5.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M1 9.5v1a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              </svg>
+            )}
+            {exporting ? "Generando…" : "Excel"}
           </button>
           <div className="relative">
             <button onClick={() => setShowColPicker(v => !v)}
