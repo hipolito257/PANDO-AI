@@ -741,6 +741,90 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
     }
   }
 
+  // ── Raw string values for CSV export ──────────────────────────────────────
+  function rawCompVal(c: PublicComp, key: ColKey): string {
+    switch (key) {
+      case "marketCap":       return fmtB(c.marketCapUsd);
+      case "ev":              return fmtB(c.evUsd);
+      case "revenue":         return fmtB(c.revenueUsd);
+      case "fcf":             return fmtB(c.fcfUsd);
+      case "growth":          return c.revenueGrowth != null ? fmtGrowth(c.revenueGrowth) : "—";
+      case "ebitda":          return fmtB(c.ebitdaUsd);
+      case "grossMargin":     return fmtPct(c.grossMargin);
+      case "operatingMargin": return fmtPct(c.operatingMargin);
+      case "ebitdaMargin":    return fmtPct(c.ebitdaMargin);
+      case "netMargin":       return fmtPct(c.netMargin);
+      case "roe":             return fmtPct(c.roe);
+      case "evRev":    return c.evRevenue  != null ? `${c.evRevenue.toFixed(1)}x`  : "—";
+      case "evEbitda": return c.evEbitda   != null ? `${c.evEbitda.toFixed(1)}x`   : "—";
+      case "pe":       return c.peRatio    != null ? `${c.peRatio.toFixed(1)}x`    : "—";
+      case "ps":       return c.psRatio    != null ? `${c.psRatio.toFixed(1)}x`    : "—";
+      case "pb":       return c.pbRatio    != null ? `${c.pbRatio.toFixed(1)}x`    : "—";
+      case "de":       return c.debtToEquity != null ? c.debtToEquity.toFixed(2)   : "—";
+      case "beta":     return c.beta         != null ? c.beta.toFixed(2)           : "—";
+      case "r40":      return r40(c.revenueGrowth, c.ebitdaMargin)?.toFixed(0) ?? "—";
+    }
+  }
+
+  function rawPrivateVal(key: ColKey): string {
+    switch (key) {
+      case "revenue":      return fmtB(company.revenueUsd);
+      case "growth":       return company.revenueGrowth != null ? fmtGrowth(company.revenueGrowth) : "—";
+      case "ebitda":       return fmtB(company.ebitdaUsd);
+      case "ebitdaMargin": return fmtPct(company.ebitdaMargin);
+      case "r40":          return r40(company.revenueGrowth, company.ebitdaMargin)?.toFixed(0) ?? "—";
+      default:             return "—";
+    }
+  }
+
+  function rawMedianVal(key: ColKey): string {
+    const ns = (arr: (number|null)[]) => arr.filter((x): x is number => x != null);
+    switch (key) {
+      case "marketCap":       return fmtB(median(ns(comps.map(c=>c.marketCapUsd))));
+      case "ev":              return fmtB(median(ns(comps.map(c=>c.evUsd))));
+      case "revenue":         return fmtB(median(ns(comps.map(c=>c.revenueUsd))));
+      case "fcf":             return fmtB(median(ns(comps.map(c=>c.fcfUsd))));
+      case "growth":          return fmtGrowth(median(ns(comps.map(c=>toGrowthPct(c.revenueGrowth)))));
+      case "ebitda":          return fmtB(median(ns(comps.map(c=>c.ebitdaUsd))));
+      case "grossMargin":     return fmtPct(median(ns(comps.map(c=>c.grossMargin))));
+      case "operatingMargin": return fmtPct(median(ns(comps.map(c=>c.operatingMargin))));
+      case "ebitdaMargin":    return fmtPct(median(ns(comps.map(c=>c.ebitdaMargin))));
+      case "netMargin":       return fmtPct(median(ns(comps.map(c=>c.netMargin))));
+      case "roe":             return fmtPct(median(ns(comps.map(c=>c.roe))));
+      case "evRev":    { const a=ns(comps.map(c=>c.evRevenue)).filter(x=>x>0&&x<200); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "evEbitda": { const a=ns(comps.map(c=>c.evEbitda)).filter(x=>x>0&&x<500); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "pe":   { const a=ns(comps.map(c=>c.peRatio)).filter(x=>x>0&&x<200); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "ps":   { const a=ns(comps.map(c=>c.psRatio)).filter(x=>x>0&&x<200); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "pb":   { const a=ns(comps.map(c=>c.pbRatio)).filter(x=>x>0&&x<200); return a.length?`${median(a)!.toFixed(1)}x`:"—"; }
+      case "de":   { const a=ns(comps.map(c=>c.debtToEquity)); return a.length?median(a)!.toFixed(2):"—"; }
+      case "beta": { const a=ns(comps.map(c=>c.beta)); return a.length?median(a)!.toFixed(2):"—"; }
+      case "r40":  { const a=ns(comps.map(c=>r40(c.revenueGrowth,c.ebitdaMargin))); return a.length?`${median(a)!.toFixed(0)}`:"—"; }
+      default:     return "—";
+    }
+  }
+
+  function exportCSV() {
+    const esc = (v: string) => `"${(v ?? "—").replace(/"/g, '""')}"`;
+    const colLabels = cols.map(c => c.label);
+    const header = ["Company", "Ticker", "Tipo", ...colLabels];
+    const rows: string[][] = [
+      [company.name, "—", "PRIVADA (Target)", ...cols.map(c => rawPrivateVal(c.key))],
+      ...comps.map(comp => [
+        comp.name, comp.ticker, `Público (${comp.exchange ?? ""})`,
+        ...cols.map(c => rawCompVal(comp, c.key)),
+      ]),
+    ];
+    if (hasData) rows.push(["Set Median", "—", "Mediana", ...cols.map(c => rawMedianVal(c.key))]);
+    const csv = [header, ...rows].map(row => row.map(esc).join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `comps_${company.name.toLowerCase().replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const isMultiple = (k: ColKey) => ["evRev","evEbitda"].includes(k);
   const isR40      = (k: ColKey) => k === "r40";
 
@@ -756,6 +840,15 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
         </div>
         <div className="flex items-center gap-2">
           {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">Sin datos — actualizar</span>}
+          <button onClick={exportCSV}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-chalk rounded-[7px] hover:border-emerald-500 hover:text-emerald-700 bg-white transition-colors">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <line x1="6" y1="1" x2="6" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              <polyline points="3,5.5 6,8.5 9,5.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M1 9.5v1a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+            Exportar
+          </button>
           <div className="relative">
             <button onClick={() => setShowColPicker(v => !v)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-chalk rounded-[7px] hover:border-carbon bg-white transition-colors">
