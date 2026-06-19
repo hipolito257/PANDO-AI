@@ -2,6 +2,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { Card, SectionHeader } from "@/components/ui/Card";
 import { Badge, SignalBadge } from "@/components/ui/Badge";
 import { MarkReadOnMount } from "@/components/signals/MarkReadOnMount";
+import { WebsiteLink } from "@/components/ui/WebsiteLink";
 import { db } from "@/lib/db";
 import { desc, inArray } from "drizzle-orm";
 import * as schema from "@/lib/schema";
@@ -164,6 +165,7 @@ export default async function ExitPage() {
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${exitInfo.color}`}>
                               {exitInfo.label}
                             </span>
+                            <WebsiteLink url={c.website} />
                             {exitDate && (
                               <span className="text-[10px] text-slate">
                                 Detectado: {fmtDate(exitDate)}

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 function extractDomain(website: string | null | undefined): string | null {
   if (!website) return null;
@@ -29,9 +29,18 @@ export function CompanyLogo({
   size?: keyof typeof SIZES;
   className?: string;
 }) {
-  const domain = extractDomain(website);
-  const [src, setSrc]       = useState<string | null>(domain ? `https://logo.clearbit.com/${domain}` : null);
+  const [src, setSrc]       = useState<string | null>(() => {
+    const d = extractDomain(website);
+    return d ? `https://logo.clearbit.com/${d}` : null;
+  });
   const [failed, setFailed] = useState(false);
+
+  // Reset when the company changes (website prop changes)
+  useEffect(() => {
+    const d = extractDomain(website);
+    setSrc(d ? `https://logo.clearbit.com/${d}` : null);
+    setFailed(false);
+  }, [website]);
 
   const { wrapper, text } = SIZES[size];
   const initials = name.trim().split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
@@ -44,8 +53,9 @@ export function CompanyLogo({
           alt={name}
           className="w-full h-full object-contain p-[1px]"
           onError={() => {
-            if (domain && src.includes("clearbit")) {
-              setSrc(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`);
+            const d = extractDomain(website);
+            if (d && src.includes("clearbit")) {
+              setSrc(`https://www.google.com/s2/favicons?domain=${d}&sz=64`);
             } else {
               setFailed(true);
             }

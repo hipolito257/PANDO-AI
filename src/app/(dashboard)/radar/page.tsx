@@ -6,6 +6,7 @@ import { SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Spark } from "@/components/charts/Spark";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
+import { WebsiteLink } from "@/components/ui/WebsiteLink";
 import { fmtM } from "@/lib/utils";
 import Link from "next/link";
 import type { SignalType } from "@/types";
@@ -239,6 +240,7 @@ export default function RadarPage() {
                             <Link href={`/empresa/${c.slug}`} className="font-semibold text-[13px] text-carbon hover:text-orange transition-colors">
                               {c.name}
                             </Link>
+                            <WebsiteLink url={c.website} />
                             {c.createdBy && <span className="text-[9px] text-slate ml-1">por {c.createdBy}</span>}
                             <button onClick={() => setEditCompany(c as any)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity text-slate hover:text-carbon" title="Editar empresa">

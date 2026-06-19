@@ -15,6 +15,7 @@ import type { SignalType } from "@/types";
 import { EmpresaActions } from "@/components/company/EmpresaActions";
 import { NotesPanel } from "@/components/company/NotesPanel";
 import { NewsRefreshButton } from "@/components/company/NewsRefreshButton";
+import { WebsiteLink } from "@/components/ui/WebsiteLink";
 
 // Thin wrapper — keeps empresa page as a server component
 function NotesSection({ companyId }: { companyId: string }) {
@@ -75,6 +76,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
                 <h2 className="text-[22px] font-semibold text-carbon tracking-tight font-poly">{company.name}</h2>
                 <StatusBadge status={company.status} />
                 <ScoreBadge score={company.score} />
+                <WebsiteLink url={company.website} />
               </div>
               <p className="text-[13px] text-graphite max-w-2xl leading-relaxed mb-3">{company.description ?? "Sin descripción disponible."}</p>
               <div className="flex flex-wrap gap-1.5">

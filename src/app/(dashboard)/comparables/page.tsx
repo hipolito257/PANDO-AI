@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
+import { WebsiteLink } from "@/components/ui/WebsiteLink";
 import {
   ResponsiveContainer,
   ComposedChart, ScatterChart, Scatter, Line,
@@ -354,6 +355,7 @@ function ComparablesPage() {
                       <h2 className="text-[16px] font-semibold text-carbon font-poly">{selectedCompany.name}</h2>
                       <span className="text-[10px] bg-orange/10 text-orange border border-orange/20 px-2 py-0.5 rounded-full font-medium">PRIVADA</span>
                       {selectedCompany.sector && <span className="text-[10px] bg-fog border border-chalk text-slate px-2 py-0.5 rounded-full">{selectedCompany.sector}</span>}
+                      <WebsiteLink url={selectedCompany.website} />
                     </div>
                     {selectedCompany.description && <p className="text-[11px] text-slate mt-0.5 line-clamp-1">{selectedCompany.description}</p>}
                   </div>
@@ -541,6 +543,7 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
                     </a>
                     {c.exchange && <span className="text-[9px] text-slate">{c.exchange}</span>}
                     {c.sector && <span className="text-[9px] text-slate bg-fog border border-chalk px-1.5 py-0.5 rounded-full">{c.sector}</span>}
+                    <WebsiteLink url={c.website} />
                   </div>
 
                   {/* Reason line (AI only) */}
@@ -801,7 +804,10 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
                   <CompanyLogo name={company.name} website={company.website} size="sm" />
                   <div>
                     <p className="text-[12px] font-semibold text-carbon">{company.name}</p>
-                    <p className="text-[9px] text-orange font-medium">TARGET PRIVADA</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[9px] text-orange font-medium">TARGET PRIVADA</p>
+                      <WebsiteLink url={company.website} className="text-[9px]" />
+                    </div>
                   </div>
                 </div>
               </td>
@@ -828,8 +834,11 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
                           </span>
                         )}
                       </div>
-                      <a href={`https://finance.yahoo.com/quote/${comp.ticker}`} target="_blank" rel="noopener noreferrer"
-                        className="text-[9px] font-mono text-slate hover:text-orange">{comp.ticker} · {comp.exchange ?? ""}</a>
+                      <div className="flex items-center gap-2">
+                        <a href={`https://finance.yahoo.com/quote/${comp.ticker}`} target="_blank" rel="noopener noreferrer"
+                          className="text-[9px] font-mono text-slate hover:text-orange">{comp.ticker} · {comp.exchange ?? ""}</a>
+                        <WebsiteLink url={comp.website} className="text-[9px]" />
+                      </div>
                     </div>
                   </div>
                 </td>
