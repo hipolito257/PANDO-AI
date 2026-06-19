@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Spark } from "@/components/charts/Spark";
+import { CompanyLogo } from "@/components/company/CompanyLogo";
 import { fmtM } from "@/lib/utils";
 import Link from "next/link";
 import type { SignalType } from "@/types";
@@ -23,7 +24,8 @@ const STAGES = [
 
 type Company = {
   id: string; name: string; slug: string; sector: string | null; country: string;
-  stage: string | null; revenueUsd: number | null; revenueGrowth: number | null;
+  stage: string | null; website: string | null;
+  revenueUsd: number | null; revenueGrowth: number | null;
   ebitdaMargin: number | null; employees: number | null; score: number; status: string;
   createdBy: string | null; updatedBy: string | null;
   signals: { id: string; type: string; severity: string; title: string }[];
@@ -233,6 +235,7 @@ export default function RadarPage() {
                       <tr key={c.id} className="hover:bg-fog/40 transition-colors group">
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-2">
+                            <CompanyLogo name={c.name} website={c.website} size="sm" />
                             <Link href={`/empresa/${c.slug}`} className="font-semibold text-[13px] text-carbon hover:text-orange transition-colors">
                               {c.name}
                             </Link>

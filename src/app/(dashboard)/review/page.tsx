@@ -1,5 +1,6 @@
 import { Topbar } from "@/components/layout/Topbar";
 import { Card } from "@/components/ui/Card";
+import { CompanyLogo } from "@/components/company/CompanyLogo";
 import { db } from "@/lib/db";
 import { desc, inArray } from "drizzle-orm";
 import * as schema from "@/lib/schema";
@@ -23,9 +24,7 @@ export default async function ReviewListPage() {
             <Link key={c.id} href={`/review/${c.slug}`}>
               <Card className="hover:border-carbon border border-transparent transition-all cursor-pointer">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 rounded-[4px] bg-carbon flex items-center justify-center text-white text-[9px] font-bold">
-                    {c.name.slice(0, 2).toUpperCase()}
-                  </div>
+                  <CompanyLogo name={c.name} website={c.website} size="sm" />
                   <div>
                     <div className="text-[13px] font-semibold text-carbon">{c.name}</div>
                     <div className="text-[10px] text-slate">{c.sector} · {c.country}</div>

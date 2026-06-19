@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Topbar } from "@/components/layout/Topbar";
+import { CompanyLogo } from "@/components/company/CompanyLogo";
 import {
   ResponsiveContainer,
   ComposedChart, ScatterChart, Scatter, Line,
@@ -13,6 +14,7 @@ import {
 type Company = {
   id: string; name: string; slug: string; sector: string | null;
   country: string; stage: string | null; fundingStage: string | null;
+  website: string | null;
   description: string | null; revenueUsd: number | null;
   ebitdaUsd: number | null; revenueGrowth: number | null;
   ebitdaMargin: number | null; score: number; status: string;
@@ -306,10 +308,7 @@ function ComparablesPage() {
                         className={`w-full text-left px-2.5 py-2 rounded-[8px] transition-all
                           ${selectedCompanyId === c.id ? "bg-carbon text-white" : "hover:bg-fog text-carbon"}`}>
                         <div className="flex items-center gap-2">
-                          <div className={`w-6 h-6 rounded-[5px] flex items-center justify-center text-[9px] font-bold shrink-0
-                            ${selectedCompanyId === c.id ? "bg-white/20 text-white" : "bg-orange/10 text-orange"}`}>
-                            {c.name.slice(0, 2).toUpperCase()}
-                          </div>
+                          <CompanyLogo name={c.name} website={c.website} size="sm" />
                           <div className="min-w-0">
                             <p className={`text-[12px] font-medium truncate ${selectedCompanyId === c.id ? "text-white" : "text-carbon"}`}>{c.name}</p>
                             <p className={`text-[10px] truncate ${selectedCompanyId === c.id ? "text-white/50" : "text-slate"}`}>{c.sector ?? c.country}</p>
@@ -349,9 +348,7 @@ function ComparablesPage() {
               {/* Company header */}
               <div className="bg-paper rounded-[10px] border border-chalk p-4">
                 <div className="flex items-start gap-3 flex-wrap">
-                  <div className="w-10 h-10 rounded-[8px] bg-orange flex items-center justify-center text-white text-[11px] font-bold shrink-0">
-                    {selectedCompany.name.slice(0, 2).toUpperCase()}
-                  </div>
+                  <CompanyLogo name={selectedCompany.name} website={selectedCompany.website} size="lg" />
                   <div className="flex-1 min-w-[180px]">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-[16px] font-semibold text-carbon font-poly">{selectedCompany.name}</h2>
@@ -495,9 +492,7 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
       {/* Target private company */}
       <div className="px-4 py-3 border-b border-chalk bg-orange/5">
         <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-[6px] bg-orange flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5">
-            {company.name.slice(0,2).toUpperCase()}
-          </div>
+          <CompanyLogo name={company.name} website={company.website} size="md" className="mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-[13px] font-semibold text-carbon">{company.name}</span>
@@ -806,9 +801,7 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
             <tr className="bg-orange/5 border-b-2 border-orange/20">
               <td className="px-3 py-2.5 sticky left-0 bg-orange/5">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded bg-orange flex items-center justify-center text-[9px] font-bold text-white shrink-0">
-                    {company.name.slice(0,2).toUpperCase()}
-                  </div>
+                  <CompanyLogo name={company.name} website={company.website} size="sm" />
                   <div>
                     <p className="text-[12px] font-semibold text-carbon">{company.name}</p>
                     <p className="text-[9px] text-orange font-medium">TARGET PRIVADA</p>
