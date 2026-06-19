@@ -1,6 +1,7 @@
 import { Topbar } from "@/components/layout/Topbar";
 import { Card, SectionHeader } from "@/components/ui/Card";
 import { Badge, SignalBadge } from "@/components/ui/Badge";
+import { MarkReadOnMount } from "@/components/signals/MarkReadOnMount";
 import { db } from "@/lib/db";
 import { desc, inArray } from "drizzle-orm";
 import * as schema from "@/lib/schema";
@@ -63,6 +64,7 @@ export default async function ExitPage() {
 
   return (
     <div>
+      <MarkReadOnMount types={["exit_signal"]} />
       <Topbar
         title="Salidas"
         subtitle={`${totalExits} salida${totalExits !== 1 ? "s" : ""} confirmada${totalExits !== 1 ? "s" : ""} · ${exitAlerts.length} señal${exitAlerts.length !== 1 ? "es" : ""} pendiente${exitAlerts.length !== 1 ? "s" : ""} de confirmación`}

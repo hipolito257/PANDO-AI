@@ -77,6 +77,15 @@ export default function RadarPage() {
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { fetch("/api/mandatos").then(r => r.json()).then(setMandates); }, []);
 
+  // Mark all non-exit signals as read when the user opens Radar
+  useEffect(() => {
+    fetch("/api/signals/mark-read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ excludeTypes: ["exit_signal"] }),
+    });
+  }, []);
+
   // Radar → Pipeline: el equipo decide seguir activamente esta empresa
   async function moveToPipeline(id: string) {
     await fetch(`/api/companies`, { method: "PATCH", headers: { "Content-Type": "application/json" },
