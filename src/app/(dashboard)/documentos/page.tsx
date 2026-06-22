@@ -316,7 +316,7 @@ export default function DocumentosPage() {
 
         {/* Template selected — generation panel */}
         {selected && (
-          <div className="max-w-2xl mx-auto py-10 px-6 space-y-4">
+          <div className="py-10 px-6 space-y-4">
 
             {/* Template header */}
             <div className="flex items-center gap-4">

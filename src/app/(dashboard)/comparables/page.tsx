@@ -398,7 +398,7 @@ function ComparablesPage() {
               </div>
             </div>
           ) : (
-            <div className="p-5 space-y-4 max-w-[1200px]">
+            <div className="p-5 space-y-4">
               {/* Company header */}
               <div className="bg-paper rounded-[10px] border border-chalk p-4">
                 <div className="flex items-start gap-3 flex-wrap">
