@@ -110,6 +110,7 @@ function buildScatterChartXml(title: string, dataSheet: string, rows: number, xL
 </c:chartSpace>`;
 }
 
+// chartsheet XML — references a drawing (not the chart directly, per OOXML spec)
 function buildChartSheetXml(): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <chartsheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -118,7 +119,40 @@ function buildChartSheetXml(): string {
 </chartsheet>`;
 }
 
-function buildChartSheetRels(chartNum: number): string {
+// chartsheet _rels — points to the drawing file (NOT the chart directly)
+function buildChartSheetRels(drawingNum: number): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${drawingNum}.xml"/>
+</Relationships>`;
+}
+
+// drawing XML — absolute-anchor graphic frame that holds the chart
+function buildDrawingXml(id: number): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+<xdr:absoluteAnchor>
+<xdr:pos x="0" y="0"/>
+<xdr:ext cx="9144000" cy="6858000"/>
+<xdr:graphicFrame macro="">
+<xdr:nvGraphicFramePr>
+<xdr:cNvPr id="${id}" name="Chart ${id}"/>
+<xdr:cNvGraphicFramePr/>
+</xdr:nvGraphicFramePr>
+<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+<a:graphic>
+<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">
+<c:chart r:id="rId1"/>
+</a:graphicData>
+</a:graphic>
+</xdr:graphicFrame>
+<xdr:clientData/>
+</xdr:absoluteAnchor>
+</xdr:wsDr>`;
+}
+
+// drawing _rels — points to the chart XML
+function buildDrawingRels(chartNum: number): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${chartNum}.xml"/>
@@ -149,18 +183,24 @@ async function injectChartSheets(
   let newCt     = "";
 
   for (let i = 0; i < charts.length; i++) {
-    const chartNum = i + 1;
+    const n = i + 1; // chart/drawing/sheet number (1-based)
     maxRId++;
     maxSheetId++;
 
-    zip.file(`xl/charts/chart${chartNum}.xml`,              charts[i].xmlContent);
-    zip.file(`xl/chartsheets/sheet${chartNum}.xml`,         buildChartSheetXml());
-    zip.file(`xl/chartsheets/_rels/sheet${chartNum}.xml.rels`, buildChartSheetRels(chartNum));
+    // chart XML
+    zip.file(`xl/charts/chart${n}.xml`, charts[i].xmlContent);
+    // drawing XML (intermediate layer required by OOXML)
+    zip.file(`xl/drawings/drawing${n}.xml`, buildDrawingXml(n + 1));
+    zip.file(`xl/drawings/_rels/drawing${n}.xml.rels`, buildDrawingRels(n));
+    // chartsheet XML
+    zip.file(`xl/chartsheets/sheet${n}.xml`, buildChartSheetXml());
+    zip.file(`xl/chartsheets/_rels/sheet${n}.xml.rels`, buildChartSheetRels(n));
 
     newSheets += `<sheet name="${escXml(charts[i].displayName)}" sheetId="${maxSheetId}" r:id="rId${maxRId}"/>`;
-    newRels   += `<Relationship Id="rId${maxRId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet" Target="chartsheets/sheet${chartNum}.xml"/>`;
-    newCt     += `<Override PartName="/xl/charts/chart${chartNum}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`;
-    newCt     += `<Override PartName="/xl/chartsheets/sheet${chartNum}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml"/>`;
+    newRels   += `<Relationship Id="rId${maxRId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet" Target="chartsheets/sheet${n}.xml"/>`;
+    newCt     += `<Override PartName="/xl/charts/chart${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`;
+    newCt     += `<Override PartName="/xl/drawings/drawing${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`;
+    newCt     += `<Override PartName="/xl/chartsheets/sheet${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml"/>`;
   }
 
   zip.file("xl/workbook.xml",            wbXml.replace("</sheets>",         newSheets + "</sheets>"));
@@ -168,7 +208,6 @@ async function injectChartSheets(
   zip.file("[Content_Types].xml",        ctXml.replace("</Types>",          newCt     + "</Types>"));
 
   const nodeBuf = await zip.generateAsync({ type: "nodebuffer" });
-  // Convert to plain ArrayBuffer so NextResponse accepts it without type issues
   const ab = new ArrayBuffer(nodeBuf.byteLength);
   new Uint8Array(ab).set(nodeBuf);
   return ab;

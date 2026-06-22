@@ -930,7 +930,10 @@ function MetricsTable({
         nativeCharts.push({
           type: "column", title: "Revenue (USD M)", sheetName: "Revenue",
           categories: [company.name, ...comps.map(c => c.name)],
-          values:     [company.revenueUsd, ...comps.map(c => c.revenueUsd)],
+          values: [
+            company.revenueUsd != null ? +(company.revenueUsd / 1_000_000).toFixed(1) : null,
+            ...comps.map(c => c.revenueUsd != null ? +(c.revenueUsd / 1_000_000).toFixed(1) : null),
+          ],
         });
       }
       if (charts.includes("growth")) {
