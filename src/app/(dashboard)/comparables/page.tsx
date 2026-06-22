@@ -1016,6 +1016,7 @@ function ChartsPanel({
   historyData: Record<string, { date: string; indexed: number }[]>;
   loadingHist: boolean;
 }) {
+  const [rankMetric, setRankMetric] = useState<string>("evRevenue");
   const hasData = comps.some(c => c.lastRefreshed);
 
   if (!hasData) {
@@ -1097,6 +1098,90 @@ function ChartsPanel({
       <div className="bg-white border border-chalk rounded-[8px] p-2 shadow-lg text-[11px]">
         <p className="font-semibold text-carbon">{d?.fullName ?? label}</p>
         <p className="text-slate">Revenue: <span className="font-bold text-carbon">{fmtB(payload[0].value)}</span></p>
+      </div>
+    );
+  };
+
+  // ── Chart data prep ─────────────────────────────────────────────────────────
+  const qMetrics = [
+    { key: "evRevenue",     label: "EV / Revenue",   fmt: (v: number) => `${v.toFixed(1)}x`,
+      peerVals: comps.map(c => c.evRevenue).filter((x): x is number => x != null && x > 0 && x < 200),
+      targetVal: null as number | null },
+    { key: "evEbitda",      label: "EV / EBITDA",    fmt: (v: number) => `${v.toFixed(1)}x`,
+      peerVals: comps.map(c => c.evEbitda).filter((x): x is number => x != null && x > 0 && x < 500),
+      targetVal: null as number | null },
+    { key: "revenueGrowth", label: "Revenue Growth", fmt: (v: number) => `${v.toFixed(0)}%`,
+      peerVals: comps.map(c => toGrowthPct(toNum(c.revenueGrowth))).filter((x): x is number => x != null && x > -200 && x < 500),
+      targetVal: toGrowthPct(toNum(company.revenueGrowth)) },
+    { key: "grossMargin",   label: "Gross Margin",   fmt: (v: number) => `${v.toFixed(0)}%`,
+      peerVals: comps.map(c => toGrowthPct(toNum(c.grossMargin))).filter((x): x is number => x != null && x > -50 && x < 105),
+      targetVal: null as number | null },
+    { key: "ebitdaMargin",  label: "EBITDA Margin",  fmt: (v: number) => `${v.toFixed(0)}%`,
+      peerVals: comps.map(c => toGrowthPct(toNum(c.ebitdaMargin))).filter((x): x is number => x != null && x > -200 && x < 105),
+      targetVal: toGrowthPct(toNum(company.ebitdaMargin)) },
+  ].filter(m => m.peerVals.length >= 2);
+
+  const bubbleData = comps
+    .filter(c => c.revenueGrowth != null && c.grossMargin != null && c.marketCapUsd != null)
+    .map(c => ({
+      x: toGrowthPct(toNum(c.revenueGrowth))!,
+      y: toGrowthPct(toNum(c.grossMargin))!,
+      size: c.marketCapUsd!,
+      ticker: c.ticker,
+      name: c.name,
+    }));
+  const bubbleMaxSize = bubbleData.length ? Math.max(...bubbleData.map(d => d.size)) : 1;
+
+  const RANK_OPTS = [
+    { key: "evRevenue",     label: "EV / Revenue",   fmt: (v: number) => `${v.toFixed(1)}x`,
+      peerVal: (c: PublicComp) => c.evRevenue,                              targetVal: null as number | null },
+    { key: "evEbitda",      label: "EV / EBITDA",    fmt: (v: number) => `${v.toFixed(1)}x`,
+      peerVal: (c: PublicComp) => c.evEbitda,                               targetVal: null as number | null },
+    { key: "revenueGrowth", label: "Revenue Growth", fmt: (v: number) => `${v.toFixed(0)}%`,
+      peerVal: (c: PublicComp) => toGrowthPct(toNum(c.revenueGrowth)),      targetVal: toGrowthPct(toNum(company.revenueGrowth)) },
+    { key: "grossMargin",   label: "Gross Margin",   fmt: (v: number) => `${v.toFixed(0)}%`,
+      peerVal: (c: PublicComp) => toGrowthPct(toNum(c.grossMargin)),        targetVal: null as number | null },
+    { key: "ebitdaMargin",  label: "EBITDA Margin",  fmt: (v: number) => `${v.toFixed(0)}%`,
+      peerVal: (c: PublicComp) => toGrowthPct(toNum(c.ebitdaMargin)),       targetVal: toGrowthPct(toNum(company.ebitdaMargin)) },
+  ];
+  const rankOpt = RANK_OPTS.find(o => o.key === rankMetric) ?? RANK_OPTS[0];
+  type RankItem = { name: string; shortName: string; value: number; isPrivate: boolean };
+  const rankItems: RankItem[] = [
+    ...comps
+      .map(c => {
+        const v = rankOpt.peerVal(c);
+        return (v != null && isFinite(v))
+          ? { name: c.name, shortName: c.ticker, value: v, isPrivate: false } as RankItem
+          : null;
+      })
+      .filter((x): x is RankItem => x != null),
+    ...(rankOpt.targetVal != null
+      ? [{ name: company.name, shortName: company.name.split(" ")[0].slice(0, 8), value: rankOpt.targetVal, isPrivate: true }]
+      : []),
+  ].sort((a, b) => b.value - a.value);
+
+  const BubbleTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    if (!d) return null;
+    return (
+      <div className="bg-white border border-chalk rounded-[8px] p-2.5 shadow-lg text-[11px]">
+        <p className="font-bold text-carbon">{d.name}</p>
+        <p className="text-[10px] font-mono text-slate">{d.ticker}</p>
+        <p className="text-slate mt-1">Growth: <span className="font-medium text-carbon">{d.x.toFixed(0)}%</span></p>
+        <p className="text-slate">Gross Margin: <span className="font-medium text-carbon">{d.y.toFixed(0)}%</span></p>
+        <p className="text-slate">Mkt Cap: <span className="font-medium text-carbon">{fmtB(d.size)}</span></p>
+      </div>
+    );
+  };
+
+  const RankTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload as RankItem | undefined;
+    return (
+      <div className="bg-white border border-chalk rounded-[8px] p-2 shadow-lg text-[11px]">
+        <p className="font-semibold text-carbon">{d?.name}</p>
+        <p className="text-slate">{rankOpt.label}: <span className="font-bold text-carbon">{d != null ? rankOpt.fmt(d.value) : "—"}</span></p>
       </div>
     );
   };
@@ -1203,6 +1288,178 @@ function ChartsPanel({
           </div>
         )}
       </div>
+
+      {/* Quartile Positioning Strip */}
+      {qMetrics.length >= 1 && (
+        <div className="bg-paper rounded-[10px] border border-chalk p-5">
+          <div className="mb-4">
+            <p className="text-[13px] font-semibold text-carbon">Posicionamiento por cuartil</p>
+            <p className="text-[11px] text-slate">
+              Distribución de cada métrica en el set. Caja = IQR (P25–P75), línea = mediana.
+              {qMetrics.some(m => m.targetVal != null) && (
+                <span className="text-orange font-semibold ml-1">◆ = {company.name}</span>
+              )}
+            </p>
+          </div>
+          <div className="space-y-5">
+            {qMetrics.map(m => {
+              const sorted = [...m.peerVals].sort((a, b) => a - b);
+              const vMin = sorted[0];
+              const vMax = sorted[sorted.length - 1];
+              const range = vMax - vMin;
+              const pos = (v: number) => range === 0 ? 50 : Math.min(97, Math.max(3, ((v - vMin) / range) * 100));
+              const vP25 = pct(sorted, 25)!;
+              const vMed = pct(sorted, 50)!;
+              const vP75 = pct(sorted, 75)!;
+              return (
+                <div key={m.key} className="flex items-center gap-3">
+                  <span className="text-[11px] font-medium text-graphite w-[110px] shrink-0 text-right leading-tight">{m.label}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="relative h-7">
+                      {/* Track */}
+                      <div className="absolute left-0 right-0 top-[11px] h-[5px] bg-chalk rounded-full" />
+                      {/* IQR box */}
+                      <div
+                        className="absolute top-[8px] h-[11px] bg-carbon/[0.12] rounded"
+                        style={{ left: `${pos(vP25)}%`, right: `${100 - pos(vP75)}%` }}
+                      />
+                      {/* Median tick */}
+                      <div
+                        className="absolute top-[6px] w-[2px] h-[15px] bg-carbon/50 rounded-full -translate-x-1/2"
+                        style={{ left: `${pos(vMed)}%` }}
+                      />
+                      {/* Peer dots */}
+                      {m.peerVals.map((v, i) => (
+                        <div
+                          key={i}
+                          className="absolute top-[10px] w-[9px] h-[9px] bg-carbon/30 rounded-full -translate-x-1/2 border border-white"
+                          style={{ left: `${pos(v)}%` }}
+                        />
+                      ))}
+                      {/* Target diamond */}
+                      {m.targetVal != null && (
+                        <div
+                          className="absolute top-[4px] w-[19px] h-[19px] flex items-center justify-center -translate-x-1/2"
+                          style={{ left: `${pos(m.targetVal)}%` }}
+                        >
+                          <div className="w-[11px] h-[11px] bg-orange rotate-45 rounded-[2px]" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate mt-0.5 px-0.5">
+                      <span>{m.fmt(vMin)}</span>
+                      <span>Med {m.fmt(vMed)}</span>
+                      <span>{m.fmt(vMax)}</span>
+                    </div>
+                  </div>
+                  <div className="w-[56px] shrink-0 text-right">
+                    {m.targetVal != null
+                      ? <span className="text-[11px] font-bold text-orange">{m.fmt(m.targetVal)}</span>
+                      : <span className="text-[10px] text-slate/30 italic">privada</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4 pt-3 border-t border-chalk flex flex-wrap gap-5 text-[9px] text-slate">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-5 h-2.5 bg-carbon/12 rounded border border-carbon/10" />IQR (P25–P75)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-[2px] h-3 bg-carbon/50 rounded" />Mediana
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 bg-carbon/30 rounded-full border border-white" />Comparable
+            </span>
+            {qMetrics.some(m => m.targetVal != null) && (
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 bg-orange rotate-45 rounded-[2px]" />{company.name}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bubble: Growth vs Gross Margin vs Market Cap */}
+      {bubbleData.length >= 2 && (
+        <div className="bg-paper rounded-[10px] border border-chalk p-5">
+          <div className="mb-3">
+            <p className="text-[13px] font-semibold text-carbon">Crecimiento vs. Margen Bruto (burbuja = market cap)</p>
+            <p className="text-[11px] text-slate">
+              Cuadrante ideal: arriba a la derecha (alto margen + alto crecimiento). Tamaño = capitalización de mercado.
+              {privateGrowthPct != null && (
+                <span className="ml-1 text-orange font-semibold">
+                  Línea naranja = {company.name} ({privateGrowthPct.toFixed(0)}% crecimiento).
+                </span>
+              )}
+            </p>
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart margin={{ top: 15, right: 40, bottom: 30, left: 30 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
+              <XAxis dataKey="x" type="number" domain={["auto", "auto"]}
+                tickFormatter={(v: unknown) => `${(v as number).toFixed(0)}%`} tick={{ fontSize: 10 }}
+                label={{ value: "Revenue Growth (%)", position: "insideBottom", offset: -10, style: { fontSize: 10, fill: "#8a8480" } }} />
+              <YAxis dataKey="y" type="number" domain={[0, "auto"]}
+                tickFormatter={(v: unknown) => `${(v as number).toFixed(0)}%`} tick={{ fontSize: 10 }}
+                label={{ value: "Gross Margin (%)", angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 10, fill: "#8a8480" } }} />
+              <RTooltip content={<BubbleTooltip />} />
+              {privateGrowthPct != null && (
+                <ReferenceLine x={privateGrowthPct} stroke="#ea5c2b" strokeWidth={2} strokeDasharray="5 3"
+                  label={{ value: company.name.split(" ")[0], position: "insideTopLeft", fill: "#ea5c2b", fontSize: 10, fontWeight: "bold" }} />
+              )}
+              <Scatter
+                data={bubbleData}
+                shape={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  const r = 5 + Math.sqrt(payload.size / bubbleMaxSize) * 26;
+                  return (
+                    <g>
+                      <circle cx={cx} cy={cy} r={r} fill="#202020" fillOpacity={0.55} />
+                      <text x={cx} y={cy - r - 3} fontSize={8} fill="#8a8480" textAnchor="middle" fontFamily="monospace">{payload.ticker}</text>
+                    </g>
+                  );
+                }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Horizontal Ranking */}
+      {rankItems.length >= 2 && (
+        <div className="bg-paper rounded-[10px] border border-chalk p-5">
+          <div className="mb-3 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[13px] font-semibold text-carbon">Ranking de comparables</p>
+              <p className="text-[11px] text-slate">
+                Ordenado de mayor a menor. <span className="text-orange font-medium">Naranja = {company.name}</span>
+              </p>
+            </div>
+            <select
+              value={rankMetric}
+              onChange={e => setRankMetric(e.target.value)}
+              className="text-[11px] border border-chalk rounded-[7px] px-2 py-1.5 bg-white text-carbon focus:outline-none focus:border-carbon shrink-0 cursor-pointer"
+            >
+              {RANK_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+            </select>
+          </div>
+          <ResponsiveContainer width="100%" height={Math.max(200, rankItems.length * 26 + 20)}>
+            <BarChart data={rankItems} layout="vertical" margin={{ top: 0, right: 55, bottom: 0, left: 80 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" horizontal={false} />
+              <XAxis type="number" tickFormatter={(v: unknown) => rankOpt.fmt(v as number)} tick={{ fontSize: 9 }} domain={["auto", "auto"]} />
+              <YAxis type="category" dataKey="shortName" tick={{ fontSize: 10 }} width={75} />
+              <RTooltip content={<RankTooltip />} />
+              <Bar dataKey="value" radius={[0, 3, 3, 0]}>
+                {rankItems.map((d, i) => (
+                  <Cell key={i} fill={d.isPrivate ? "#ea5c2b" : "#202020"} opacity={d.isPrivate ? 1 : 0.6} />
+                ))}
+                <LabelList dataKey="value" position="right" formatter={(v: unknown) => rankOpt.fmt(v as number)} style={{ fontSize: 9, fill: "#8a8480" }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
