@@ -22,10 +22,12 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { headers, rows, companyName } = (await req.json()) as {
+  type ChartItem = { name: string; base64: string };
+  const { headers, rows, companyName, charts = [] } = (await req.json()) as {
     headers: string[];
     rows: Row[];
     companyName: string;
+    charts?: ChartItem[];
   };
 
   const wb = new ExcelJS.Workbook();
@@ -112,6 +114,32 @@ export async function POST(req: NextRequest) {
   noteRow.getCell(1).font = { italic: true, size: 9, color: { argb: C.slate }, name: "Calibri" };
   noteRow.getCell(1).alignment = { horizontal: "left" };
   ws.mergeCells(noteRow.number, 1, noteRow.number, headers.length);
+
+  // ── Charts sheet ─────────────────────────────────────────────────────────
+  if (charts.length > 0) {
+    const wsC = wb.addWorksheet("Gráficas", { properties: { defaultRowHeight: 20 } });
+    wsC.getColumn(1).width = 90;
+    let rowCursor = 1;
+    for (const chart of charts) {
+      // Title row
+      const titleRow = wsC.getRow(rowCursor);
+      titleRow.height = 18;
+      titleRow.getCell(1).value = chart.name;
+      titleRow.getCell(1).font = { bold: true, size: 11, name: "Calibri", color: { argb: C.carbon } };
+      rowCursor++;
+
+      // Image (PNG base64 from client)
+      const imgId = wb.addImage({ base64: chart.base64, extension: "png" });
+      const imgHeightRows = 22;
+      wsC.addImage(imgId, {
+        tl: { col: 0, row: rowCursor - 1 },
+        ext: { width: 860, height: 300 },
+        editAs: "oneCell",
+      });
+      for (let r = rowCursor; r < rowCursor + imgHeightRows; r++) wsC.getRow(r).height = 14;
+      rowCursor += imgHeightRows + 1; // gap between charts
+    }
+  }
 
   // ── Generate buffer ───────────────────────────────────────────────────────
   const buffer = await wb.xlsx.writeBuffer();

@@ -123,6 +123,8 @@ function ComparablesPage() {
   const [mounted,     setMounted]     = useState(false);
   const [historyData, setHistoryData] = useState<Record<string, { date: string; indexed: number }[]>>({});
   const [loadingHist, setLoadingHist] = useState(false);
+  const [editedCells, setEditedCells] = useState<Record<string, Set<keyof PublicComp>>>({});
+  const [chartImages, setChartImages] = useState<Record<string, string>>({});
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -139,10 +141,22 @@ function ComparablesPage() {
     setLoadingSet(true);
     setCompSet(null);
     setHistoryData({});
+    setEditedCells({});
     const res = await fetch(`/api/comparables?companyId=${cid}`);
     const sets: CompSet[] = await res.json();
     setCompSet(sets[0] ?? null);
     setLoadingSet(false);
+  }, []);
+
+  const handleEditComp = useCallback((ticker: string, field: keyof PublicComp, value: number | null) => {
+    setCompSet(prev => prev ? {
+      ...prev,
+      comps: prev.comps.map(c => c.ticker === ticker ? { ...c, [field]: value } : c),
+    } : prev);
+    setEditedCells(prev => ({
+      ...prev,
+      [ticker]: new Set([...(prev[ticker] ?? []), field]),
+    }));
   }, []);
 
   useEffect(() => {
@@ -180,6 +194,7 @@ function ComparablesPage() {
       : "";
     setRefreshLog(`✓ ${ok} updated${failMsg}`);
     setRefreshing(false);
+    setEditedCells({});
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
   }
 
@@ -453,12 +468,14 @@ function ComparablesPage() {
                   {activeTab === "datos" && (
                     <>
                       <CompsOverview comps={comps} company={selectedCompany} compSet={compSet} />
-                      <MetricsTable comps={comps} company={selectedCompany} refreshErrors={refreshErrors} />
+                      <MetricsTable comps={comps} company={selectedCompany} refreshErrors={refreshErrors}
+                        editedCells={editedCells} onEditComp={handleEditComp} chartImages={chartImages} />
                     </>
                   )}
                   {activeTab === "graficas" && mounted && (
                     <ChartsPanel comps={comps} company={selectedCompany}
-                      historyData={historyData} loadingHist={loadingHist} />
+                      historyData={historyData} loadingHist={loadingHist}
+                      onChartsCapture={setChartImages} />
                   )}
                   {activeTab === "valuacion" && mounted && (
                     <ValuationPanel comps={comps} company={selectedCompany} />
@@ -648,11 +665,68 @@ const DEFAULT_COLS: ColKey[] = ["marketCap","ev","revenue","growth","ebitda","gr
 // ══════════════════════════════════════════════════════════════════════════════
 // METRICS TABLE
 // ══════════════════════════════════════════════════════════════════════════════
-function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicComp[]; company: Company; refreshErrors?: Record<string, string> }) {
+
+// ColKey → PublicComp field mapping (r40 is computed, excluded)
+const COL_TO_FIELD: Partial<Record<ColKey, keyof PublicComp>> = {
+  marketCap: "marketCapUsd",   ev: "evUsd",       revenue: "revenueUsd",
+  fcf: "fcfUsd",               growth: "revenueGrowth",   ebitda: "ebitdaUsd",
+  grossMargin: "grossMargin",  operatingMargin: "operatingMargin",
+  ebitdaMargin: "ebitdaMargin", netMargin: "netMargin",   roe: "roe",
+  evRev: "evRevenue",          evEbitda: "evEbitda",      pe: "peRatio",
+  ps: "psRatio",               pb: "pbRatio",             de: "debtToEquity",
+  beta: "beta",
+};
+// Fields stored as decimals (0.75 = 75%) — show as percentage in edit input
+const DECIMAL_FIELDS = new Set<keyof PublicComp>(["revenueGrowth","grossMargin","operatingMargin","ebitdaMargin","netMargin","roe"]);
+
+function editDisplayVal(comp: PublicComp, colKey: ColKey): string {
+  const field = COL_TO_FIELD[colKey];
+  if (!field) return "";
+  const v = comp[field] as number | null;
+  if (v == null) return "";
+  return DECIMAL_FIELDS.has(field) ? (v * 100).toFixed(2) : v.toFixed(2);
+}
+function parseEditInput(colKey: ColKey, input: string): number | null {
+  const field = COL_TO_FIELD[colKey];
+  if (!field) return null;
+  const n = parseFloat(input.replace(/[^0-9.\-]/g, ""));
+  if (isNaN(n)) return null;
+  return DECIMAL_FIELDS.has(field) ? n / 100 : n;
+}
+
+function MetricsTable({
+  comps, company, refreshErrors = {},
+  editedCells = {}, onEditComp,
+  chartImages = {},
+}: {
+  comps: PublicComp[]; company: Company;
+  refreshErrors?: Record<string, string>;
+  editedCells?: Record<string, Set<keyof PublicComp>>;
+  onEditComp?: (ticker: string, field: keyof PublicComp, value: number | null) => void;
+  chartImages?: Record<string, string>;
+}) {
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
   const [showColPicker, setShowColPicker] = useState(false);
+  const [editCell, setEditCell] = useState<{ ticker: string; key: ColKey } | null>(null);
+  const [editInputVal, setEditInputVal] = useState("");
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(ALL_COLS.map(c => c.group)));
+  const [selectedCharts, setSelectedCharts] = useState<Set<string>>(new Set());
   const hasData = comps.some(c => c.lastRefreshed);
   const cols = ALL_COLS.filter(c => visibleCols.has(c.key));
+
+  function startEdit(comp: PublicComp, key: ColKey) {
+    if (!COL_TO_FIELD[key] || !onEditComp) return;
+    setEditCell({ ticker: comp.ticker, key });
+    setEditInputVal(editDisplayVal(comp, key));
+  }
+  function commitEdit() {
+    if (!editCell || !onEditComp) return;
+    const field = COL_TO_FIELD[editCell.key];
+    if (!field) return;
+    onEditComp(editCell.ticker, field, parseEditInput(editCell.key, editInputVal));
+    setEditCell(null);
+  }
 
   function toggleCol(k: ColKey) {
     setVisibleCols(prev => {
@@ -805,27 +879,26 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
 
   const [exporting, setExporting] = useState(false);
 
-  async function exportExcel() {
+  async function doExport(exportCols: { key: ColKey; label: string }[], charts: string[]) {
     setExporting(true);
     try {
-      const colLabels = cols.map(c => c.label);
+      const colLabels = exportCols.map(c => c.label);
       const headers = ["Company", "Ticker", "Tipo", ...colLabels];
       const rows = [
-        { cells: [company.name, "—", "PRIVADA (Target)", ...cols.map(c => rawPrivateVal(c.key))], type: "private" as const },
+        { cells: [company.name, "—", "PRIVADA (Target)", ...exportCols.map(c => rawPrivateVal(c.key))], type: "private" as const },
         ...comps.map(comp => ({
-          cells: [comp.name, comp.ticker, `Público (${comp.exchange ?? ""})`, ...cols.map(c => rawCompVal(comp, c.key))],
+          cells: [comp.name, comp.ticker, `Público (${comp.exchange ?? ""})`, ...exportCols.map(c => rawCompVal(comp, c.key))],
           type: "public" as const,
         })),
-        ...(hasData ? [{ cells: ["Set Median", "—", "Mediana", ...cols.map(c => rawMedianVal(c.key))], type: "median" as const }] : []),
+        ...(hasData ? [{ cells: ["Set Median", "—", "Mediana", ...exportCols.map(c => rawMedianVal(c.key))], type: "median" as const }] : []),
       ];
-
+      const chartData = charts.map(k => ({ name: CHART_LABELS[k] ?? k, base64: chartImages[k] })).filter(c => c.base64);
       const res = await fetch("/api/comparables/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ headers, rows, companyName: company.name }),
+        body: JSON.stringify({ headers, rows, companyName: company.name, charts: chartData }),
       });
       if (!res.ok) return;
-
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -835,6 +908,7 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
       URL.revokeObjectURL(url);
     } finally {
       setExporting(false);
+      setShowExportModal(false);
     }
   }
 
@@ -853,18 +927,14 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
         </div>
         <div className="flex items-center gap-2">
           {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">Sin datos — actualizar</span>}
-          <button onClick={exportExcel} disabled={exporting}
+          <button onClick={() => setShowExportModal(true)} disabled={exporting}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-chalk rounded-[7px] hover:border-emerald-500 hover:text-emerald-700 bg-white transition-colors disabled:opacity-50">
-            {exporting ? (
-              <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <line x1="6" y1="1" x2="6" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                <polyline points="3,5.5 6,8.5 9,5.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M1 9.5v1a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              </svg>
-            )}
-            {exporting ? "Generando…" : "Excel"}
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <line x1="6" y1="1" x2="6" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              <polyline points="3,5.5 6,8.5 9,5.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M1 9.5v1a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+            Excel
           </button>
           <div className="relative">
             <button onClick={() => setShowColPicker(v => !v)}
@@ -964,11 +1034,34 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
                     </div>
                   </div>
                 </td>
-                {cols.map(c => (
-                  <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
-                    {compVal(comp, c.key)}
-                  </td>
-                ))}
+                {cols.map(c => {
+                  const field = COL_TO_FIELD[c.key];
+                  const isEditing = editCell?.ticker === comp.ticker && editCell?.key === c.key;
+                  const isEdited = field ? editedCells[comp.ticker]?.has(field) : false;
+                  return (
+                    <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          className="w-16 text-right text-[11px] border-b-2 border-orange bg-orange/5 outline-none px-1 py-0 rounded-sm font-mono"
+                          value={editInputVal}
+                          onChange={e => setEditInputVal(e.target.value)}
+                          onBlur={commitEdit}
+                          onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                        />
+                      ) : (
+                        <div
+                          onClick={() => startEdit(comp, c.key)}
+                          className={field && onEditComp ? "cursor-text inline-flex items-center gap-0.5 justify-end" : ""}
+                          title={field && onEditComp ? "Clic para editar" : undefined}
+                        >
+                          {compVal(comp, c.key)}
+                          {isEdited && <span className="text-orange text-[7px] leading-none ml-0.5">●</span>}
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -986,8 +1079,133 @@ function MetricsTable({ comps, company, refreshErrors = {} }: { comps: PublicCom
           )}
         </table>
       </div>
-      <div className="px-4 py-2 border-t border-chalk bg-fog/20">
+      <div className="px-4 py-2 border-t border-chalk bg-fog/20 flex items-center justify-between">
         <p className="text-[9px] text-slate">R40 = Rule of 40 (Revenue Growth % + EBITDA Margin %). Buena salud operacional si &gt;40. Datos: Yahoo Finance.</p>
+        {onEditComp && <p className="text-[9px] text-slate/50">Clic en cualquier celda de comparable para editar · <span className="text-orange">●</span> = editado manualmente</p>}
+      </div>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <ExportModal
+          allCols={ALL_COLS}
+          selectedGroups={selectedGroups}
+          onToggleGroup={g => setSelectedGroups(prev => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n; })}
+          selectedCharts={selectedCharts}
+          onToggleChart={k => setSelectedCharts(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; })}
+          chartImages={chartImages}
+          exporting={exporting}
+          onClose={() => setShowExportModal(false)}
+          onExport={() => {
+            const exportCols = ALL_COLS.filter(c => visibleCols.has(c.key) && selectedGroups.has(c.group));
+            doExport(exportCols.length ? exportCols : cols, [...selectedCharts]);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Labels for chart images
+const CHART_LABELS: Record<string, string> = {
+  scatter:   "Crecimiento vs EV/Revenue",
+  revenue:   "Comparación de Revenue",
+  history:   "Performance bursátil (12 meses)",
+  bubble:    "Crecimiento vs Margen Bruto",
+  ranking:   "Ranking de comparables",
+};
+
+function ExportModal({
+  allCols, selectedGroups, onToggleGroup,
+  selectedCharts, onToggleChart,
+  chartImages, exporting, onClose, onExport,
+}: {
+  allCols: typeof ALL_COLS;
+  selectedGroups: Set<string>; onToggleGroup: (g: string) => void;
+  selectedCharts: Set<string>; onToggleChart: (k: string) => void;
+  chartImages: Record<string, string>;
+  exporting: boolean; onClose: () => void; onExport: () => void;
+}) {
+  const groups = [...new Set(allCols.map(c => c.group))];
+  const availableCharts = Object.keys(CHART_LABELS).filter(k => chartImages[k]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-t-[18px] sm:rounded-[16px] shadow-2xl border border-chalk w-full sm:w-[460px] max-h-[85vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-chalk sticky top-0 bg-white rounded-t-[16px]">
+          <div>
+            <p className="text-[15px] font-semibold text-carbon">Exportar a Excel</p>
+            <p className="text-[11px] text-slate mt-0.5">Elige qué incluir en el archivo</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-fog text-slate hover:text-carbon transition-colors">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-5">
+          {/* Data groups */}
+          <div>
+            <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Datos a incluir</p>
+            <div className="grid grid-cols-2 gap-2">
+              {groups.map(g => {
+                const gcols = allCols.filter(c => c.group === g);
+                return (
+                  <label key={g}
+                    className={`flex items-start gap-2.5 p-2.5 border rounded-[10px] cursor-pointer transition-colors
+                      ${selectedGroups.has(g) ? "border-carbon bg-carbon/3" : "border-chalk hover:border-carbon/30 hover:bg-fog/30"}`}>
+                    <input type="checkbox" checked={selectedGroups.has(g)} onChange={() => onToggleGroup(g)}
+                      className="mt-0.5 w-3.5 h-3.5 accent-carbon shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-carbon leading-tight">{g}</p>
+                      <p className="text-[9px] text-slate mt-0.5 leading-tight truncate">{gcols.map(c => c.label).join(" · ")}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Charts */}
+          <div>
+            <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Gráficas</p>
+            {availableCharts.length > 0 ? (
+              <div className="space-y-1.5">
+                {availableCharts.map(k => (
+                  <label key={k} className={`flex items-center gap-2.5 px-3 py-2 border rounded-[8px] cursor-pointer transition-colors
+                    ${selectedCharts.has(k) ? "border-carbon bg-carbon/3" : "border-chalk hover:border-carbon/30"}`}>
+                    <input type="checkbox" checked={selectedCharts.has(k)} onChange={() => onToggleChart(k)}
+                      className="w-3.5 h-3.5 accent-carbon" />
+                    <span className="text-[12px] text-carbon">{CHART_LABELS[k]}</span>
+                    <span className="ml-auto text-[9px] text-slate bg-fog px-1.5 py-0.5 rounded">PNG</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-[8px]">
+                <p className="text-[11px] text-amber-700">
+                  Para incluir gráficas, primero visita la pestaña <strong>Gráficas</strong> — se capturan automáticamente al cargar.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2.5 px-5 py-4 border-t border-chalk sticky bottom-0 bg-white">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 text-[12px] font-medium border border-chalk rounded-[9px] text-slate hover:text-carbon hover:border-carbon/40 transition-colors">
+            Cancelar
+          </button>
+          <button onClick={onExport} disabled={exporting || selectedGroups.size === 0}
+            className="flex-1 px-4 py-2.5 text-[12px] font-semibold bg-carbon text-white rounded-[9px] hover:bg-graphite transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+            {exporting
+              ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>Generando…</>
+              : <>
+                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none"><line x1="6" y1="1" x2="6" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><polyline points="3,5.5 6,8.5 9,5.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M1 9.5v1a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+                  Descargar Excel
+                </>}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1009,15 +1227,56 @@ function R40Chip({ val }: { val: number }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // CHARTS PANEL
 // ══════════════════════════════════════════════════════════════════════════════
+async function captureSvg(el: HTMLElement): Promise<string | null> {
+  const svg = el.querySelector("svg");
+  if (!svg) return null;
+  const w = el.clientWidth || 600;
+  const h = el.clientHeight || 300;
+  return new Promise(resolve => {
+    const s = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([s], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w * 2; canvas.height = h * 2;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { URL.revokeObjectURL(url); resolve(null); return; }
+      ctx.scale(2, 2); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/png").split(",")[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
 function ChartsPanel({
-  comps, company, historyData, loadingHist
+  comps, company, historyData, loadingHist, onChartsCapture,
 }: {
   comps: PublicComp[]; company: Company;
   historyData: Record<string, { date: string; indexed: number }[]>;
   loadingHist: boolean;
+  onChartsCapture?: (images: Record<string, string>) => void;
 }) {
   const [rankMetric, setRankMetric] = useState<string>("evRevenue");
+  const chartRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const hasData = comps.some(c => c.lastRefreshed);
+
+  useEffect(() => {
+    if (!onChartsCapture || !hasData) return;
+    const timer = setTimeout(async () => {
+      const images: Record<string, string> = {};
+      for (const [key, el] of Object.entries(chartRefs.current)) {
+        if (!el) continue;
+        const b64 = await captureSvg(el).catch(() => null);
+        if (b64) images[key] = b64;
+      }
+      if (Object.keys(images).length) onChartsCapture(images);
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [hasData, comps.length, onChartsCapture]);
 
   if (!hasData) {
     return (
@@ -1190,7 +1449,7 @@ function ChartsPanel({
     <div className="space-y-4">
       {/* Scatter: Growth vs EV/Revenue */}
       {scatterData.length >= 2 && (
-        <div className="bg-paper rounded-[10px] border border-chalk p-5">
+        <div ref={el => { chartRefs.current.scatter = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3">
             <p className="text-[13px] font-semibold text-carbon">Crecimiento vs. EV/Revenue</p>
             <p className="text-[11px] text-slate">
@@ -1235,7 +1494,7 @@ function ChartsPanel({
       )}
 
       {/* Bar: Revenue comparison */}
-      <div className="bg-paper rounded-[10px] border border-chalk p-5">
+      <div ref={el => { chartRefs.current.revenue = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
         <div className="mb-3">
           <p className="text-[13px] font-semibold text-carbon">Comparación de Revenue</p>
           <p className="text-[11px] text-slate">Tamaño relativo de {company.name} vs. los comparables públicos</p>
@@ -1257,7 +1516,7 @@ function ChartsPanel({
       </div>
 
       {/* Line: Stock performance */}
-      <div className="bg-paper rounded-[10px] border border-chalk p-5">
+      <div ref={el => { chartRefs.current.history = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
         <div className="mb-3 flex items-center justify-between">
           <div>
             <p className="text-[13px] font-semibold text-carbon">Performance bursátil — 12 meses</p>
@@ -1382,7 +1641,7 @@ function ChartsPanel({
 
       {/* Bubble: Growth vs Gross Margin vs Market Cap */}
       {bubbleData.length >= 2 && (
-        <div className="bg-paper rounded-[10px] border border-chalk p-5">
+        <div ref={el => { chartRefs.current.bubble = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3">
             <p className="text-[13px] font-semibold text-carbon">Crecimiento vs. Margen Bruto (burbuja = market cap)</p>
             <p className="text-[11px] text-slate">
@@ -1428,7 +1687,7 @@ function ChartsPanel({
 
       {/* Horizontal Ranking */}
       {rankItems.length >= 2 && (
-        <div className="bg-paper rounded-[10px] border border-chalk p-5">
+        <div ref={el => { chartRefs.current.ranking = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3 flex items-start justify-between gap-4">
             <div>
               <p className="text-[13px] font-semibold text-carbon">Ranking de comparables</p>
