@@ -125,6 +125,7 @@ function ComparablesPage() {
   const [loadingHist, setLoadingHist] = useState(false);
   const [editedCells, setEditedCells] = useState<Record<string, Set<keyof PublicComp>>>({});
   const [editedPrivate, setEditedPrivate] = useState<Set<keyof Company>>(new Set());
+  const [listOpen, setListOpen] = useState(true);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -298,9 +299,13 @@ function ComparablesPage() {
         }
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Company sidebar */}
-        <aside className="w-[220px] shrink-0 border-r border-chalk bg-paper overflow-y-auto flex flex-col">
+      <div className="flex flex-1 min-h-0 relative">
+        {/* Company list panel */}
+        <aside
+          className="shrink-0 border-r border-chalk bg-paper overflow-hidden flex flex-col transition-[width] duration-300 ease-in-out"
+          style={{ width: listOpen ? 220 : 0 }}
+        >
+        <div className="w-[220px] h-full flex flex-col overflow-hidden">
           {/* Search box */}
           <div className="p-2 border-b border-chalk">
             <div className="relative">
@@ -359,7 +364,28 @@ function ComparablesPage() {
               );
             })()}
           </div>
+        </div>{/* end inner 220px wrapper */}
         </aside>
+
+        {/* Toggle button — floats at the panel boundary */}
+        <button
+          onClick={() => setListOpen(v => !v)}
+          title={listOpen ? "Ocultar lista" : "Mostrar lista"}
+          className="absolute top-4 z-20 w-5 h-8 bg-paper border border-chalk flex items-center justify-center text-slate hover:text-carbon hover:bg-fog transition-colors shadow-sm"
+          style={{
+            left: listOpen ? 212 : 0,
+            borderRadius: "0 6px 6px 0",
+            borderLeft: listOpen ? "none" : undefined,
+            transition: "left 300ms ease-in-out",
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            {listOpen
+              ? <path d="M6.5 2L3 5l3.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              : <path d="M3.5 2L7 5l-3.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            }
+          </svg>
+        </button>
 
         {/* Main area */}
         <main className="flex-1 overflow-y-auto bg-fog/20">

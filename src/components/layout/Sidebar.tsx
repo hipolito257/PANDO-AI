@@ -1,18 +1,19 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
 import { signOut } from "next-auth/react";
 
 const NAV = [
-  { href: "/",            label: "Dashboard"  },
-  { href: "/radar",       label: "Radar"      },
-  { href: "/mandatos",    label: "Mandatos"   },
-  { href: "/comparables", label: "Comparables"},
-  { href: "/exit",        label: "Exit"       },
-  { href: "/documentos",  label: "Documentos" },
-  { href: "/conectores",  label: "Conectores" },
+  { href: "/",            label: "Dashboard"   },
+  { href: "/radar",       label: "Radar"       },
+  { href: "/mandatos",    label: "Mandatos"    },
+  { href: "/comparables", label: "Comparables" },
+  { href: "/exit",        label: "Exit"        },
+  { href: "/documentos",  label: "Documentos"  },
+  { href: "/conectores",  label: "Conectores"  },
 ];
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -28,77 +29,104 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 type Badges = { radar?: number; exit?: number };
 
 export function Sidebar({ badges = {} }: { badges?: Badges }) {
-  const pathname = usePathname();
+  const pathname  = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside data-sidebar className="no-print flex flex-col w-[220px] shrink-0 bg-paper border-r border-chalk h-screen sticky top-0">
-      {/* Logo */}
-      <div className="flex items-center h-[60px] px-5 border-b border-chalk">
-        <Logo size="sm" />
+    <aside
+      data-sidebar
+      className={cn(
+        "no-print flex flex-col shrink-0 bg-paper border-r border-chalk h-screen sticky top-0",
+        "transition-[width] duration-300 ease-in-out overflow-hidden",
+        collapsed ? "w-[56px]" : "w-[220px]",
+      )}
+    >
+      {/* Logo + collapse toggle */}
+      <div className="flex items-center h-[60px] px-2 border-b border-chalk shrink-0 gap-2">
+        <div className={cn("flex-1 overflow-hidden transition-opacity duration-200", collapsed ? "opacity-0 w-0" : "opacity-100")}>
+          <Logo size="sm" />
+        </div>
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          title={collapsed ? "Expandir menú" : "Colapsar menú"}
+          className="w-8 h-8 flex items-center justify-center rounded-[7px] hover:bg-fog text-slate hover:text-carbon transition-colors shrink-0"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            {collapsed ? (
+              <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            ) : (
+              <path d="M9 3L5 7l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            )}
+          </svg>
+        </button>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => {
+      <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
+        {NAV.map(item => {
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const count  = item.href === "/radar" ? (badges.radar ?? 0)
+                       : item.href === "/exit"  ? (badges.exit  ?? 0) : 0;
           return (
             <Link
               key={item.href}
               href={item.href}
+              title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-[8px] text-[13px] font-medium transition-colors",
-                active
-                  ? "bg-carbon text-white"
-                  : "text-graphite hover:bg-fog hover:text-carbon"
+                "flex items-center rounded-[8px] text-[13px] font-medium transition-colors",
+                collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
+                active ? "bg-carbon text-white" : "text-graphite hover:bg-fog hover:text-carbon",
               )}
             >
               <span className="w-4 h-4 flex-none flex items-center justify-center opacity-70">
                 {ICON_MAP[item.href]}
               </span>
-              <span className="flex-1">{item.label}</span>
-              {(() => {
-                const count =
-                  item.href === "/radar" ? (badges.radar ?? 0) :
-                  item.href === "/exit"  ? (badges.exit  ?? 0) : 0;
-                if (!count || active) return null;
-                return (
-                  <span className="bg-orange text-white text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
-                    {count > 99 ? "99+" : count}
-                  </span>
-                );
-              })()}
+              {!collapsed && (
+                <>
+                  <span className="flex-1 whitespace-nowrap">{item.label}</span>
+                  {count > 0 && !active && (
+                    <span className="bg-orange text-white text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                      {count > 99 ? "99+" : count}
+                    </span>
+                  )}
+                </>
+              )}
             </Link>
           );
         })}
       </nav>
 
       {/* Bottom */}
-      <div className="p-3 border-t border-chalk space-y-1">
+      <div className="p-2 border-t border-chalk space-y-0.5">
         <Link
           href="/settings"
+          title={collapsed ? "Configuración" : undefined}
           className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-[8px] text-[13px] font-medium transition-colors w-full",
-            pathname === "/settings"
-              ? "bg-carbon text-white"
-              : "text-graphite hover:bg-fog hover:text-carbon"
+            "flex items-center rounded-[8px] text-[13px] font-medium transition-colors w-full",
+            collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
+            pathname === "/settings" ? "bg-carbon text-white" : "text-graphite hover:bg-fog hover:text-carbon",
           )}
         >
           <span className="w-4 h-4 flex-none flex items-center justify-center opacity-70"><IconGear /></span>
-          <span>Configuración</span>
+          {!collapsed && <span>Configuración</span>}
         </Link>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-3 px-3 py-2 rounded-[8px] text-[13px] text-slate hover:text-carbon hover:bg-fog w-full transition-colors"
+          title={collapsed ? "Cerrar sesión" : undefined}
+          className={cn(
+            "flex items-center rounded-[8px] text-[13px] text-slate hover:text-carbon hover:bg-fog transition-colors w-full",
+            collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
+          )}
         >
           <IconLogout />
-          <span>Cerrar sesión</span>
+          {!collapsed && <span>Cerrar sesión</span>}
         </button>
       </div>
     </aside>
   );
 }
 
-// ── Icons (inline SVG, no library) ────────────────────────────────────────────
+// ── Icons ─────────────────────────────────────────────────────────────────────
 function IconDash() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
