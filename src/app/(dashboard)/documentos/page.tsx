@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { upload } from "@vercel/blob/client";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -66,8 +65,9 @@ export default function DocumentosPage() {
   useEffect(() => { loadTemplates(); loadCompanies(); checkApiKey(); }, [loadTemplates, loadCompanies, checkApiKey]);
 
   // ── Upload template ────────────────────────────────────────────────────────
-  // Files up to 25 MB supported via Vercel Blob direct client upload.
+  // Files up to 25 MB: chunked upload (3 MB per chunk) → Vercel Blob assembly
   const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+  const CHUNK_SIZE        =  3 * 1024 * 1024; // 3 MB — well under Vercel's 4.5 MB limit
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -78,40 +78,66 @@ export default function DocumentosPage() {
     }
 
     setUploading(true); setUploadErr(null);
-    const ext = pendingFile.name.split(".").pop()?.toLowerCase() ?? "";
+    const ext      = pendingFile.name.split(".").pop()?.toLowerCase() ?? "";
+    const uploadId = crypto.randomUUID();
 
     try {
-      // Upload directly to Vercel Blob — bypasses Vercel's 4.5 MB serverless body limit
-      const blob = await upload(pendingFile.name, pendingFile, {
-        access: "public",
-        handleUploadUrl: "/api/templates/upload",
-      });
+      const totalChunks = Math.ceil(pendingFile.size / CHUNK_SIZE);
+      const chunkUrls: string[] = [];
 
-      // Register the template in our database
-      const res = await fetch("/api/templates", {
+      // Upload each chunk sequentially
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = pendingFile.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const fd = new FormData();
+        fd.append("chunk",       chunk);
+        fd.append("uploadId",    uploadId);
+        fd.append("chunkIndex",  String(i));
+        fd.append("filename",    pendingFile.name);
+
+        const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error((j as any).error ?? `Error subiendo parte ${i + 1}/${totalChunks}`);
+        }
+        const { chunkUrl } = await res.json();
+        chunkUrls.push(chunkUrl);
+      }
+
+      // Finalize: assemble chunks into one file in Vercel Blob
+      const finalRes = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: pendingFile.name }),
+      });
+      if (!finalRes.ok) {
+        const j = await finalRes.json().catch(() => ({}));
+        throw new Error((j as any).error ?? "Error ensamblando archivo");
+      }
+      const { blobUrl } = await finalRes.json();
+
+      // Register template in database
+      const regRes = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          blobUrl: blob.url,
+          blobUrl,
           name: uploadName.trim(),
           description: uploadDesc.trim() || undefined,
           type: ext,
         }),
       });
-
-      if (res.ok) {
-        const t = await res.json() as DocTemplate;
-        setTemplates(prev => [t, ...prev]);
-        setShowUpload(false); setPendingFile(null); setUploadName(""); setUploadDesc("");
-        setSelected(t);
-      } else {
-        const j = await res.json().catch(() => ({}));
-        setUploadErr((j as any).error ?? "Error al registrar plantilla");
+      if (!regRes.ok) {
+        const j = await regRes.json().catch(() => ({}));
+        throw new Error((j as any).error ?? "Error registrando plantilla");
       }
+
+      const t = await regRes.json() as DocTemplate;
+      setTemplates(prev => [t, ...prev]);
+      setShowUpload(false); setPendingFile(null); setUploadName(""); setUploadDesc("");
+      setSelected(t);
+
     } catch (err: any) {
-      // @vercel/blob/client wraps the server error — extract it
-      const msg = err?.message ?? String(err);
-      setUploadErr(`Error al subir: ${msg}`);
+      setUploadErr(err?.message ?? "Error al subir archivo");
     }
 
     setUploading(false);
