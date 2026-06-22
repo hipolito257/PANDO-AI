@@ -727,7 +727,6 @@ function MetricsTable({
   const [editInputVal, setEditInputVal] = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(ALL_COLS.map(c => c.group)));
-  const [selectedCharts, setSelectedCharts] = useState<Set<string>>(new Set());
   const hasData = comps.some(c => c.lastRefreshed);
   const cols = ALL_COLS.filter(c => visibleCols.has(c.key));
 
@@ -912,7 +911,7 @@ function MetricsTable({
 
   const [exporting, setExporting] = useState(false);
 
-  async function doExport(exportCols: { key: ColKey; label: string }[], charts: string[]) {
+  async function doExport(exportCols: { key: ColKey; label: string }[]) {
     setExporting(true);
     try {
       const colLabels = exportCols.map(c => c.label);
@@ -925,62 +924,10 @@ function MetricsTable({
         })),
         ...(hasData ? [{ cells: ["Set Median", "—", "Mediana", ...exportCols.map(c => rawMedianVal(c.key))], type: "median" as const }] : []),
       ];
-      const nativeCharts: NativeChartReq[] = [];
-      if (charts.includes("revenue")) {
-        nativeCharts.push({
-          type: "column", title: "Revenue (USD M)", sheetName: "Revenue",
-          categories: [company.name, ...comps.map(c => c.name)],
-          values: [
-            company.revenueUsd != null ? +(company.revenueUsd / 1_000_000).toFixed(1) : null,
-            ...comps.map(c => c.revenueUsd != null ? +(c.revenueUsd / 1_000_000).toFixed(1) : null),
-          ],
-        });
-      }
-      if (charts.includes("growth")) {
-        nativeCharts.push({
-          type: "column", title: "Revenue Growth (%)", sheetName: "Growth",
-          categories: [company.name, ...comps.map(c => c.name)],
-          values: [
-            company.revenueGrowth != null ? +(company.revenueGrowth * 100).toFixed(2) : null,
-            ...comps.map(c => c.revenueGrowth != null ? +(c.revenueGrowth * 100).toFixed(2) : null),
-          ],
-        });
-      }
-      if (charts.includes("evrev")) {
-        nativeCharts.push({
-          type: "column", title: "EV/Revenue", sheetName: "EV Revenue",
-          categories: comps.map(c => c.name),
-          values:     comps.map(c => c.evRevenue),
-        });
-      }
-      if (charts.includes("r40")) {
-        nativeCharts.push({
-          type: "column", title: "Rule of 40", sheetName: "Rule of 40",
-          categories: comps.map(c => c.name),
-          values: comps.map(c => {
-            const g = c.revenueGrowth != null ? c.revenueGrowth * 100 : null;
-            const m = c.ebitdaMargin  != null ? c.ebitdaMargin  * 100 : null;
-            return g != null && m != null ? +(g + m).toFixed(2) : null;
-          }),
-        });
-      }
-      if (charts.includes("scatter")) {
-        nativeCharts.push({
-          type: "scatter", title: "Crecimiento vs EV/Revenue", sheetName: "Scatter",
-          xLabel: "Revenue Growth (%)", yLabel: "EV/Revenue",
-          points: comps
-            .filter(c => c.revenueGrowth != null && c.evRevenue != null)
-            .map(c => ({
-              x: +(c.revenueGrowth! * 100).toFixed(2),
-              y: +c.evRevenue!.toFixed(2),
-              label: c.ticker,
-            })),
-        });
-      }
       const res = await fetch("/api/comparables/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ headers, rows, companyName: company.name, nativeCharts }),
+        body: JSON.stringify({ headers, rows, companyName: company.name }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -1197,13 +1144,11 @@ function MetricsTable({
           allCols={ALL_COLS}
           selectedGroups={selectedGroups}
           onToggleGroup={g => setSelectedGroups(prev => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n; })}
-          selectedCharts={selectedCharts}
-          onToggleChart={k => setSelectedCharts(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; })}
           exporting={exporting}
           onClose={() => setShowExportModal(false)}
           onExport={() => {
             const exportCols = ALL_COLS.filter(c => visibleCols.has(c.key) && selectedGroups.has(c.group));
-            doExport(exportCols.length ? exportCols : cols, [...selectedCharts]);
+            doExport(exportCols.length ? exportCols : cols);
           }}
         />
       )}
@@ -1211,27 +1156,13 @@ function MetricsTable({
   );
 }
 
-// Native chart options for Excel export
-const NATIVE_CHART_OPTIONS = [
-  { key: "revenue", label: "Comparación de Revenue",    sheetName: "Revenue"    },
-  { key: "growth",  label: "Revenue Growth %",          sheetName: "Growth"     },
-  { key: "evrev",   label: "Múltiplo EV/Revenue",       sheetName: "EV Revenue" },
-  { key: "r40",     label: "Rule of 40",                sheetName: "Rule of 40" },
-  { key: "scatter", label: "Crecimiento vs EV/Revenue", sheetName: "Scatter"    },
-] as const;
-
-type NativeChartReq =
-  | { type: "column"; title: string; sheetName: string; categories: (string|null)[]; values: (number|null)[] }
-  | { type: "scatter"; title: string; sheetName: string; xLabel: string; yLabel: string; points: { x: number; y: number; label: string }[] };
 
 function ExportModal({
   allCols, selectedGroups, onToggleGroup,
-  selectedCharts, onToggleChart,
   exporting, onClose, onExport,
 }: {
   allCols: typeof ALL_COLS;
   selectedGroups: Set<string>; onToggleGroup: (g: string) => void;
-  selectedCharts: Set<string>; onToggleChart: (k: string) => void;
   exporting: boolean; onClose: () => void; onExport: () => void;
 }) {
   const groups = [...new Set(allCols.map(c => c.group))];
@@ -1244,51 +1175,31 @@ function ExportModal({
         <div className="flex items-center justify-between px-5 py-4 border-b border-chalk sticky top-0 bg-white rounded-t-[16px]">
           <div>
             <p className="text-[15px] font-semibold text-carbon">Exportar a Excel</p>
-            <p className="text-[11px] text-slate mt-0.5">Elige qué incluir en el archivo</p>
+            <p className="text-[11px] text-slate mt-0.5">Elige qué columnas incluir</p>
           </div>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-fog text-slate hover:text-carbon transition-colors">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-5">
-          {/* Data groups */}
-          <div>
-            <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Datos a incluir</p>
-            <div className="grid grid-cols-2 gap-2">
-              {groups.map(g => {
-                const gcols = allCols.filter(c => c.group === g);
-                return (
-                  <label key={g}
-                    className={`flex items-start gap-2.5 p-2.5 border rounded-[10px] cursor-pointer transition-colors
-                      ${selectedGroups.has(g) ? "border-carbon bg-carbon/3" : "border-chalk hover:border-carbon/30 hover:bg-fog/30"}`}>
-                    <input type="checkbox" checked={selectedGroups.has(g)} onChange={() => onToggleGroup(g)}
-                      className="mt-0.5 w-3.5 h-3.5 accent-carbon shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-semibold text-carbon leading-tight">{g}</p>
-                      <p className="text-[9px] text-slate mt-0.5 leading-tight truncate">{gcols.map(c => c.label).join(" · ")}</p>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Native charts */}
-          <div>
-            <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Gráficas nativas de Excel</p>
-            <p className="text-[10px] text-slate mb-2">Cada gráfica se crea con sus propios datos — puedes editarla directamente en Excel.</p>
-            <div className="space-y-1.5">
-              {NATIVE_CHART_OPTIONS.map(opt => (
-                <label key={opt.key} className={`flex items-center gap-2.5 px-3 py-2 border rounded-[8px] cursor-pointer transition-colors
-                  ${selectedCharts.has(opt.key) ? "border-carbon bg-carbon/3" : "border-chalk hover:border-carbon/30"}`}>
-                  <input type="checkbox" checked={selectedCharts.has(opt.key)} onChange={() => onToggleChart(opt.key)}
-                    className="w-3.5 h-3.5 accent-carbon" />
-                  <span className="text-[12px] text-carbon">{opt.label}</span>
-                  <span className="ml-auto text-[9px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Excel</span>
+        <div className="px-5 py-4">
+          <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Datos a incluir</p>
+          <div className="grid grid-cols-2 gap-2">
+            {groups.map(g => {
+              const gcols = allCols.filter(c => c.group === g);
+              return (
+                <label key={g}
+                  className={`flex items-start gap-2.5 p-2.5 border rounded-[10px] cursor-pointer transition-colors
+                    ${selectedGroups.has(g) ? "border-carbon bg-carbon/3" : "border-chalk hover:border-carbon/30 hover:bg-fog/30"}`}>
+                  <input type="checkbox" checked={selectedGroups.has(g)} onChange={() => onToggleGroup(g)}
+                    className="mt-0.5 w-3.5 h-3.5 accent-carbon shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-semibold text-carbon leading-tight">{g}</p>
+                    <p className="text-[9px] text-slate mt-0.5 leading-tight truncate">{gcols.map(c => c.label).join(" · ")}</p>
+                  </div>
                 </label>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
 
