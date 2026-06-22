@@ -109,7 +109,9 @@ export default function DocumentosPage() {
         setUploadErr((j as any).error ?? "Error al registrar plantilla");
       }
     } catch (err: any) {
-      setUploadErr(err?.message ?? "Error al subir archivo");
+      // @vercel/blob/client wraps the server error — extract it
+      const msg = err?.message ?? String(err);
+      setUploadErr(`Error al subir: ${msg}`);
     }
 
     setUploading(false);
