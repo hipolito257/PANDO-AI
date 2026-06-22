@@ -38,14 +38,90 @@ function median(arr: number[]): number | null {
   return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
 }
 
+// ── Normalize PPTX XML runs: merge adjacent plain runs within each paragraph ──
+// PPTX splits text across multiple <a:r> runs (spell-check, cursor position, etc.)
+// e.g. "Goldman Sachs" stored as <a:r><a:t>Goldman </a:t></a:r><a:r><a:t>Sachs</a:t></a:r>
+// After normalization it's a single run, making string find/replace reliable.
+function normalizeXmlRuns(xml: string): string {
+  // Merge adjacent <a:r> that contain ONLY <a:t> (no rPr / no formatting)
+  // Runs with formatting (<a:rPr ...>) are left untouched to preserve styling
+  let changed = true;
+  let result = xml;
+  while (changed) {
+    const prev = result;
+    // Pattern: </a:t></a:r> immediately followed by <a:r><a:t> (optional whitespace)
+    // Both runs must be plain (no rPr between <a:r> and <a:t>)
+    result = result.replace(
+      /<a:r>\s*<a:t>([\s\S]*?)<\/a:t>\s*<\/a:r>\s*<a:r>\s*<a:t>([\s\S]*?)<\/a:t>\s*<\/a:r>/g,
+      "<a:r><a:t>$1$2</a:t></a:r>",
+    );
+    changed = result !== prev;
+  }
+  return result;
+}
+
+// ── Extract text from PPTX, structured per slide/shape ────────────────────────
+// Returns a human-readable outline that Claude can target precisely.
+function extractPptxStructured(buffer: Buffer): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const PizZip = require("pizzip");
+  try {
+    const zip = new PizZip(buffer);
+    const slideFiles = Object.keys(zip.files)
+      .filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+      .sort((a, b) => {
+        const na = parseInt(a.match(/\d+/)![0]);
+        const nb = parseInt(b.match(/\d+/)![0]);
+        return na - nb;
+      });
+
+    const lines: string[] = [];
+    for (let si = 0; si < slideFiles.length; si++) {
+      const slideXml = normalizeXmlRuns(zip.files[slideFiles[si]].asText());
+      const slideLines: string[] = [`=== DIAPOSITIVA ${si + 1} ===`];
+
+      // Extract each shape's text
+      const shapeRegex = /<p:sp\b[\s\S]*?<\/p:sp>/g;
+      let shapeMatch: RegExpExecArray | null;
+      let shapeIdx = 0;
+      while ((shapeMatch = shapeRegex.exec(slideXml)) !== null) {
+        const shapeXml = shapeMatch[0];
+
+        // Get shape name if available
+        const nameMatch = shapeXml.match(/cNvPr[^>]*name="([^"]+)"/);
+        const shapeName = nameMatch ? nameMatch[1] : `Shape ${++shapeIdx}`;
+
+        // Extract text runs per paragraph, joining them
+        const paragraphs: string[] = [];
+        const paraRegex = /<a:p\b[\s\S]*?<\/a:p>/g;
+        let paraMatch: RegExpExecArray | null;
+        while ((paraMatch = paraRegex.exec(shapeXml)) !== null) {
+          const paraText = [...paraMatch[0].matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)]
+            .map(m => m[1]).join("").trim();
+          if (paraText) paragraphs.push(paraText);
+        }
+
+        if (paragraphs.length) {
+          slideLines.push(`  [${shapeName}]: ${paragraphs.join(" | ")}`);
+        }
+      }
+
+      if (slideLines.length > 1) lines.push(...slideLines);
+    }
+
+    return lines.join("\n").slice(0, 12000);
+  } catch { return ""; }
+}
+
 // ── Extract text from Office docs (DOCX / PPTX / XLSX) ────────────────────────
 function extractOfficeText(buffer: Buffer, ext: string): string {
+  if (ext === "pptx") return extractPptxStructured(buffer);
+
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const PizZip = require("pizzip");
   try {
     const zip = new PizZip(buffer);
     const xmlFiles = Object.keys(zip.files).filter(name => {
-      if (ext === "pptx") return !!name.match(/^ppt\/slides\/slide\d+\.xml$/);
       if (ext === "docx") return name === "word/document.xml";
       if (ext === "xlsx") return !!name.match(/^xl\/worksheets\/sheet\d+\.xml$/) || name === "xl/sharedStrings.xml";
       return false;
@@ -77,9 +153,15 @@ function applyReplacementsToOffice(
   });
   for (const fname of xmlFiles) {
     try {
-      let content = zip.files[fname].asText();
+      // Normalize runs first so find/replace works on merged text
+      let content = type === "pptx"
+        ? normalizeXmlRuns(zip.files[fname].asText())
+        : zip.files[fname].asText();
       for (const { find, replace } of replacements) {
-        if (find && find.length > 1) content = content.split(find).join(replace);
+        if (find && find.length > 1) {
+          // Escape special regex chars in 'find' for reliable splitting
+          content = content.split(find).join(replace);
+        }
       }
       zip.file(fname, content);
     } catch { /* skip */ }
@@ -233,25 +315,28 @@ Fecha: ${today()}
 
   contentBlocks.push({
     type: "text",
-    text: `Eres un analista senior de Private Equity. Tu tarea es personalizar un documento ${templateType.toUpperCase()}.
+    text: `Eres un analista senior de Private Equity. Tu tarea es personalizar un documento ${templateType.toUpperCase()} con datos reales de una empresa target.
 
 ${companySection}
 
 ${userInstructions}
 
-CONTENIDO ACTUAL DEL DOCUMENTO A PERSONALIZAR:
+CONTENIDO ACTUAL DEL DOCUMENTO (organizado por diapositiva/sección):
 ${templateText || "(documento sin texto extraíble — usa los datos disponibles)"}
 
-INSTRUCCIONES GENERALES:
-1. Identifica EXACTAMENTE qué texto del documento debe reemplazarse
-2. Reemplaza: nombres propios, cifras financieras, porcentajes, sectores, países, ciudades, fechas, nombres de personas, descripción del negocio
-3. Para campos narrativos, genera texto profesional y conciso en español
-4. Mantén el tono y estilo del documento original
-5. NO reemplaces: títulos genéricos de secciones, labels, términos del mercado generales
-${userPrompt ? "6. Prioriza las instrucciones específicas del usuario al decidir qué y cómo reemplazar" : ""}
+INSTRUCCIONES DE PERSONALIZACIÓN:
+1. Lee el documento diapositiva por diapositiva e identifica TODOS los campos que deben llenarse con datos reales
+2. Para CADA campo, proporciona el texto EXACTO como aparece en el documento y el reemplazo correcto
+3. Reemplaza obligatoriamente: nombres de empresa, sector, país, ciudad, cifras financieras (Revenue, EBITDA, crecimiento, márgenes), múltiplos (EV/Revenue, EV/EBITDA), descripción del negocio, stage de la empresa, nombre de peers, fecha, año
+4. Para campos narrativos (descripción, tesis, overview), genera texto profesional conciso en español usando los datos de la empresa
+5. NO reemplaces: títulos de sección genéricos ("Investment Overview", "Financial Summary"), labels de columnas, bordes y elementos de diseño
+6. El reemplazo debe ser del texto EXACTO que aparece en el documento — no inventes texto que no existe en el template
+${userPrompt ? "7. Prioriza las instrucciones específicas del usuario sobre cualquier otra regla" : ""}
+
+IMPORTANTE: El "find" debe ser el texto EXACTO tal como aparece en el documento (incluyendo espacios y puntuación). Si un campo tiene texto placeholder como "[Company Name]", "[Revenue]", "XXX", "N/A", "TBD" — reemplázalo.
 
 Responde ÚNICAMENTE con un JSON array (sin texto adicional, sin markdown, sin \`\`\`):
-[{"find": "texto exacto del documento a reemplazar", "replace": "nuevo texto"}, ...]
+[{"find": "texto exacto del documento", "replace": "nuevo texto personalizado"}, ...]
 
 Si nada debe reemplazarse, responde: []`
   });
@@ -266,8 +351,8 @@ Si nada debe reemplazarse, responde: []`
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
-        max_tokens: 4096,
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
         messages: [{ role: "user", content: contentBlocks }],
       }),
       signal: AbortSignal.timeout(60000),

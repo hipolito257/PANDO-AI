@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { upload } from "@vercel/blob/client";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -65,30 +66,52 @@ export default function DocumentosPage() {
   useEffect(() => { loadTemplates(); loadCompanies(); checkApiKey(); }, [loadTemplates, loadCompanies, checkApiKey]);
 
   // ── Upload template ────────────────────────────────────────────────────────
-  const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3 MB
+  // Files up to 25 MB supported via Vercel Blob direct client upload.
+  const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!pendingFile || !uploadName.trim()) return;
     if (pendingFile.size > MAX_UPLOAD_BYTES) {
-      setUploadErr(`El archivo es demasiado grande (${fmtSize(pendingFile.size)}). El límite es 3 MB. Comprime el archivo en PowerPoint/Word: Archivo → Guardar como → reducir tamaño, o elimina imágenes pesadas.`);
+      setUploadErr(`El archivo es demasiado grande (${fmtSize(pendingFile.size)}). El límite es 25 MB.`);
       return;
     }
+
     setUploading(true); setUploadErr(null);
-    const fd = new FormData();
-    fd.append("file", pendingFile);
-    fd.append("name", uploadName.trim());
-    if (uploadDesc.trim()) fd.append("description", uploadDesc.trim());
-    const res = await fetch("/api/templates", { method: "POST", body: fd });
-    if (res.ok) {
-      const t = await res.json() as DocTemplate;
-      setTemplates(prev => [t, ...prev]);
-      setShowUpload(false); setPendingFile(null); setUploadName(""); setUploadDesc("");
-      setSelected(t);
-    } else {
-      const j = await res.json().catch(() => ({}));
-      setUploadErr((j as any).error ?? "Error al subir");
+    const ext = pendingFile.name.split(".").pop()?.toLowerCase() ?? "";
+
+    try {
+      // Upload directly to Vercel Blob — bypasses Vercel's 4.5 MB serverless body limit
+      const blob = await upload(pendingFile.name, pendingFile, {
+        access: "public",
+        handleUploadUrl: "/api/templates/upload",
+      });
+
+      // Register the template in our database
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          name: uploadName.trim(),
+          description: uploadDesc.trim() || undefined,
+          type: ext,
+        }),
+      });
+
+      if (res.ok) {
+        const t = await res.json() as DocTemplate;
+        setTemplates(prev => [t, ...prev]);
+        setShowUpload(false); setPendingFile(null); setUploadName(""); setUploadDesc("");
+        setSelected(t);
+      } else {
+        const j = await res.json().catch(() => ({}));
+        setUploadErr((j as any).error ?? "Error al registrar plantilla");
+      }
+    } catch (err: any) {
+      setUploadErr(err?.message ?? "Error al subir archivo");
     }
+
     setUploading(false);
   }
 
