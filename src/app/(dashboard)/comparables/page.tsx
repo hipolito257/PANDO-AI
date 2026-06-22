@@ -125,7 +125,6 @@ function ComparablesPage() {
   const [loadingHist, setLoadingHist] = useState(false);
   const [editedCells, setEditedCells] = useState<Record<string, Set<keyof PublicComp>>>({});
   const [editedPrivate, setEditedPrivate] = useState<Set<keyof Company>>(new Set());
-  const [chartImages, setChartImages] = useState<Record<string, string>>({});
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -479,14 +478,12 @@ function ComparablesPage() {
                       <CompsOverview comps={comps} company={selectedCompany} compSet={compSet} />
                       <MetricsTable comps={comps} company={selectedCompany} refreshErrors={refreshErrors}
                         editedCells={editedCells} onEditComp={handleEditComp}
-                        editedPrivate={editedPrivate} onEditCompany={handleEditCompany}
-                        chartImages={chartImages} />
+                        editedPrivate={editedPrivate} onEditCompany={handleEditCompany} />
                     </>
                   )}
                   {activeTab === "graficas" && mounted && (
                     <ChartsPanel comps={comps} company={selectedCompany}
-                      historyData={historyData} loadingHist={loadingHist}
-                      onChartsCapture={setChartImages} />
+                      historyData={historyData} loadingHist={loadingHist} />
                   )}
                   {activeTab === "valuacion" && mounted && (
                     <ValuationPanel comps={comps} company={selectedCompany} />
@@ -716,7 +713,6 @@ function MetricsTable({
   comps, company, refreshErrors = {},
   editedCells = {}, onEditComp,
   editedPrivate = new Set(), onEditCompany,
-  chartImages = {},
 }: {
   comps: PublicComp[]; company: Company;
   refreshErrors?: Record<string, string>;
@@ -724,7 +720,6 @@ function MetricsTable({
   onEditComp?: (ticker: string, field: keyof PublicComp, value: number | null) => void;
   editedPrivate?: Set<keyof Company>;
   onEditCompany?: (field: keyof Company, value: number | null) => void;
-  chartImages?: Record<string, string>;
 }) {
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
   const [showColPicker, setShowColPicker] = useState(false);
@@ -930,11 +925,59 @@ function MetricsTable({
         })),
         ...(hasData ? [{ cells: ["Set Median", "—", "Mediana", ...exportCols.map(c => rawMedianVal(c.key))], type: "median" as const }] : []),
       ];
-      const chartData = charts.map(k => ({ name: CHART_LABELS[k] ?? k, base64: chartImages[k] })).filter(c => c.base64);
+      const nativeCharts: NativeChartReq[] = [];
+      if (charts.includes("revenue")) {
+        nativeCharts.push({
+          type: "column", title: "Revenue (USD M)", sheetName: "Revenue",
+          categories: [company.name, ...comps.map(c => c.name)],
+          values:     [company.revenueUsd, ...comps.map(c => c.revenueUsd)],
+        });
+      }
+      if (charts.includes("growth")) {
+        nativeCharts.push({
+          type: "column", title: "Revenue Growth (%)", sheetName: "Growth",
+          categories: [company.name, ...comps.map(c => c.name)],
+          values: [
+            company.revenueGrowth != null ? +(company.revenueGrowth * 100).toFixed(2) : null,
+            ...comps.map(c => c.revenueGrowth != null ? +(c.revenueGrowth * 100).toFixed(2) : null),
+          ],
+        });
+      }
+      if (charts.includes("evrev")) {
+        nativeCharts.push({
+          type: "column", title: "EV/Revenue", sheetName: "EV Revenue",
+          categories: comps.map(c => c.name),
+          values:     comps.map(c => c.evRevenue),
+        });
+      }
+      if (charts.includes("r40")) {
+        nativeCharts.push({
+          type: "column", title: "Rule of 40", sheetName: "Rule of 40",
+          categories: comps.map(c => c.name),
+          values: comps.map(c => {
+            const g = c.revenueGrowth != null ? c.revenueGrowth * 100 : null;
+            const m = c.ebitdaMargin  != null ? c.ebitdaMargin  * 100 : null;
+            return g != null && m != null ? +(g + m).toFixed(2) : null;
+          }),
+        });
+      }
+      if (charts.includes("scatter")) {
+        nativeCharts.push({
+          type: "scatter", title: "Crecimiento vs EV/Revenue", sheetName: "Scatter",
+          xLabel: "Revenue Growth (%)", yLabel: "EV/Revenue",
+          points: comps
+            .filter(c => c.revenueGrowth != null && c.evRevenue != null)
+            .map(c => ({
+              x: +(c.revenueGrowth! * 100).toFixed(2),
+              y: +c.evRevenue!.toFixed(2),
+              label: c.ticker,
+            })),
+        });
+      }
       const res = await fetch("/api/comparables/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ headers, rows, companyName: company.name, charts: chartData }),
+        body: JSON.stringify({ headers, rows, companyName: company.name, nativeCharts }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -1153,7 +1196,6 @@ function MetricsTable({
           onToggleGroup={g => setSelectedGroups(prev => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n; })}
           selectedCharts={selectedCharts}
           onToggleChart={k => setSelectedCharts(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; })}
-          chartImages={chartImages}
           exporting={exporting}
           onClose={() => setShowExportModal(false)}
           onExport={() => {
@@ -1166,28 +1208,30 @@ function MetricsTable({
   );
 }
 
-// Labels for chart images
-const CHART_LABELS: Record<string, string> = {
-  scatter:   "Crecimiento vs EV/Revenue",
-  revenue:   "Comparación de Revenue",
-  history:   "Performance bursátil (12 meses)",
-  bubble:    "Crecimiento vs Margen Bruto",
-  ranking:   "Ranking de comparables",
-};
+// Native chart options for Excel export
+const NATIVE_CHART_OPTIONS = [
+  { key: "revenue", label: "Comparación de Revenue",    sheetName: "Revenue"    },
+  { key: "growth",  label: "Revenue Growth %",          sheetName: "Growth"     },
+  { key: "evrev",   label: "Múltiplo EV/Revenue",       sheetName: "EV Revenue" },
+  { key: "r40",     label: "Rule of 40",                sheetName: "Rule of 40" },
+  { key: "scatter", label: "Crecimiento vs EV/Revenue", sheetName: "Scatter"    },
+] as const;
+
+type NativeChartReq =
+  | { type: "column"; title: string; sheetName: string; categories: (string|null)[]; values: (number|null)[] }
+  | { type: "scatter"; title: string; sheetName: string; xLabel: string; yLabel: string; points: { x: number; y: number; label: string }[] };
 
 function ExportModal({
   allCols, selectedGroups, onToggleGroup,
   selectedCharts, onToggleChart,
-  chartImages, exporting, onClose, onExport,
+  exporting, onClose, onExport,
 }: {
   allCols: typeof ALL_COLS;
   selectedGroups: Set<string>; onToggleGroup: (g: string) => void;
   selectedCharts: Set<string>; onToggleChart: (k: string) => void;
-  chartImages: Record<string, string>;
   exporting: boolean; onClose: () => void; onExport: () => void;
 }) {
   const groups = [...new Set(allCols.map(c => c.group))];
-  const availableCharts = Object.keys(CHART_LABELS).filter(k => chartImages[k]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
@@ -1227,28 +1271,21 @@ function ExportModal({
             </div>
           </div>
 
-          {/* Charts */}
+          {/* Native charts */}
           <div>
-            <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Gráficas</p>
-            {availableCharts.length > 0 ? (
-              <div className="space-y-1.5">
-                {availableCharts.map(k => (
-                  <label key={k} className={`flex items-center gap-2.5 px-3 py-2 border rounded-[8px] cursor-pointer transition-colors
-                    ${selectedCharts.has(k) ? "border-carbon bg-carbon/3" : "border-chalk hover:border-carbon/30"}`}>
-                    <input type="checkbox" checked={selectedCharts.has(k)} onChange={() => onToggleChart(k)}
-                      className="w-3.5 h-3.5 accent-carbon" />
-                    <span className="text-[12px] text-carbon">{CHART_LABELS[k]}</span>
-                    <span className="ml-auto text-[9px] text-slate bg-fog px-1.5 py-0.5 rounded">PNG</span>
-                  </label>
-                ))}
-              </div>
-            ) : (
-              <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-[8px]">
-                <p className="text-[11px] text-amber-700">
-                  Para incluir gráficas, primero visita la pestaña <strong>Gráficas</strong> — se capturan automáticamente al cargar.
-                </p>
-              </div>
-            )}
+            <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Gráficas nativas de Excel</p>
+            <p className="text-[10px] text-slate mb-2">Cada gráfica se crea con sus propios datos — puedes editarla directamente en Excel.</p>
+            <div className="space-y-1.5">
+              {NATIVE_CHART_OPTIONS.map(opt => (
+                <label key={opt.key} className={`flex items-center gap-2.5 px-3 py-2 border rounded-[8px] cursor-pointer transition-colors
+                  ${selectedCharts.has(opt.key) ? "border-carbon bg-carbon/3" : "border-chalk hover:border-carbon/30"}`}>
+                  <input type="checkbox" checked={selectedCharts.has(opt.key)} onChange={() => onToggleChart(opt.key)}
+                    className="w-3.5 h-3.5 accent-carbon" />
+                  <span className="text-[12px] text-carbon">{opt.label}</span>
+                  <span className="ml-auto text-[9px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Excel</span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1288,56 +1325,15 @@ function R40Chip({ val }: { val: number }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // CHARTS PANEL
 // ══════════════════════════════════════════════════════════════════════════════
-async function captureSvg(el: HTMLElement): Promise<string | null> {
-  const svg = el.querySelector("svg");
-  if (!svg) return null;
-  const w = el.clientWidth || 600;
-  const h = el.clientHeight || 300;
-  return new Promise(resolve => {
-    const s = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([s], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = w * 2; canvas.height = h * 2;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { URL.revokeObjectURL(url); resolve(null); return; }
-      ctx.scale(2, 2); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/png").split(",")[1]);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-    img.src = url;
-  });
-}
-
 function ChartsPanel({
-  comps, company, historyData, loadingHist, onChartsCapture,
+  comps, company, historyData, loadingHist,
 }: {
   comps: PublicComp[]; company: Company;
   historyData: Record<string, { date: string; indexed: number }[]>;
   loadingHist: boolean;
-  onChartsCapture?: (images: Record<string, string>) => void;
 }) {
   const [rankMetric, setRankMetric] = useState<string>("evRevenue");
-  const chartRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const hasData = comps.some(c => c.lastRefreshed);
-
-  useEffect(() => {
-    if (!onChartsCapture || !hasData) return;
-    const timer = setTimeout(async () => {
-      const images: Record<string, string> = {};
-      for (const [key, el] of Object.entries(chartRefs.current)) {
-        if (!el) continue;
-        const b64 = await captureSvg(el).catch(() => null);
-        if (b64) images[key] = b64;
-      }
-      if (Object.keys(images).length) onChartsCapture(images);
-    }, 1800);
-    return () => clearTimeout(timer);
-  }, [hasData, comps.length, onChartsCapture]);
 
   if (!hasData) {
     return (
@@ -1510,7 +1506,7 @@ function ChartsPanel({
     <div className="space-y-4">
       {/* Scatter: Growth vs EV/Revenue */}
       {scatterData.length >= 2 && (
-        <div ref={el => { chartRefs.current.scatter = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
+        <div className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3">
             <p className="text-[13px] font-semibold text-carbon">Crecimiento vs. EV/Revenue</p>
             <p className="text-[11px] text-slate">
@@ -1555,7 +1551,7 @@ function ChartsPanel({
       )}
 
       {/* Bar: Revenue comparison */}
-      <div ref={el => { chartRefs.current.revenue = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
+      <div className="bg-paper rounded-[10px] border border-chalk p-5">
         <div className="mb-3">
           <p className="text-[13px] font-semibold text-carbon">Comparación de Revenue</p>
           <p className="text-[11px] text-slate">Tamaño relativo de {company.name} vs. los comparables públicos</p>
@@ -1577,7 +1573,7 @@ function ChartsPanel({
       </div>
 
       {/* Line: Stock performance */}
-      <div ref={el => { chartRefs.current.history = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
+      <div className="bg-paper rounded-[10px] border border-chalk p-5">
         <div className="mb-3 flex items-center justify-between">
           <div>
             <p className="text-[13px] font-semibold text-carbon">Performance bursátil — 12 meses</p>
@@ -1702,7 +1698,7 @@ function ChartsPanel({
 
       {/* Bubble: Growth vs Gross Margin vs Market Cap */}
       {bubbleData.length >= 2 && (
-        <div ref={el => { chartRefs.current.bubble = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
+        <div className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3">
             <p className="text-[13px] font-semibold text-carbon">Crecimiento vs. Margen Bruto (burbuja = market cap)</p>
             <p className="text-[11px] text-slate">
@@ -1748,7 +1744,7 @@ function ChartsPanel({
 
       {/* Horizontal Ranking */}
       {rankItems.length >= 2 && (
-        <div ref={el => { chartRefs.current.ranking = el; }} className="bg-paper rounded-[10px] border border-chalk p-5">
+        <div className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3 flex items-start justify-between gap-4">
             <div>
               <p className="text-[13px] font-semibold text-carbon">Ranking de comparables</p>
