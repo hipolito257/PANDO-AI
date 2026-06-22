@@ -96,8 +96,10 @@ export default function DocumentosPage() {
 
         const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
         if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error((j as any).error ?? `Error subiendo parte ${i + 1}/${totalChunks}`);
+          const text = await res.text().catch(() => "");
+          let msg = `Parte ${i + 1}/${totalChunks} falló (HTTP ${res.status})`;
+          try { msg = JSON.parse(text).error ?? msg; } catch { if (text) msg += `: ${text.slice(0, 300)}`; }
+          throw new Error(msg);
         }
         const { chunkUrl } = await res.json();
         chunkUrls.push(chunkUrl);

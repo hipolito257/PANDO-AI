@@ -20,12 +20,16 @@ export async function POST(req: NextRequest) {
 
   const buf = Buffer.from(await chunkFile.arrayBuffer());
 
-  // Store chunk as a temp blob: temp-chunks/{uploadId}/{index}
-  const blob = await put(
-    `temp-chunks/${uploadId}/${chunkIdx}`,
-    buf,
-    { access: "public", addRandomSuffix: false },
-  );
-
-  return NextResponse.json({ chunkUrl: blob.url });
+  try {
+    const blob = await put(
+      `temp-chunks/${uploadId}/${chunkIdx}`,
+      buf,
+      { access: "public", addRandomSuffix: false },
+    );
+    return NextResponse.json({ chunkUrl: blob.url });
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    console.error("[templates/chunk] put() error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
