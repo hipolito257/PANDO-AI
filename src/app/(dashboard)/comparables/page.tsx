@@ -124,6 +124,7 @@ function ComparablesPage() {
   const [historyData, setHistoryData] = useState<Record<string, { date: string; indexed: number }[]>>({});
   const [loadingHist, setLoadingHist] = useState(false);
   const [editedCells, setEditedCells] = useState<Record<string, Set<keyof PublicComp>>>({});
+  const [editedPrivate, setEditedPrivate] = useState<Set<keyof Company>>(new Set());
   const [chartImages, setChartImages] = useState<Record<string, string>>({});
 
   useEffect(() => { setMounted(true); }, []);
@@ -159,6 +160,11 @@ function ComparablesPage() {
     }));
   }, []);
 
+  const handleEditCompany = useCallback((field: keyof Company, value: number | null) => {
+    setCompanies(prev => prev.map(c => c.id === selectedCompanyId ? { ...c, [field]: value } : c));
+    setEditedPrivate(prev => new Set([...prev, field]));
+  }, [selectedCompanyId]);
+
   useEffect(() => {
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
     else { setCompSet(null); setLoadingSet(false); }
@@ -167,6 +173,8 @@ function ComparablesPage() {
   const selectCompany = (id: string) => {
     setSelectedCompanyId(id);
     setActiveTab("datos");
+    setEditedPrivate(new Set());
+    setEditedCells({});
   };
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) ?? null;
@@ -195,6 +203,7 @@ function ComparablesPage() {
     setRefreshLog(`✓ ${ok} updated${failMsg}`);
     setRefreshing(false);
     setEditedCells({});
+    setEditedPrivate(new Set());
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
   }
 
@@ -469,7 +478,9 @@ function ComparablesPage() {
                     <>
                       <CompsOverview comps={comps} company={selectedCompany} compSet={compSet} />
                       <MetricsTable comps={comps} company={selectedCompany} refreshErrors={refreshErrors}
-                        editedCells={editedCells} onEditComp={handleEditComp} chartImages={chartImages} />
+                        editedCells={editedCells} onEditComp={handleEditComp}
+                        editedPrivate={editedPrivate} onEditCompany={handleEditCompany}
+                        chartImages={chartImages} />
                     </>
                   )}
                   {activeTab === "graficas" && mounted && (
@@ -666,6 +677,13 @@ const DEFAULT_COLS: ColKey[] = ["marketCap","ev","revenue","growth","ebitda","gr
 // METRICS TABLE
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ColKey → Company (private) field mapping — only fields that exist in Company
+const COL_TO_COMPANY: Partial<Record<ColKey, keyof Company>> = {
+  revenue: "revenueUsd", growth: "revenueGrowth",
+  ebitda: "ebitdaUsd",   ebitdaMargin: "ebitdaMargin",
+};
+const COMPANY_DECIMAL_FIELDS = new Set<keyof Company>(["revenueGrowth", "ebitdaMargin"]);
+
 // ColKey → PublicComp field mapping (r40 is computed, excluded)
 const COL_TO_FIELD: Partial<Record<ColKey, keyof PublicComp>> = {
   marketCap: "marketCapUsd",   ev: "evUsd",       revenue: "revenueUsd",
@@ -697,12 +715,15 @@ function parseEditInput(colKey: ColKey, input: string): number | null {
 function MetricsTable({
   comps, company, refreshErrors = {},
   editedCells = {}, onEditComp,
+  editedPrivate = new Set(), onEditCompany,
   chartImages = {},
 }: {
   comps: PublicComp[]; company: Company;
   refreshErrors?: Record<string, string>;
   editedCells?: Record<string, Set<keyof PublicComp>>;
   onEditComp?: (ticker: string, field: keyof PublicComp, value: number | null) => void;
+  editedPrivate?: Set<keyof Company>;
+  onEditCompany?: (field: keyof Company, value: number | null) => void;
   chartImages?: Record<string, string>;
 }) {
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
@@ -720,11 +741,28 @@ function MetricsTable({
     setEditCell({ ticker: comp.ticker, key });
     setEditInputVal(editDisplayVal(comp, key));
   }
+  function startPrivateEdit(key: ColKey) {
+    const field = COL_TO_COMPANY[key];
+    if (!field || !onEditCompany) return;
+    const v = company[field] as number | null;
+    const display = v == null ? "" : COMPANY_DECIMAL_FIELDS.has(field) ? (v * 100).toFixed(2) : v.toFixed(2);
+    setEditCell({ ticker: "__private__", key });
+    setEditInputVal(display);
+  }
   function commitEdit() {
-    if (!editCell || !onEditComp) return;
-    const field = COL_TO_FIELD[editCell.key];
-    if (!field) return;
-    onEditComp(editCell.ticker, field, parseEditInput(editCell.key, editInputVal));
+    if (!editCell) return;
+    if (editCell.ticker === "__private__") {
+      const field = COL_TO_COMPANY[editCell.key];
+      if (!field || !onEditCompany) { setEditCell(null); return; }
+      const n = parseFloat(editInputVal.replace(/[^0-9.\-]/g, ""));
+      const value = isNaN(n) ? null : COMPANY_DECIMAL_FIELDS.has(field) ? n / 100 : n;
+      onEditCompany(field, value);
+    } else {
+      if (!onEditComp) { setEditCell(null); return; }
+      const field = COL_TO_FIELD[editCell.key];
+      if (!field) { setEditCell(null); return; }
+      onEditComp(editCell.ticker, field, parseEditInput(editCell.key, editInputVal));
+    }
     setEditCell(null);
   }
 
@@ -1003,11 +1041,34 @@ function MetricsTable({
                   </div>
                 </div>
               </td>
-              {cols.map(c => (
-                <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
-                  {privateVal(c.key)}
-                </td>
-              ))}
+              {cols.map(c => {
+                const companyField = COL_TO_COMPANY[c.key];
+                const isEditingPrivate = editCell?.ticker === "__private__" && editCell?.key === c.key;
+                const isEditedPrivate = companyField ? editedPrivate.has(companyField) : false;
+                return (
+                  <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
+                    {isEditingPrivate ? (
+                      <input
+                        autoFocus
+                        className="w-16 text-right text-[11px] border-b-2 border-orange bg-orange/10 outline-none px-1 py-0 rounded-sm font-mono"
+                        value={editInputVal}
+                        onChange={e => setEditInputVal(e.target.value)}
+                        onBlur={commitEdit}
+                        onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                      />
+                    ) : (
+                      <div
+                        onClick={() => startPrivateEdit(c.key)}
+                        className={companyField && onEditCompany ? "cursor-text inline-flex items-center gap-0.5 justify-end" : ""}
+                        title={companyField && onEditCompany ? "Clic para editar" : undefined}
+                      >
+                        {privateVal(c.key)}
+                        {isEditedPrivate && <span className="text-orange text-[7px] leading-none ml-0.5">●</span>}
+                      </div>
+                    )}
+                  </td>
+                );
+              })}
             </tr>
             {comps.map(comp => (
               <tr key={comp.ticker} className="hover:bg-fog/40 transition-colors">
