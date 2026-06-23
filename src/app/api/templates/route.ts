@@ -94,10 +94,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch blob to extract placeholders
     try {
-      const blobToken = process.env.BLOBPUBLIC_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN;
-      const blobRes = await fetch(blobUrl, {
-        headers: blobToken ? { Authorization: `Bearer ${blobToken}` } : {},
-      });
+      const blobRes = await fetch(blobUrl);
       if (!blobRes.ok) throw new Error("No se pudo descargar el blob");
       buffer = Buffer.from(await blobRes.arrayBuffer());
     } catch (e: any) {

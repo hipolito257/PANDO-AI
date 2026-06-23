@@ -439,10 +439,7 @@ export async function POST(req: NextRequest) {
     if (!base64) return NextResponse.json({ error: "Archivo de plantilla inválido" }, { status: 404 });
     templateBuffer = Buffer.from(base64, "base64");
   } else if (template.filePath.startsWith("http")) {
-    const blobToken = process.env.BLOBPUBLIC_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN;
-    const blobRes = await fetch(template.filePath, {
-      headers: blobToken ? { Authorization: `Bearer ${blobToken}` } : {},
-    });
+    const blobRes = await fetch(template.filePath);
     if (!blobRes.ok) return NextResponse.json({ error: "No se pudo leer la plantilla" }, { status: 404 });
     templateBuffer = Buffer.from(await blobRes.arrayBuffer());
   } else {

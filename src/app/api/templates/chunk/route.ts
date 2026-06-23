@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 
-const BLOB_TOKEN =
-  process.env.BLOBPUBLIC_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN ?? "";
+const BLOB_STORE_ID =
+  process.env.BLOBPUBLIC_STORE_ID ?? process.env.BLOB_STORE_ID ?? "";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const blob = await put(
       `temp-chunks/${uploadId}/${chunkIdx}`,
       buf,
-      { access: "public", addRandomSuffix: false, token: BLOB_TOKEN },
+      { access: "public", addRandomSuffix: false, storeId: BLOB_STORE_ID },
     );
     return NextResponse.json({ chunkUrl: blob.url });
   } catch (err: any) {
