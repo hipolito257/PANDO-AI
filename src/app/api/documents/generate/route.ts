@@ -266,8 +266,8 @@ async function generateWithAI(
   contextFiles: ContextFile[],
   userApiKey: string | null,
   userPrompt: string | null
-): Promise<Buffer> {
-  if (!userApiKey) return templateBuffer;
+): Promise<{ buffer: Buffer; replacements: { find: string; replace: string }[] }> {
+  if (!userApiKey) return { buffer: templateBuffer, replacements: [] };
   const apiKey = userApiKey;
 
   const medRev  = median(peers.map(p => Number(p.evRevenue)).filter(n => !isNaN(n) && n > 0));
@@ -359,29 +359,35 @@ Si nada debe reemplazarse, responde: []`
     });
 
     if (!res.ok) {
-      console.error("Anthropic API error:", res.status, await res.text());
-      return templateBuffer;
+      const errText = await res.text();
+      console.error("Anthropic API error:", res.status, errText);
+      return { buffer: templateBuffer, replacements: [] };
     }
 
     const data = await res.json();
     const aiText = data?.content?.[0]?.text ?? "";
+    console.log("[generate] Claude raw response (first 500):", aiText.slice(0, 500));
 
-    // Parse replacements
+    // Parse replacements — Claude sometimes wraps in ```json ... ```
     const jsonMatch = aiText.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return templateBuffer;
+    if (!jsonMatch) {
+      console.error("[generate] No JSON array found in Claude response");
+      return { buffer: templateBuffer, replacements: [] };
+    }
 
     const replacements: { find: string; replace: string }[] = JSON.parse(jsonMatch[0]);
-    if (!replacements.length) return templateBuffer;
+    console.log("[generate] Replacements count:", replacements.length);
+    if (!replacements.length) return { buffer: templateBuffer, replacements: [] };
 
     // Apply replacements
-    if (templateType === "xlsx") {
-      return await applyReplacementsToXlsx(templateBuffer, replacements);
-    } else {
-      return applyReplacementsToOffice(templateBuffer, templateType, replacements);
-    }
+    const buffer = templateType === "xlsx"
+      ? await applyReplacementsToXlsx(templateBuffer, replacements)
+      : applyReplacementsToOffice(templateBuffer, templateType, replacements);
+
+    return { buffer, replacements };
   } catch (e: any) {
     console.error("AI generate error:", e.message);
-    return templateBuffer;
+    return { buffer: templateBuffer, replacements: [] };
   }
 }
 
@@ -473,6 +479,7 @@ export async function POST(req: NextRequest) {
   const hasPlaceholders = placeholders.length > 0;
 
   let outBuffer: Buffer;
+  let usedReplacements: { find: string; replace: string }[] = [];
 
   try {
     // Fast path: {{}} placeholders + no context files + no userPrompt + company selected
@@ -489,10 +496,9 @@ export async function POST(req: NextRequest) {
         peers: peers.map(p => p.ticker).join(", ") || "N/D",
         fecha: today(), año: new Date().getFullYear().toString(),
       };
+      usedReplacements = Object.entries(values).map(([k, v]) => ({ find: `{{${k}}}`, replace: v }));
       if (ext === "xlsx") {
-        outBuffer = await applyReplacementsToXlsx(templateBuffer,
-          Object.entries(values).map(([k, v]) => ({ find: `{{${k}}}`, replace: v }))
-        );
+        outBuffer = await applyReplacementsToXlsx(templateBuffer, usedReplacements);
       } else {
         outBuffer = generateWithPlaceholders(templateBuffer, values);
       }
@@ -505,27 +511,28 @@ export async function POST(req: NextRequest) {
           code: "NO_API_KEY"
         }, { status: 400 });
       }
-      outBuffer = await generateWithAI(templateBuffer, ext, company, peers, contextFiles, userApiKey, userPrompt);
+      const result = await generateWithAI(templateBuffer, ext, company, peers, contextFiles, userApiKey, userPrompt);
+      outBuffer = result.buffer;
+      usedReplacements = result.replacements;
     }
   } catch (e: any) {
     console.error("Document generation error:", e);
     return NextResponse.json({ error: "Error al generar documento", detail: e.message }, { status: 500 });
   }
 
-  const mimeMap: Record<string, string> = {
-    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  };
   const safeName = (company?.name ?? "documento").replace(/[^a-zA-Z0-9_\-]/g, "_");
   const fileName = `${safeName}_${template.name.replace(/[^a-zA-Z0-9_\-]/g, "_")}.${ext}`;
 
-  return new NextResponse(new Uint8Array(outBuffer), {
-    status: 200,
-    headers: {
-      "Content-Type": mimeMap[ext] ?? "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${fileName}"`,
-      "Content-Length": outBuffer.length.toString(),
-    },
+  // Extract readable preview of generated content (slide-by-slide for PPTX)
+  let previewText = "";
+  try { previewText = extractOfficeText(outBuffer, ext).slice(0, 4000); } catch { /* ignore */ }
+
+  // Return JSON so the frontend can show a preview before the user downloads
+  return NextResponse.json({
+    replacements: usedReplacements,
+    file: outBuffer.toString("base64"),
+    filename: fileName,
+    previewText,
+    ext,
   });
 }

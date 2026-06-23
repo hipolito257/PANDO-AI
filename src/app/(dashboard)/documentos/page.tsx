@@ -7,6 +7,13 @@ interface DocTemplate {
   placeholders: string[]; createdAt: string | null;
 }
 interface Company { id: string; name: string; sector: string | null; stage: string | null; }
+interface GenResult {
+  replacements: { find: string; replace: string }[];
+  file: string; // base64
+  filename: string;
+  previewText: string;
+  ext: string;
+}
 
 const TYPE_COLOR: Record<string, string> = {
   pptx: "bg-orange/10 text-orange border-orange/30",
@@ -41,6 +48,7 @@ export default function DocumentosPage() {
   const [uploadErr, setUploadErr]     = useState<string | null>(null);
   const [genErr, setGenErr]           = useState<string | null>(null);
   const [genSuccess, setGenSuccess]   = useState(false);
+  const [genResult, setGenResult]     = useState<GenResult | null>(null);
   const [showUpload, setShowUpload]   = useState(false);
   const [dragOver, setDragOver]       = useState(false);
   const [ctxDragOver, setCtxDragOver] = useState(false);
@@ -173,13 +181,12 @@ export default function DocumentosPage() {
   async function handleGenerate() {
     if (!selected) return;
 
-    // Check if needs API key (needed for context files OR user prompt)
     if ((contextFiles.length > 0 || userPrompt.trim()) && !hasApiKey) {
       setGenErr("Necesitas configurar tu API key de Anthropic en Configuración para usar esta función");
       return;
     }
 
-    setGenerating(true); setGenErr(null); setGenSuccess(false);
+    setGenerating(true); setGenErr(null); setGenSuccess(false); setGenResult(null);
 
     const fd = new FormData();
     fd.append("templateId", selected.id);
@@ -187,26 +194,40 @@ export default function DocumentosPage() {
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     for (const f of contextFiles) fd.append("files", f);
 
-    const res = await fetch("/api/documents/generate", { method: "POST", body: fd });
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const fn = (res.headers.get("Content-Disposition") ?? "").match(/filename="([^"]+)"/)?.[1] ?? `documento.${selected.type}`;
-      a.download = fn; a.href = url; a.click();
-      URL.revokeObjectURL(url);
-      setGenSuccess(true);
-      setTimeout(() => setGenSuccess(false), 5000);
-    } else {
-      const j = await res.json().catch(() => ({}));
-      const errMsg = (j as any).error ?? "Error al generar";
-      if ((j as any).code === "NO_API_KEY") {
-        setGenErr("⚠️ " + errMsg + " → Ve a Configuración para agregarla");
+    try {
+      const res = await fetch("/api/documents/generate", { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({})) as any;
+      if (!res.ok) {
+        if (j.code === "NO_API_KEY") {
+          setGenErr("⚠️ " + j.error + " → Ve a Configuración para agregarla");
+        } else {
+          setGenErr(j.error ?? "Error al generar");
+        }
       } else {
-        setGenErr(errMsg);
+        setGenResult(j as GenResult);
       }
+    } catch (err: any) {
+      setGenErr(err?.message ?? "Error de red al generar");
     }
+
     setGenerating(false);
+  }
+
+  function downloadResult(result: GenResult) {
+    const mimeMap: Record<string, string> = {
+      pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    };
+    const bytes = Uint8Array.from(atob(result.file), c => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: mimeMap[result.ext] ?? "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = result.filename; a.click();
+    URL.revokeObjectURL(url);
+    setGenResult(null);
+    setGenSuccess(true);
+    setTimeout(() => setGenSuccess(false), 5000);
   }
 
   // ── Context file drag & drop ───────────────────────────────────────────────
@@ -351,6 +372,92 @@ export default function DocumentosPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Preview modal */}
+        {genResult && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-[16px] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-chalk flex items-center justify-between shrink-0">
+                <div>
+                  <h3 className="text-[15px] font-semibold text-carbon">Vista previa del documento</h3>
+                  <p className="text-[11px] text-slate mt-0.5">
+                    {genResult.replacements.length > 0
+                      ? `${genResult.replacements.length} cambio${genResult.replacements.length > 1 ? "s" : ""} realizados por la IA`
+                      : "Documento listo — sin cambios de IA detectados"}
+                  </p>
+                </div>
+                <button onClick={() => setGenResult(null)} className="text-slate hover:text-carbon p-1">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <line x1="2" y1="2" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    <line x1="14" y1="2" x2="2" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+                {/* No changes warning */}
+                {genResult.replacements.length === 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-[10px] p-4">
+                    <div className="text-[13px] font-semibold text-yellow-800 mb-1">⚠️ La IA no detectó campos para personalizar</div>
+                    <div className="text-[11px] text-yellow-700">
+                      Posibles causas: la plantilla no tiene texto reemplazable, o no se proporcionaron datos de empresa ni instrucciones. Agrega una empresa o escribe instrucciones en el paso 3.
+                    </div>
+                  </div>
+                )}
+
+                {/* Replacements list */}
+                {genResult.replacements.length > 0 && (
+                  <div>
+                    <div className="text-[12px] font-semibold text-carbon mb-2">Cambios aplicados</div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {genResult.replacements.slice(0, 30).map((r, i) => (
+                        <div key={i} className="flex items-start gap-2 bg-fog rounded-[8px] px-3 py-2 text-[11px]">
+                          <span className="text-slate shrink-0 mt-0.5 line-through truncate max-w-[40%]">{r.find}</span>
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 mt-0.5 text-carbon">
+                            <path d="M1 5h8M6 2l3 3-3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          <span className="text-carbon font-medium truncate">{r.replace}</span>
+                        </div>
+                      ))}
+                      {genResult.replacements.length > 30 && (
+                        <div className="text-[10px] text-slate pl-2">…y {genResult.replacements.length - 30} cambios más</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview text */}
+                {genResult.previewText && (
+                  <div>
+                    <div className="text-[12px] font-semibold text-carbon mb-2">Contenido del documento generado</div>
+                    <pre className="bg-fog border border-chalk rounded-[8px] p-4 text-[11px] text-graphite whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-64 font-mono">
+                      {genResult.previewText}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-chalk flex gap-3 shrink-0">
+                <button onClick={() => setGenResult(null)}
+                  className="flex-1 border border-chalk rounded-[9px] py-2.5 text-[13px] text-graphite hover:bg-fog transition-colors">
+                  Cancelar
+                </button>
+                <button onClick={() => downloadResult(genResult)}
+                  className="flex-1 bg-carbon text-white rounded-[9px] py-2.5 text-[13px] font-semibold hover:bg-graphite transition-colors flex items-center justify-center gap-2">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <path d="M6.5 1v8M3.5 6l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M1 10v1.5A1.5 1.5 0 002.5 13h8a1.5 1.5 0 001.5-1.5V10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                  </svg>
+                  Descargar {genResult.filename.split(".").pop()?.toUpperCase()}
+                </button>
+              </div>
             </div>
           </div>
         )}
