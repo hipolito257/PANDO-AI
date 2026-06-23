@@ -313,29 +313,31 @@ Fecha: ${today()}
     ? `INSTRUCCIONES ESPECÍFICAS DEL USUARIO:\n${userPrompt}\n\nSigue estas instrucciones como guía principal para personalizar el documento.`
     : "";
 
+  const hasCompanyData = !!companySection;
+  const hasInstructions = !!userInstructions;
+
   contentBlocks.push({
     type: "text",
-    text: `Eres un analista senior de Private Equity. Tienes una presentación de inversión existente elaborada para UNA empresa. Tu tarea es ADAPTAR esta presentación para una empresa DIFERENTE, reemplazando TODO el contenido específico de la empresa original con datos de la nueva empresa target.
+    text: `Eres un experto en análisis de documentos y generación de contenido profesional. Tu tarea es modificar un documento existente según las instrucciones y datos proporcionados.
 
-${companySection || "(Sin datos de empresa — usa los archivos adjuntos y las instrucciones del usuario)"}
+${hasCompanyData ? `DATOS DE LA EMPRESA TARGET:\n${companySection}` : ""}
+${hasInstructions ? `${userInstructions}` : ""}
+${!hasCompanyData && !hasInstructions ? "No se proporcionaron datos de empresa ni instrucciones específicas. Adapta el documento de forma genérica: reemplaza nombres de empresa con \"[Empresa]\" y datos financieros con \"N/D\", manteniendo la estructura." : ""}
 
-${userInstructions}
-
-CONTENIDO ACTUAL DE LA PRESENTACIÓN (diapositiva por diapositiva — este es el contenido que debes reemplazar):
+CONTENIDO ACTUAL DEL DOCUMENTO (sección por sección):
 ${templateText || "(documento sin texto extraíble)"}
 
-INSTRUCCIONES DE SUSTITUCIÓN:
-1. Identifica TODO el contenido específico de la empresa original: nombre(s) de empresa, marcas, fundadores, inversores, métricas financieras (revenue, EBITDA, crecimiento, márgenes, rondas), historia y hitos, productos/servicios, número de tiendas/clientes, países y ciudades, nombres de personas, tickers de peers, múltiplos, fechas y años específicos.
-2. Para CADA elemento específico, genera el reemplazo con datos de la NUEVA empresa target.
-3. Para datos que no tienes disponibles, escribe "N/D" o un valor genérico apropiado al contexto.
-4. Para texto narrativo largo (descripciones, tesis, overview del negocio), redacta contenido profesional y conciso sobre la nueva empresa usando el mismo tono y extensión del original.
-5. Mantén SIN CAMBIOS: títulos de sección genéricos ("Investment Overview", "Financial Summary", "The Company", "Company history", etc.), labels de columnas/filas, elementos de diseño, encabezados estructurales.
-6. CRÍTICO: El campo "find" debe ser el texto EXACTAMENTE como aparece arriba, incluyendo entidades XML (escribe "&amp;" si ves "&amp;", no "&").
+REGLAS DE MODIFICACIÓN:
+1. Genera un reemplazo por cada elemento que deba cambiar, usando el texto EXACTO del documento en "find".
+2. ${hasCompanyData ? "Reemplaza todo lo específico de la empresa original con datos de la empresa target: nombre(s), métricas, historia, personas, inversores, geografía." : "Aplica los cambios indicados en las instrucciones al texto del documento."}
+3. Para texto narrativo, mantén el mismo tono y extensión del original.
+4. Mantén SIN CAMBIOS: títulos de sección genéricos, labels de columnas, encabezados estructurales.
+5. CRÍTICO: El campo "find" debe ser texto EXACTO como aparece en el documento (incluyendo "&amp;" si aparece "&amp;").
 
-Responde ÚNICAMENTE con un JSON array (sin texto adicional, sin markdown, sin \`\`\`):
-[{"find": "texto exacto como aparece en el documento", "replace": "nuevo contenido para la empresa target"}, ...]
+Responde ÚNICAMENTE con JSON array (sin texto, sin markdown):
+[{"find": "texto exacto del documento", "replace": "nuevo contenido"}, ...]
 
-Genera TODOS los reemplazos necesarios — entre 10 y 50 pares mínimo si el documento tiene contenido real. Si genuinamente no hay nada qué reemplazar (documento en blanco), responde: []`
+Si el documento tiene contenido real, genera entre 5 y 60 pares. Responde [] solo si el documento está en blanco o nada debe cambiar.`
   });
 
   try {

@@ -185,13 +185,7 @@ export default function DocumentosPage() {
   async function handleGenerate() {
     if (!selected) return;
 
-    // Need at least one source of data to adapt the document
-    if (!companyId && contextFiles.length === 0 && !userPrompt.trim()) {
-      setGenErr("Para adaptar la plantilla necesitas: seleccionar una empresa (paso 1), subir archivos de respaldo (paso 2) o escribir instrucciones (paso 3).");
-      return;
-    }
-
-    if ((contextFiles.length > 0 || userPrompt.trim()) && !hasApiKey) {
+    if ((contextFiles.length > 0 || userPrompt.trim() || companyId) && !hasApiKey) {
       setGenErr("Necesitas configurar tu API key de Anthropic en Configuración para usar esta función");
       return;
     }
@@ -535,8 +529,8 @@ export default function DocumentosPage() {
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
                 <div>
-                  <div className="text-[13px] font-semibold text-carbon">¿Para qué empresa? <span className="text-[11px] font-normal text-slate">(Opcional)</span></div>
-                  <div className="text-[10px] text-slate">Si seleccionas una, la IA tendrá acceso a sus datos financieros y comparables</div>
+                  <div className="text-[13px] font-semibold text-carbon">Empresa <span className="text-[11px] font-normal text-slate">(Opcional)</span></div>
+                  <div className="text-[10px] text-slate">Si seleccionas una, la IA usa sus datos financieros. Puedes generar sin empresa usando solo instrucciones.</div>
                 </div>
               </div>
               <select value={companyId} onChange={e => setCompanyId(e.target.value)}
@@ -663,7 +657,7 @@ export default function DocumentosPage() {
                 value={userPrompt}
                 onChange={e => setUserPrompt(e.target.value)}
                 rows={4}
-                placeholder={"Ej: Genera un resumen ejecutivo de inversión en español. Enfócate en el potencial de crecimiento y los riesgos clave. El tono debe ser formal y conciso.\n\nO: Llena la plantilla con los datos de la empresa seleccionada y agrega una sección de tesis de inversión."}
+                placeholder={"Ejemplos:\n• Adapta esta presentación de Ben & Frank para una empresa de tecnología educativa en Brasil. Usa los datos financieros de los archivos adjuntos.\n• Traduce al español y ajusta el tono para un fondo de LATAM.\n• Reemplaza los datos financieros con los del Excel adjunto y actualiza el año a 2026.\n• Crea una versión genérica sin empresa específica que sirva como plantilla reutilizable."}
                 className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-carbon resize-none leading-relaxed"
               />
               {userPrompt.trim() && !hasApiKey && (
