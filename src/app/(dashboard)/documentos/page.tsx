@@ -37,6 +37,7 @@ export default function DocumentosPage() {
   const [hasApiKey, setHasApiKey]     = useState(true);
   const [uploading, setUploading]     = useState(false);
   const [generating, setGenerating]   = useState(false);
+  const [genStep, setGenStep]         = useState(0);
   const [uploadErr, setUploadErr]     = useState<string | null>(null);
   const [genErr, setGenErr]           = useState<string | null>(null);
   const [genSuccess, setGenSuccess]   = useState(false);
@@ -63,6 +64,22 @@ export default function DocumentosPage() {
   }, []);
 
   useEffect(() => { loadTemplates(); loadCompanies(); checkApiKey(); }, [loadTemplates, loadCompanies, checkApiKey]);
+
+  const GEN_STEPS = [
+    "Descargando plantilla…",
+    "Analizando estructura del documento…",
+    "Cargando datos de la empresa…",
+    "Procesando con IA…",
+    "Aplicando cambios al documento…",
+  ];
+
+  // Advance progress steps on a schedule while generating
+  useEffect(() => {
+    if (!generating) { setGenStep(0); return; }
+    const delays = [0, 3000, 7000, 13000, 28000];
+    const timers = delays.map((d, i) => setTimeout(() => setGenStep(i), d));
+    return () => timers.forEach(clearTimeout);
+  }, [generating]);
 
   // ── Upload template ────────────────────────────────────────────────────────
   // Files up to 25 MB: chunked upload (3 MB per chunk) → Vercel Blob assembly
@@ -154,7 +171,7 @@ export default function DocumentosPage() {
 
   // ── Generate document ──────────────────────────────────────────────────────
   async function handleGenerate() {
-    if (!selected || !companyId) return;
+    if (!selected) return;
 
     // Check if needs API key (needed for context files OR user prompt)
     if ((contextFiles.length > 0 || userPrompt.trim()) && !hasApiKey) {
@@ -549,6 +566,30 @@ export default function DocumentosPage() {
                 </div>
               )}
 
+              {/* Progress indicator */}
+              {generating && (
+                <div className="mb-4 rounded-[10px] border border-chalk bg-fog p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="animate-spin w-4 h-4 text-carbon shrink-0" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                    </svg>
+                    <span className="text-[13px] font-semibold text-carbon">{GEN_STEPS[genStep]}</span>
+                  </div>
+                  {/* Step dots */}
+                  <div className="flex items-center gap-1.5">
+                    {GEN_STEPS.map((_, i) => (
+                      <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${
+                        i < genStep ? "bg-carbon flex-1" :
+                        i === genStep ? "bg-carbon/60 flex-1 animate-pulse" :
+                        "bg-chalk flex-1"}`} />
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate mt-2">
+                    La generación puede tomar entre 30 y 90 segundos según el tamaño del documento
+                  </p>
+                </div>
+              )}
+
               <button onClick={handleGenerate} disabled={generating || !selected}
                 className="w-full flex items-center justify-center gap-2 py-3.5 bg-carbon text-white rounded-[10px] text-[14px] font-semibold hover:bg-graphite disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 {generating ? (
@@ -556,7 +597,7 @@ export default function DocumentosPage() {
                     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                     </svg>
-                    {contextFiles.length > 0 ? `IA leyendo ${contextFiles.length} archivo${contextFiles.length > 1 ? "s" : ""} y generando…` : userPrompt.trim() ? "IA procesando instrucciones…" : "IA generando documento…"}
+                    Generando…
                   </>
                 ) : (
                   <>
