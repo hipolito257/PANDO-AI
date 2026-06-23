@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 
-// Receives one chunk (≤3 MB) and stores it in Vercel Blob as a temp file.
-// Returns the blob URL for that chunk.
+const BLOB_TOKEN =
+  process.env.BLOBPUBLIC_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN ?? "";
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     const blob = await put(
       `temp-chunks/${uploadId}/${chunkIdx}`,
       buf,
-      { access: "public", addRandomSuffix: false },
+      { access: "public", addRandomSuffix: false, token: BLOB_TOKEN },
     );
     return NextResponse.json({ chunkUrl: blob.url });
   } catch (err: any) {

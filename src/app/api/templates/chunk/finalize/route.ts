@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 
+const BLOB_TOKEN =
+  process.env.BLOBPUBLIC_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN ?? "";
+
 // Downloads all chunk blobs, assembles them into one file, stores the final
 // blob, and deletes the temp chunk blobs.
 export async function POST(req: NextRequest) {
@@ -32,10 +35,11 @@ export async function POST(req: NextRequest) {
     const finalBlob = await put(filename, assembled, {
       access: "public",
       addRandomSuffix: true,
+      token: BLOB_TOKEN,
     });
 
     // Clean up chunk blobs (best-effort, don't block response)
-    del(chunkUrls).catch(() => {});
+    del(chunkUrls, { token: BLOB_TOKEN }).catch(() => {});
 
     return NextResponse.json({ blobUrl: finalBlob.url });
   } catch (err: any) {
