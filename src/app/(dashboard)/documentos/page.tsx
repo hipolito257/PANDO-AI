@@ -13,6 +13,10 @@ interface GenResult {
   filename: string;
   previewText: string;
   ext: string;
+  _debug?: {
+    hadCompany: boolean; hadContextFiles: number;
+    hadUserPrompt: boolean; hadApiKey: boolean; templateTextLength: number;
+  };
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -180,6 +184,12 @@ export default function DocumentosPage() {
   // ── Generate document ──────────────────────────────────────────────────────
   async function handleGenerate() {
     if (!selected) return;
+
+    // Need at least one source of data to adapt the document
+    if (!companyId && contextFiles.length === 0 && !userPrompt.trim()) {
+      setGenErr("Para adaptar la plantilla necesitas: seleccionar una empresa (paso 1), subir archivos de respaldo (paso 2) o escribir instrucciones (paso 3).");
+      return;
+    }
 
     if ((contextFiles.length > 0 || userPrompt.trim()) && !hasApiKey) {
       setGenErr("Necesitas configurar tu API key de Anthropic en Configuración para usar esta función");
@@ -403,10 +413,19 @@ export default function DocumentosPage() {
 
                 {/* No changes warning */}
                 {genResult.replacements.length === 0 && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-[10px] p-4">
-                    <div className="text-[13px] font-semibold text-yellow-800 mb-1">⚠️ La IA no detectó campos para personalizar</div>
-                    <div className="text-[11px] text-yellow-700">
-                      Posibles causas: la plantilla no tiene texto reemplazable, o no se proporcionaron datos de empresa ni instrucciones. Agrega una empresa o escribe instrucciones en el paso 3.
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-[10px] p-4 space-y-2">
+                    <div className="text-[13px] font-semibold text-yellow-800">⚠️ La IA no generó cambios</div>
+                    <div className="text-[11px] text-yellow-700 space-y-1">
+                      {genResult._debug && (
+                        <div className="font-mono bg-yellow-100 rounded p-2 space-y-0.5">
+                          <div>empresa seleccionada: <b>{genResult._debug.hadCompany ? "sí" : "NO"}</b></div>
+                          <div>archivos adjuntos: <b>{genResult._debug.hadContextFiles}</b></div>
+                          <div>instrucciones: <b>{genResult._debug.hadUserPrompt ? "sí" : "NO"}</b></div>
+                          <div>API key: <b>{genResult._debug.hadApiKey ? "sí" : "NO"}</b></div>
+                          <div>texto extraído: <b>{genResult._debug.templateTextLength} chars</b></div>
+                        </div>
+                      )}
+                      <p>Si la API key está activa y hay empresa/instrucciones, la IA debería generar cambios. Si dice "NO" en empresa y API key, configúralos primero.</p>
                     </div>
                   </div>
                 )}

@@ -109,7 +109,7 @@ function extractPptxStructured(buffer: Buffer): string {
       if (slideLines.length > 1) lines.push(...slideLines);
     }
 
-    return lines.join("\n").slice(0, 12000);
+    return lines.join("\n").slice(0, 40000);
   } catch { return ""; }
 }
 
@@ -352,7 +352,7 @@ Genera TODOS los reemplazos necesarios — entre 10 y 50 pares mínimo si el doc
         max_tokens: 8192,
         messages: [{ role: "user", content: contentBlocks }],
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!res.ok) {
@@ -524,12 +524,18 @@ export async function POST(req: NextRequest) {
   let previewText = "";
   try { previewText = extractOfficeText(outBuffer, ext).slice(0, 4000); } catch { /* ignore */ }
 
-  // Return JSON so the frontend can show a preview before the user downloads
   return NextResponse.json({
     replacements: usedReplacements,
     file: outBuffer.toString("base64"),
     filename: fileName,
     previewText,
     ext,
+    _debug: {
+      hadCompany: !!company,
+      hadContextFiles: contextFiles.length,
+      hadUserPrompt: !!userPrompt,
+      hadApiKey: !!userApiKey,
+      templateTextLength: extractOfficeText(templateBuffer, ext).length,
+    },
   });
 }
