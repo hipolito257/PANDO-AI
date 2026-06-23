@@ -437,7 +437,9 @@ export default function DocumentosPage() {
                   <div>
                     <div className="text-[12px] font-semibold text-carbon mb-2">Contenido del documento generado</div>
                     <pre className="bg-fog border border-chalk rounded-[8px] p-4 text-[11px] text-graphite whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-64 font-mono">
-                      {genResult.previewText}
+                      {genResult.previewText
+                        .replace(/&amp;/g, "&").replace(/&lt;/g, "<")
+                        .replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#xA;/g, "\n")}
                     </pre>
                   </div>
                 )}

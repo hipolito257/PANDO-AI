@@ -315,30 +315,27 @@ Fecha: ${today()}
 
   contentBlocks.push({
     type: "text",
-    text: `Eres un analista senior de Private Equity. Tu tarea es personalizar un documento ${templateType.toUpperCase()} con datos reales de una empresa target.
+    text: `Eres un analista senior de Private Equity. Tienes una presentación de inversión existente elaborada para UNA empresa. Tu tarea es ADAPTAR esta presentación para una empresa DIFERENTE, reemplazando TODO el contenido específico de la empresa original con datos de la nueva empresa target.
 
-${companySection}
+${companySection || "(Sin datos de empresa — usa los archivos adjuntos y las instrucciones del usuario)"}
 
 ${userInstructions}
 
-CONTENIDO ACTUAL DEL DOCUMENTO (organizado por diapositiva/sección):
-${templateText || "(documento sin texto extraíble — usa los datos disponibles)"}
+CONTENIDO ACTUAL DE LA PRESENTACIÓN (diapositiva por diapositiva — este es el contenido que debes reemplazar):
+${templateText || "(documento sin texto extraíble)"}
 
-INSTRUCCIONES DE PERSONALIZACIÓN:
-1. Lee el documento diapositiva por diapositiva e identifica TODOS los campos que deben llenarse con datos reales
-2. Para CADA campo, proporciona el texto EXACTO como aparece en el documento y el reemplazo correcto
-3. Reemplaza obligatoriamente: nombres de empresa, sector, país, ciudad, cifras financieras (Revenue, EBITDA, crecimiento, márgenes), múltiplos (EV/Revenue, EV/EBITDA), descripción del negocio, stage de la empresa, nombre de peers, fecha, año
-4. Para campos narrativos (descripción, tesis, overview), genera texto profesional conciso en español usando los datos de la empresa
-5. NO reemplaces: títulos de sección genéricos ("Investment Overview", "Financial Summary"), labels de columnas, bordes y elementos de diseño
-6. El reemplazo debe ser del texto EXACTO que aparece en el documento — no inventes texto que no existe en el template
-${userPrompt ? "7. Prioriza las instrucciones específicas del usuario sobre cualquier otra regla" : ""}
-
-IMPORTANTE: El "find" debe ser el texto EXACTO tal como aparece en el documento (incluyendo espacios y puntuación). Si un campo tiene texto placeholder como "[Company Name]", "[Revenue]", "XXX", "N/A", "TBD" — reemplázalo.
+INSTRUCCIONES DE SUSTITUCIÓN:
+1. Identifica TODO el contenido específico de la empresa original: nombre(s) de empresa, marcas, fundadores, inversores, métricas financieras (revenue, EBITDA, crecimiento, márgenes, rondas), historia y hitos, productos/servicios, número de tiendas/clientes, países y ciudades, nombres de personas, tickers de peers, múltiplos, fechas y años específicos.
+2. Para CADA elemento específico, genera el reemplazo con datos de la NUEVA empresa target.
+3. Para datos que no tienes disponibles, escribe "N/D" o un valor genérico apropiado al contexto.
+4. Para texto narrativo largo (descripciones, tesis, overview del negocio), redacta contenido profesional y conciso sobre la nueva empresa usando el mismo tono y extensión del original.
+5. Mantén SIN CAMBIOS: títulos de sección genéricos ("Investment Overview", "Financial Summary", "The Company", "Company history", etc.), labels de columnas/filas, elementos de diseño, encabezados estructurales.
+6. CRÍTICO: El campo "find" debe ser el texto EXACTAMENTE como aparece arriba, incluyendo entidades XML (escribe "&amp;" si ves "&amp;", no "&").
 
 Responde ÚNICAMENTE con un JSON array (sin texto adicional, sin markdown, sin \`\`\`):
-[{"find": "texto exacto del documento", "replace": "nuevo texto personalizado"}, ...]
+[{"find": "texto exacto como aparece en el documento", "replace": "nuevo contenido para la empresa target"}, ...]
 
-Si nada debe reemplazarse, responde: []`
+Genera TODOS los reemplazos necesarios — entre 10 y 50 pares mínimo si el documento tiene contenido real. Si genuinamente no hay nada qué reemplazar (documento en blanco), responde: []`
   });
 
   try {
