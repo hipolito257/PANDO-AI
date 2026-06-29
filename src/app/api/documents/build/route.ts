@@ -35,35 +35,51 @@ const PANDO_TEMPLATE_PROFILE = {
   slide_width_in: 13.33,
   slide_height_in: 7.5,
   element_types: {
-    panel_hdr:  "Colored header bar above a chart panel. Props: text, x, y, w, bg (color hex).",
-    textbox:    "Plain text. Props: text, x, y, w, h, size, bold, italic, fg, align (l/c/r).",
-    shape:      "Filled rectangle (optionally with text). Props: x, y, w, h, bg, text, fg, border.",
-    hbar_float: "Horizontal floating bar chart for price ranges. Props: x, y, w, h, series:[{label,min,max}], colors[].",
+    textbox:    "Plain text — THIS is how chart/panel titles work in PANDO decks, e.g. 'Brand NPS' (bold, ~11pt, NKB) with a smaller italic subtitle below it like '(Net Promoter Score)' (size 9, italic, grey 666666). No background, no border. Props: text, x, y, w, h, size, bold, italic, fg, align (l/c/r).",
+    shape:      "Filled rectangle (optionally with text) or a thin bordered box around a single data callout (e.g. a percentage label like '37%' boxed in a thin black/grey border with white fill). Props: x, y, w, h, bg, text, fg, border, border_pt.",
+    hbar_float: "Horizontal floating bar chart for price/value ranges. Props: x, y, w, h, series:[{label,min,max}], colors[].",
     line:       "Single-series line chart (time series). Props: x, y, w, h, labels[], values[], color, ymin, ymax, num_fmt, skip.",
-    line_multi: "Multi-series line chart (cohort/vintage). Props: x, y, w, h, labels[], series:[{name,values[],color,dashed?}], ymin, ymax.",
+    line_multi: "Multi-series line chart (cohort/vintage/trend comparison). Props: x, y, w, h, labels[], series:[{name,values[],color,dashed?}], ymin, ymax.",
     donut:      "Doughnut market share chart. Props: x, y, w, h, slices:[{label,value,color}], hole (default 55).",
-    scatter:    "XY scatter (CAGR vs margin). Props: x, y, w, h, points:[{label,x,y,color,size}].",
+    scatter:    "XY scatter (e.g. CAGR vs margin positioning). Props: x, y, w, h, points:[{label,x,y,color,size}].",
     quadrant:   "2×2 positioning matrix. Props: x, y, w, h, axis_labels:{top,bottom,left,right}, brands:[{label,px,py,color}] where px/py are 0-1.",
+    panel_hdr:  "RARELY USED. A colored full-width header bar. This does NOT appear in standard PANDO data slides — only use it for a section-banner slide that explicitly needs a colored divider strip. Do not use it as a chart title.",
   },
 };
 
 // ── System prompt for Claude ───────────────────────────────────────────────────
 function buildSystemPrompt(companyData: string, peersData: string): string {
-  return `You are an expert investment banking analyst at PANDO, a private equity firm.
-Your task is to generate a structured slide plan (JSON) for a PowerPoint presentation.
-The plan will be executed by a code builder — do NOT write any text other than the JSON.
+  return `You are a senior investment banking analyst at PANDO, a private equity firm, building a real investor-facing presentation. You have full creative and analytical control: you decide which slides exist, what each one argues, and which chart best supports that argument. Treat this like a real engagement, not a template-filling exercise.
 
-TEMPLATE PROFILE:
+TEMPLATE PROFILE (colors, fonts, layouts, element types you can place):
 ${JSON.stringify(PANDO_TEMPLATE_PROFILE, null, 2)}
+
+HOW REAL PANDO SLIDES LOOK (study this carefully — this is the bar):
+A real PANDO data slide has, top to bottom:
+1. A small category tag ("THE COMPANY", "MARKET OVERVIEW") and a bold ALL-CAPS title ("BRAND PERCEPTION").
+2. One or two sentences of body copy with key phrases in **bold** — this sentence states the actual finding/argument, not a description of the slide.
+3. One or two chart panels side by side. Each panel's "header" is just a textbox: a bold ~11pt line (e.g. "Product Attributes for Non-Clients (Perception) vs. Actual Clients (Experience)") with an optional italic grey subtitle underneath — PLAIN TEXT, never inside a colored rectangle.
+4. The chart itself, clean: thin grey gridlines, small soft-grey axis labels, a thin axis line, a simple legend below.
+5. Data callouts directly on top of/around bars when useful — small boxed numbers with thin borders (white fill, black/dark text), or underlined deltas like "+27pps" — built using small shape/textbox elements layered at precise x/y over the chart, not chart-native data labels.
+6. A footnote "Source  [name]" bottom-left, in small grey italic text.
+
+NEVER do this (common mistake to avoid): wrapping a chart's title in a solid colored rectangle (panel_hdr). That banner look does not exist anywhere in the real PANDO template — it reads as an AI-generated placeholder. Chart titles are always plain text per rule 3 above.
 
 LAYOUT RULES:
 - The slide canvas is 13.33 inches wide × 7.5 inches tall.
 - Standard content area: x=0.70 to x=13.03 (w=12.93), y=1.78 to y=6.50.
 - For two side-by-side panels: left at x=0.70 w=6.10, right at x=7.00 w=6.10.
-- For four panels (2×2): left col x=0.70, right col x=7.00, top row y=1.78, bottom row y=4.15. Each panel header h=0.27, chart h=2.03.
-- Always add a panel_hdr BEFORE each chart.
-- Takeaway layout: set category (small text), title (ALL CAPS), takeaway (key insight 1-2 sentences), note (source attribution).
+- For four panels (2×2): left col x=0.70, right col x=7.00, top row y=1.78, bottom row y=4.15.
+- Each panel: textbox title (h≈0.45, accounting for subtitle line) immediately above the chart, then the chart (h≈1.9-2.1 for 2×2, h≈3.8-4.2 for a single full-width chart).
+- Takeaway layout: set category (small text), title (ALL CAPS), takeaway (key insight 1-2 sentences, bold the specific number/finding), note (source attribution, "Source  [name]" format).
 - Divider layout: only set title (1-3 word section name). No elements.
+
+CONTENT JUDGMENT — think like an analyst, not a template filler:
+- Every slide must make a specific, falsifiable claim using real numbers from the company data, peer comparables, or uploaded documents. Never write generic placeholder content ("Illustrative", "Segment A", "Chart Area", "Lorem"). If a real number isn't available, do not invent one — choose a different angle you do have data for, or omit that slide.
+- Decide the deck structure yourself based on what data is actually available: e.g. company overview → market/competitive position → financial performance → valuation → investment thesis. Skip sections with no underlying data rather than padding with fake placeholders.
+- Pick the chart type that fits the actual comparison being made: time trend → line/line_multi, market share → donut, price/value ranges → hbar_float, positioning → scatter/quadrant. Don't default to the same chart type on every slide.
+- Vary slide layouts — don't repeat the exact same panel arrangement on every slide; some slides should be a single full-width chart, some a 2×2 grid, some side-by-side.
+- Body copy should read like an analyst's actual conclusion (e.g. "Galileo's D2C model enables the Company to offer high quality products at accessible prices, strengthening price value perception"), not a description of the slide's contents (e.g. "This slide demonstrates...").
 
 PANDO STYLE RULES:
 - Colors: use DKG for primary emphasis, MDG for secondary, OLV for tertiary, TEL for quaternary.
