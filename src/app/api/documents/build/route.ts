@@ -37,13 +37,15 @@ const PANDO_TEMPLATE_PROFILE = {
   element_types: {
     textbox:    "Plain text — THIS is how chart/panel titles work in PANDO decks, e.g. 'Brand NPS' (bold, ~11pt, NKB) with a smaller italic subtitle below it like '(Net Promoter Score)' (size 9, italic, grey 666666). No background, no border. Props: text, x, y, w, h, size, bold, italic, fg, align (l/c/r).",
     shape:      "Filled rectangle (optionally with text) or a thin bordered box around a single data callout (e.g. a percentage label like '37%' boxed in a thin black/grey border with white fill). Props: x, y, w, h, bg, text, fg, border, border_pt.",
-    hbar_float: "Horizontal floating bar chart for price/value ranges. Props: x, y, w, h, series:[{label,min,max}], colors[].",
+    bar:        "Vertical clustered column chart — use for comparing 2+ series across the same categories (e.g. Perception vs Experience by attribute, This Year vs Last Year by quarter). Props: x, y, w, h, labels[], series:[{name, values[], color, hatched?, data_labels?}], ymin, ymax, num_fmt, gap_width, overlap. Set hatched:true on ONE series to give it a diagonal-line texture (matches the real PANDO 'perception' bars) — only do this when you want to visually distinguish a 'perceived/estimated' series from an 'actual' one. Set data_labels:true to print the value above each bar.",
+    hbar_float: "Horizontal floating bar chart for price/value ranges (e.g. valuation range by methodology — DCF, precedent M&A, public comps). Props: x, y, w, h, series:[{label,min,max}], colors[].",
     line:       "Single-series line chart (time series). Props: x, y, w, h, labels[], values[], color, ymin, ymax, num_fmt, skip.",
-    line_multi: "Multi-series line chart (cohort/vintage/trend comparison). Props: x, y, w, h, labels[], series:[{name,values[],color,dashed?}], ymin, ymax.",
+    line_multi: "Multi-series line chart (cohort/vintage/trend comparison, e.g. revenue by segment over years, with an optional dashed 'forecast' series). Props: x, y, w, h, labels[], series:[{name,values[],color,dashed?}], ymin, ymax.",
     donut:      "Doughnut market share chart. Props: x, y, w, h, slices:[{label,value,color}], hole (default 55).",
-    scatter:    "XY scatter (e.g. CAGR vs margin positioning). Props: x, y, w, h, points:[{label,x,y,color,size}].",
-    quadrant:   "2×2 positioning matrix. Props: x, y, w, h, axis_labels:{top,bottom,left,right}, brands:[{label,px,py,color}] where px/py are 0-1.",
-    panel_hdr:  "RARELY USED. A colored full-width header bar. This does NOT appear in standard PANDO data slides — only use it for a section-banner slide that explicitly needs a colored divider strip. Do not use it as a chart title.",
+    scatter:    "XY scatter (e.g. CAGR vs margin positioning, growth vs profitability of peers). Props: x, y, w, h, points:[{label,x,y,color,size}].",
+    quadrant:   "2×2 positioning matrix (e.g. brand positioning, price vs quality). Props: x, y, w, h, axis_labels:{top,bottom,left,right}, brands:[{label,px,py,color}] where px/py are 0-1.",
+    table:      "Native PPTX table — use for comparables tables, financial summaries, cap tables, or any data better read as rows/columns than as a chart (3+ columns of mixed numeric/text data). Dark-green header row with white bold text and light-grey zebra striping are applied automatically — do not also wrap it in a shape/panel_hdr. Props: x, y, w, headers:[string], rows:[[string|number,...]], col_widths?:[inches per column], size (font pt, default 8), zebra (default true), bold_first_col (bold the leftmost column, e.g. company/metric names), header_h, row_h.",
+    panel_hdr:  "RARELY USED. A colored full-width header bar. This does NOT appear in standard PANDO data slides — only use it for a section-banner slide that explicitly needs a colored divider strip. Do not use it as a chart or table title.",
   },
 };
 
@@ -77,9 +79,43 @@ LAYOUT RULES:
 CONTENT JUDGMENT — think like an analyst, not a template filler:
 - Every slide must make a specific, falsifiable claim using real numbers from the company data, peer comparables, or uploaded documents. Never write generic placeholder content ("Illustrative", "Segment A", "Chart Area", "Lorem"). If a real number isn't available, do not invent one — choose a different angle you do have data for, or omit that slide.
 - Decide the deck structure yourself based on what data is actually available: e.g. company overview → market/competitive position → financial performance → valuation → investment thesis. Skip sections with no underlying data rather than padding with fake placeholders.
-- Pick the chart type that fits the actual comparison being made: time trend → line/line_multi, market share → donut, price/value ranges → hbar_float, positioning → scatter/quadrant. Don't default to the same chart type on every slide.
-- Vary slide layouts — don't repeat the exact same panel arrangement on every slide; some slides should be a single full-width chart, some a 2×2 grid, some side-by-side.
-- Body copy should read like an analyst's actual conclusion (e.g. "Galileo's D2C model enables the Company to offer high quality products at accessible prices, strengthening price value perception"), not a description of the slide's contents (e.g. "This slide demonstrates...").
+- Vary slide layouts — don't repeat the exact same panel arrangement on every slide; some slides should be a single full-width chart, some a 2×2 grid, some side-by-side, some a table, some a divider.
+
+CHART/ELEMENT SELECTION — pick based on what the data actually is, not habit:
+- Comparing 2+ named groups across the same set of categories (perception vs reality, this year vs last year, us vs competitor by attribute) → bar (clustered columns).
+- A trend over time, one series → line. Multiple series over time (cohorts, segments, forecast vs actual) → line_multi (dashed for forecast/projected).
+- Parts of a whole at one point in time (market share, revenue mix) → donut.
+- A range or spread per category (valuation by methodology, price ranges) → hbar_float.
+- Two continuous metrics for many entities at once (growth vs margin across peers) → scatter. Same but framed as four strategic zones → quadrant.
+- Anything with 3+ columns of mixed text/numeric data that's meant to be read precisely, not eyeballed as a shape (comparables table, cap table, financial summary, deal terms) → table. Never force tabular data into a chart, and never force a real comparison into a table when a chart would show the trend better.
+- Don't default to the same chart type on every slide just because it worked once — re-evaluate per slide based on what's actually being compared.
+
+WORKED EXAMPLE — a 2x2-panel takeaway slide with a clustered bar chart and a table, showing correct structure and coordinates:
+{
+  "layout": "takeaway",
+  "category": "THE COMPANY",
+  "title": "BRAND PERCEPTION",
+  "takeaway": "The Company's D2C model enables **high quality products at accessible prices**, translating into an NPS of ~80, well above category peers.",
+  "note": "Source  Internal brand survey, n=1,200",
+  "elements": [
+    { "type": "textbox", "text": "Product Attributes — Perception vs. Experience", "x": 0.70, "y": 1.78, "w": 6.10, "h": 0.30, "size": 11, "bold": true },
+    { "type": "bar", "x": 0.70, "y": 2.20, "w": 6.10, "h": 3.6,
+      "labels": ["Design", "Quality", "Variety", "Price-Quality"],
+      "series": [
+        { "name": "Perception", "values": [0.37, 0.32, 0.32, 0.27], "color": "0A231F", "hatched": true, "data_labels": true },
+        { "name": "Experience", "values": [0.64, 0.61, 0.51, 0.59], "color": "437742", "data_labels": true }
+      ],
+      "ymin": 0, "ymax": 0.8, "num_fmt": "0%"
+    },
+    { "type": "textbox", "text": "Brand NPS vs. Public Peers", "x": 7.00, "y": 1.78, "w": 6.03, "h": 0.30, "size": 11, "bold": true },
+    { "type": "table", "x": 7.00, "y": 2.30, "w": 6.03,
+      "headers": ["Brand", "NPS"],
+      "rows": [["The Company", "80"], ["Peer A", "65"], ["Peer B", "50"], ["Peer C", "44"]],
+      "col_widths": [4.0, 2.03], "bold_first_col": true
+    }
+  ]
+}
+Note the takeaway uses **double asterisks** to mark the phrase that should render bold — the builder converts this automatically.
 
 PANDO STYLE RULES:
 - Colors: use DKG for primary emphasis, MDG for secondary, OLV for tertiary, TEL for quaternary.

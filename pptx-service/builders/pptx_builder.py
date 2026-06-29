@@ -28,12 +28,13 @@ Element types:
   quadrant   — 2×2 positioning matrix with labels
 """
 import io
+import re
 from typing import Any
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION
 from pptx.chart.data import ChartData, XyChartData
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import qn
@@ -113,9 +114,25 @@ class PptxBuilder:
             idx = ph.placeholder_format.idx
             val = mapping.get(idx)
             if val:
-                ph.text = val
+                self._set_markdown_text(ph, val)
             elif idx == PH["content"]:
                 ph._element.getparent().remove(ph._element)
+
+    def _set_markdown_text(self, ph, text: str):
+        """Set placeholder text, rendering **bold** spans as bold runs.
+        Inherits font name/size/color from the layout's placeholder defaults."""
+        tf = ph.text_frame
+        tf.clear()
+        p = tf.paragraphs[0]
+        for part in re.split(r'(\*\*.*?\*\*)', text):
+            if not part:
+                continue
+            r = p.add_run()
+            if part.startswith("**") and part.endswith("**"):
+                r.text = part[2:-2]
+                r.font.bold = True
+            else:
+                r.text = part
 
     def _element(self, slide, el: dict):
         t = el.get("type", "")
@@ -126,9 +143,11 @@ class PptxBuilder:
             "hbar_float": self._hbar_float,
             "line":       self._line,
             "line_multi": self._line_multi,
+            "bar":        self._bar,
             "donut":      self._donut,
             "scatter":    self._scatter,
             "quadrant":   self._quadrant,
+            "table":      self._table,
         }
         fn = dispatch.get(t)
         if fn:
@@ -358,6 +377,129 @@ class PptxBuilder:
         ch.has_legend = True
         ch.legend.position = XL_LEGEND_POSITION.BOTTOM
         ch.legend.include_in_layout = False
+
+    # ── Clustered vertical column chart (grouped category comparisons) ────────
+    def _bar(self, slide, el: dict):
+        """Vertical clustered bar chart — e.g. Perception vs Experience across attributes.
+        Supports per-series solid colors, optional hatched/textured fill on one series,
+        and optional in-chart data labels."""
+        series_list = el.get("series", [])
+        cd = ChartData()
+        cd.categories = el["labels"]
+        for s in series_list:
+            cd.add_series(s["name"], s["values"])
+        x, y, w, h = el["x"], el["y"], el["w"], el["h"]
+        cf = slide.shapes.add_chart(
+            XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(x), Inches(y), Inches(w), Inches(h), cd
+        )
+        ch = cf.chart; ch.has_title = False
+
+        for i, s in enumerate(series_list):
+            ser = ch.series[i]
+            col = s.get("color", PALETTE["DKG"])
+            ser.format.fill.solid(); ser.format.fill.fore_color.rgb = _rgb(col)
+            ser.format.line.fill.background()
+            if s.get("hatched"):
+                self._set_hatch(ser, col)
+            if s.get("data_labels"):
+                ser.has_data_labels = True
+                dl = ser.data_labels
+                dl.number_format = el.get("num_fmt", "0%")
+                dl.number_format_is_linked = False
+                dl.font.size = Pt(7); dl.font.bold = False
+                dl.font.color.rgb = _rgb("444444")
+                dl.position = XL_LABEL_POSITION.OUTSIDE_END
+
+        try:
+            ch.plot_area.gap_width = el.get("gap_width", 60)
+            ch.plot_area.overlap = el.get("overlap", -10)
+        except Exception: pass
+
+        self._style_axes(ch, ymin=el.get("ymin", 0), ymax=el.get("ymax"),
+                         num_fmt=el.get("num_fmt", "0%"), skip=el.get("skip", 1), csize=6.5)
+
+        if len(series_list) > 1:
+            ch.has_legend = True
+            ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+            ch.legend.include_in_layout = False
+        else:
+            ch.has_legend = False
+
+    def _set_hatch(self, series, color: str):
+        """Apply a diagonal-line hatch pattern fill to a bar series (matches PANDO 'perception' style)."""
+        ser_el = series._element
+        spPr = ser_el.find("{%s}spPr" % C_NS)
+        if spPr is None: return
+        solidFill = spPr.find("{%s}solidFill" % A_NS)
+        if solidFill is not None:
+            spPr.remove(solidFill)
+        pattFill = parse_xml(
+            f'<a:pattFill xmlns:a="{A_NS}" prst="lgDnDiag">'
+            f'<a:fgClr><a:srgbClr val="{color}"/></a:fgClr>'
+            f'<a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr>'
+            f'</a:pattFill>'
+        )
+        ln_el = spPr.find("{%s}ln" % A_NS)
+        if ln_el is not None:
+            ln_el.addprevious(pattFill)
+        else:
+            spPr.append(pattFill)
+
+    # ── Native table ────────────────────────────────────────────────────────────
+    def _table(self, slide, el: dict):
+        """Native PPTX table. PANDO style: dark-green header row with white bold text,
+        light-grey zebra striping on body rows, no default PowerPoint banding theme."""
+        headers = el.get("headers", [])
+        rows = el.get("rows", [])
+        n_cols = len(headers)
+        n_rows = len(rows) + 1
+        x, y, w = el["x"], el["y"], el["w"]
+        header_h = el.get("header_h", 0.32)
+        row_h = el.get("row_h", 0.28)
+        h = el.get("h", header_h + row_h * len(rows))
+
+        gframe = slide.shapes.add_table(n_rows, n_cols, Inches(x), Inches(y), Inches(w), Inches(h))
+        table = gframe.table
+
+        # Strip PowerPoint's default banded theme style so our colors aren't overridden
+        tbl_el = table._tbl
+        tblPr = tbl_el.find(qn("a:tblPr"))
+        if tblPr is not None:
+            tblPr.set("firstRow", "0")
+            tblPr.set("bandRow", "0")
+
+        col_widths = el.get("col_widths")
+        if col_widths:
+            for i, cw in enumerate(col_widths[:n_cols]):
+                table.columns[i].width = Inches(cw)
+
+        size = el.get("size", 8)
+
+        def _style_cell(cell, text, bold, fg, bg, align):
+            cell.fill.solid(); cell.fill.fore_color.rgb = _rgb(bg)
+            cell.margin_left = Inches(0.06); cell.margin_right = Inches(0.06)
+            cell.margin_top = Inches(0.02); cell.margin_bottom = Inches(0.02)
+            cell.vertical_anchor = 3  # middle
+            tf = cell.text_frame; tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.alignment = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
+            r = p.add_run(); r.text = str(text)
+            r.font.name = DEFAULT_FONT; r.font.size = Pt(size)
+            r.font.bold = bold; r.font.color.rgb = _rgb(fg)
+
+        for c, htext in enumerate(headers):
+            _style_cell(table.cell(0, c), htext, True, PALETTE["WHT"], PALETTE["DKG"],
+                        "l" if c == 0 else "c")
+        table.rows[0].height = Inches(header_h)
+
+        zebra = el.get("zebra", True)
+        bold_first_col = el.get("bold_first_col", False)
+        for ridx, row in enumerate(rows):
+            bg = PALETTE["GRG"] if (zebra and ridx % 2 == 1) else PALETTE["WHT"]
+            for c, val in enumerate(row):
+                _style_cell(table.cell(ridx + 1, c), val, bold_first_col and c == 0,
+                            PALETTE["NKB"], bg, "l" if c == 0 else "c")
+            table.rows[ridx + 1].height = Inches(row_h)
 
     # ── Donut chart (market share) ─────────────────────────────────────────────
     def _donut(self, slide, el: dict):
