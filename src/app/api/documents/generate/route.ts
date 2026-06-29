@@ -5,6 +5,8 @@ import { documentTemplates, companies, compSets, publicComps } from "@/lib/schem
 import path from "path";
 import fs from "fs";
 
+export const maxDuration = 300;
+
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "templates");
 
 // ── Formatters ────────────────────────────────────────────────────────────────

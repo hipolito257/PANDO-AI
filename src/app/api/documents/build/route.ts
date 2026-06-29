@@ -5,6 +5,9 @@ import { documentTemplates, companies, compSets, publicComps, userSettings, fina
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
+// Allow up to 5 minutes — Claude + Railway can easily exceed Vercel's 60s default.
+export const maxDuration = 300;
+
 // In production (Vercel): call the Python serverless function on the same domain.
 // In local dev: call the local FastAPI service on port 5053.
 function getPptxEndpoint(): string {
@@ -356,7 +359,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
 
     // Always read as text first so HTML error pages don't crash JSON.parse
     const rawBody = await buildResp.text();
-    let buildJson: { data?: string; slide_count?: number; error?: string } = {};
+    let buildJson: { data?: string; slide_count?: number; error?: string; detail?: string } = {};
     try {
       buildJson = JSON.parse(rawBody);
     } catch {
@@ -366,9 +369,11 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
       );
     }
 
-    if (!buildResp.ok || buildJson.error) {
+    // FastAPI's HTTPException returns { detail: "..." }, not { error: "..." }
+    const pptxError = buildJson.error ?? buildJson.detail;
+    if (!buildResp.ok || pptxError) {
       return NextResponse.json(
-        { error: buildJson.error ?? `Error en pptx-service (HTTP ${buildResp.status})` },
+        { error: pptxError ?? `Error en pptx-service (HTTP ${buildResp.status})` },
         { status: 500 }
       );
     }
