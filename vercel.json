@@ -9,5 +9,11 @@
     "api/pptx_build.py": {
       "maxDuration": 60
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/pptx_build",
+      "dest": "/api/pptx_build.py"
+    }
+  ]
 }
