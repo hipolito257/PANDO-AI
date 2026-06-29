@@ -387,6 +387,136 @@ function buildContextBlock(file: ContextFile): any {
     : null;
 }
 
+// ── Generate a new XLSX with Claude-decided structure and data ────────────────
+async function generateXlsxNewContent(
+  templateBuffer: Buffer,
+  company: CompanyRow | null,
+  peers: { ticker: string; evRevenue?: number|null; evEbitda?: number|null }[],
+  contextFiles: ContextFile[],
+  apiKey: string,
+  userPrompt: string | null
+): Promise<Buffer> {
+  const medRev  = median(peers.map(p => Number(p.evRevenue)).filter(n => !isNaN(n) && n > 0));
+  const medEbit = median(peers.map(p => Number(p.evEbitda)).filter(n => !isNaN(n) && n > 0));
+
+  const companyCard = company ? `
+Empresa: ${company.name} | Sector: ${company.sector ?? "N/D"} | País: ${company.country}
+Revenue: ${fmtB(company.revenueUsd)} | Crecimiento: ${fmtPct(company.revenueGrowth)}
+EBITDA: ${fmtB(company.ebitdaUsd)} | Margen: ${fmtPct(company.ebitdaMargin)}
+Empleados: ${company.employees ?? "N/D"} | Etapa: ${company.stage ?? "N/D"}
+Fondeo total: ${fmtB(company.totalFunding)} | Descripción: ${company.description ?? "N/D"}
+EV/Revenue peers: ${medRev ? fmtX(medRev) : "N/D"} | EV/EBITDA peers: ${medEbit ? fmtX(medEbit) : "N/D"}
+Fecha: ${today()}
+`.trim() : null;
+
+  const contentBlocks: any[] = [];
+  if (contextFiles.length > 0) {
+    contentBlocks.push({ type: "text", text: `Documentos de referencia (${contextFiles.length}):` });
+    for (const f of contextFiles) {
+      const block = buildContextBlock(f);
+      if (block) contentBlocks.push(block);
+    }
+  }
+
+  contentBlocks.push({
+    type: "text",
+    text: `Eres un analista financiero de PANDO, un fondo de private equity.
+
+TU TAREA: Genera un Excel COMPLETAMENTE NUEVO con datos originales.
+- NO copies la estructura de ninguna plantilla existente.
+- TÚ decides qué hojas crear, qué columnas usar, qué datos incluir.
+- Usa los datos de la empresa y documentos de referencia para el contenido.
+- El Excel debe ser útil para análisis de inversión.
+
+${companyCard ? `DATOS DE LA EMPRESA:\n${companyCard}` : ""}
+${userPrompt ? `\nINSTRUCCIONES DEL USUARIO:\n${userPrompt}` : ""}
+
+FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto adicional, sin markdown):
+{
+  "sheets": [
+    {
+      "name": "Nombre hoja",
+      "headers": ["Col1", "Col2", "Col3"],
+      "rows": [
+        ["valor1", "valor2", "valor3"],
+        ["valor4", "valor5", "valor6"]
+      ]
+    }
+  ]
+}
+
+Genera entre 1 y 4 hojas con datos reales y completos. No uses placeholders.`
+  });
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      messages: [{ role: "user", content: contentBlocks }],
+    }),
+    signal: AbortSignal.timeout(120000),
+  });
+
+  if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`);
+  const data = await res.json();
+  const aiText: string = data?.content?.[0]?.text ?? "";
+
+  const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Claude no devolvió JSON válido para el Excel");
+
+  const plan: { sheets: { name: string; headers: string[]; rows: (string|number)[][] }[] } = JSON.parse(jsonMatch[0]);
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ExcelJS = require("exceljs");
+  const wb = new ExcelJS.Workbook();
+
+  // Load template to inherit its theme/styles, then replace all sheets
+  const templateWb = new ExcelJS.Workbook();
+  await templateWb.xlsx.load(templateBuffer);
+
+  for (const sheetDef of plan.sheets) {
+    const ws = wb.addWorksheet(sheetDef.name);
+
+    // Header row — bold, dark green background (PANDO brand)
+    const headerRow = ws.addRow(sheetDef.headers);
+    headerRow.eachCell((cell: any) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Calibri", size: 11 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF004F46" } };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      cell.border = {
+        bottom: { style: "thin", color: { argb: "FF437742" } },
+      };
+    });
+    headerRow.height = 22;
+
+    // Data rows
+    for (const row of sheetDef.rows) {
+      const dataRow = ws.addRow(row);
+      dataRow.eachCell((cell: any, colIdx: number) => {
+        cell.font = { name: "Calibri", size: 10 };
+        cell.alignment = { vertical: "middle", horizontal: colIdx === 1 ? "left" : "center" };
+      });
+    }
+
+    // Auto-fit columns (approximate)
+    ws.columns.forEach((col: any, idx: number) => {
+      const maxLen = Math.max(
+        sheetDef.headers[idx]?.length ?? 10,
+        ...sheetDef.rows.map(r => String(r[idx] ?? "").length)
+      );
+      col.width = Math.min(Math.max(maxLen + 4, 12), 40);
+    });
+  }
+
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
 // ── Main AI call: build document from template + context ──────────────────────
 interface CompanyRow {
   name: string; sector?: string|null; subsector?: string|null; country: string;
@@ -652,8 +782,12 @@ export async function POST(req: NextRequest) {
         // DOCX: generate completely new content — Claude decides all topics/structure
         outBuffer = await generateDocxNewContent(templateBuffer, company, peers, contextFiles, userApiKey, userPrompt);
         usedReplacements = [];
+      } else if (ext === "xlsx") {
+        // XLSX: generate completely new content — Claude decides all sheets/columns/data
+        outBuffer = await generateXlsxNewContent(templateBuffer, company, peers, contextFiles, userApiKey, userPrompt);
+        usedReplacements = [];
       } else {
-        // PPTX / XLSX: find-and-replace AI path
+        // PPTX: find-and-replace AI path
         const result = await generateWithAI(templateBuffer, ext, company, peers, contextFiles, userApiKey, userPrompt);
         outBuffer = result.buffer;
         usedReplacements = result.replacements;
