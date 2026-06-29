@@ -18,6 +18,21 @@ interface GenResult {
     hadUserPrompt: boolean; hadApiKey: boolean; templateTextLength: number;
   };
 }
+interface DeckSlide {
+  index: number;
+  type: "cover" | "divider" | "slide" | "back_cover";
+  title?: string;
+  subtitle?: string;
+  section?: string;
+  takeaway?: string;
+  chart?: string;
+}
+interface DeckPlan {
+  deck_title: string;
+  deck_subtitle?: string;
+  company?: string;
+  slides: DeckSlide[];
+}
 
 const TYPE_COLOR: Record<string, string> = {
   pptx: "bg-orange/10 text-orange border-orange/30",
@@ -55,6 +70,10 @@ export default function DocumentosPage() {
   const [genResult, setGenResult]     = useState<GenResult | null>(null);
   const [building, setBuilding]       = useState(false);
   const [buildErr, setBuildErr]       = useState<string | null>(null);
+  const [planning, setPlanning]       = useState(false);
+  const [planErr, setPlanErr]         = useState<string | null>(null);
+  const [plan, setPlan]               = useState<DeckPlan | null>(null);
+  const [planFeedback, setPlanFeedback] = useState("");
   const [showUpload, setShowUpload]   = useState(false);
   const [dragOver, setDragOver]       = useState(false);
   const [ctxDragOver, setCtxDragOver] = useState(false);
@@ -236,14 +255,38 @@ export default function DocumentosPage() {
     setTimeout(() => setGenSuccess(false), 5000);
   }
 
-  // ── Build native PPTX (advanced mode with charts) ─────────────────────────
-  async function handleBuild() {
+  // ── Plan-first workflow (PPTX build mode) ─────────────────────────────────
+  async function handlePlan(feedback?: string) {
+    if (!selected || selected.type !== "pptx") return;
+    setPlanning(true); setPlanErr(null);
+    const fd = new FormData();
+    if (companyId) fd.append("companyId", companyId);
+    if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
+    if (feedback?.trim()) fd.append("feedback", feedback.trim());
+    for (const f of contextFiles) fd.append("files", f);
+    try {
+      const res = await fetch("/api/documents/plan", { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({})) as { success?: boolean; plan?: DeckPlan; error?: string };
+      if (!res.ok || !j.success) {
+        setPlanErr(j.error ?? "Error al generar el plan");
+      } else {
+        setPlan(j.plan!);
+        setPlanFeedback("");
+      }
+    } catch (err: unknown) {
+      setPlanErr((err as Error)?.message ?? "Error de red");
+    }
+    setPlanning(false);
+  }
+
+  async function handleBuildFromPlan() {
     if (!selected || selected.type !== "pptx") return;
     setBuilding(true); setBuildErr(null);
     const fd = new FormData();
     fd.append("templateId", selected.id);
     if (companyId) fd.append("companyId", companyId);
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
+    if (plan) fd.append("approvedPlan", JSON.stringify(plan));
     for (const f of contextFiles) fd.append("files", f);
     try {
       const res = await fetch("/api/documents/build", { method: "POST", body: fd });
@@ -251,13 +294,13 @@ export default function DocumentosPage() {
       if (!res.ok || !j.success) {
         setBuildErr(j.error ?? "Error al construir presentación");
       } else {
-        // Download the PPTX
         const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
         const bytes = Uint8Array.from(atob(j.data!), c => c.charCodeAt(0));
         const blob = new Blob([bytes], { type: mime });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a"); a.href = url; a.download = j.filename!; a.click();
         URL.revokeObjectURL(url);
+        setPlan(null); setPlanFeedback("");
         setGenSuccess(true);
         setTimeout(() => setGenSuccess(false), 5000);
       }
@@ -317,7 +360,7 @@ export default function DocumentosPage() {
             <div className="text-center py-12 text-slate text-[12px]"><div className="text-3xl mb-2">📄</div>Sube tu primera plantilla</div>
           )}
           {templates.map(t => (
-            <button key={t.id} onClick={() => { setSelected(t); setGenSuccess(false); setGenErr(null); setContextFiles([]); }}
+            <button key={t.id} onClick={() => { setSelected(t); setGenSuccess(false); setGenErr(null); setBuildErr(null); setPlanErr(null); setPlan(null); setPlanFeedback(""); setContextFiles([]); }}
               className={`w-full text-left rounded-[8px] p-3 border transition-all group ${
                 selected?.id === t.id ? "bg-carbon text-white border-carbon" : "bg-white border-chalk hover:border-graphite/30 hover:shadow-sm"}`}>
               <div className="flex items-start gap-2">
@@ -767,20 +810,20 @@ export default function DocumentosPage() {
 
 
               {/* Advanced Build button — PPTX only */}
-              {selected?.type === "pptx" && (
+              {selected?.type === "pptx" && !plan && (
                 <div className="mt-3 pt-3 border-t border-chalk">
                   <div className="text-[10px] text-slate mb-2 font-medium">Modo avanzado — gráficas nativas editables en PowerPoint</div>
-                  {buildErr && (
-                    <div className="mb-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[7px] p-2.5">{buildErr}</div>
+                  {planErr && (
+                    <div className="mb-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[7px] p-2.5">{planErr}</div>
                   )}
-                  <button onClick={handleBuild} disabled={building || generating || !selected}
+                  <button onClick={() => handlePlan()} disabled={planning || generating}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-[#004F46] text-white rounded-[10px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    {building ? (
+                    {planning ? (
                       <>
                         <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                         </svg>
-                        Construyendo presentación…
+                        Planificando presentación…
                       </>
                     ) : (
                       <>
@@ -790,7 +833,7 @@ export default function DocumentosPage() {
                           <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor"/>
                           <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
                         </svg>
-                        Construir con gráficas nativas
+                        Planear presentación con gráficas nativas
                       </>
                     )}
                   </button>
@@ -804,6 +847,155 @@ export default function DocumentosPage() {
                 </div>
               </div>
             </div>
+
+            {/* Plan review card */}
+            {plan && (
+              <div className="bg-white border border-[#004F46]/30 rounded-[12px] overflow-hidden">
+                {/* Plan header */}
+                <div className="bg-[#004F46] px-5 py-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-white text-[14px] font-semibold">Plan de Presentación</div>
+                    <div className="text-[#A5C8D1] text-[11px] mt-0.5">{plan.slides.length} slides · Revisa y aprueba antes de construir</div>
+                  </div>
+                  <button onClick={() => { setPlan(null); setPlanFeedback(""); setBuildErr(null); }}
+                    className="text-white/60 hover:text-white p-1 rounded transition-colors">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Deck title */}
+                <div className="px-5 py-3 border-b border-chalk bg-[#004F46]/5">
+                  <div className="text-[13px] font-semibold text-[#004F46]">{plan.deck_title}</div>
+                  {plan.deck_subtitle && <div className="text-[11px] text-slate mt-0.5">{plan.deck_subtitle}</div>}
+                </div>
+
+                {/* Slides outline */}
+                <div className="px-5 py-4 space-y-1">
+                  {plan.slides.map((slide) => {
+                    if (slide.type === "cover") {
+                      return (
+                        <div key={slide.index} className="flex items-start gap-3 py-2">
+                          <span className="text-base shrink-0 mt-0.5">🎯</span>
+                          <div>
+                            <div className="text-[12px] font-semibold text-carbon">Portada</div>
+                            <div className="text-[11px] text-slate">{slide.title}{slide.subtitle ? ` — ${slide.subtitle}` : ""}</div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (slide.type === "back_cover") {
+                      return (
+                        <div key={slide.index} className="flex items-start gap-3 py-2">
+                          <span className="text-base shrink-0 mt-0.5">🏁</span>
+                          <div>
+                            <div className="text-[12px] font-semibold text-carbon">Contraportada</div>
+                            {slide.title && <div className="text-[11px] text-slate">{slide.title}</div>}
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (slide.type === "divider") {
+                      return (
+                        <div key={slide.index} className="mt-3 mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="h-px flex-1 bg-[#004F46]/20"></div>
+                            <span className="text-[10px] font-bold text-[#004F46] tracking-wider uppercase">{slide.section || slide.title}</span>
+                            <div className="h-px flex-1 bg-[#004F46]/20"></div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    // regular slide
+                    const slideNumber = plan.slides.filter(s => s.type === "slide" && s.index <= slide.index).length;
+                    return (
+                      <div key={slide.index} className="flex items-start gap-3 py-2 pl-2">
+                        <span className="text-[10px] font-bold text-[#004F46]/60 shrink-0 w-4 mt-0.5">{slideNumber}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[12px] font-semibold text-carbon">{slide.title}</div>
+                          {slide.chart && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-[9px] font-medium text-[#004F46] bg-[#004F46]/10 rounded px-1.5 py-0.5 shrink-0">gráfica</span>
+                              <span className="text-[11px] text-slate truncate">{slide.chart}</span>
+                            </div>
+                          )}
+                          {slide.takeaway && (
+                            <div className="text-[11px] text-graphite mt-1 leading-snug italic">&ldquo;{slide.takeaway}&rdquo;</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Feedback + actions */}
+                <div className="px-5 pb-5 pt-3 border-t border-chalk space-y-3">
+                  {buildErr && (
+                    <div className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[8px] p-3">{buildErr}</div>
+                  )}
+                  {planErr && (
+                    <div className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[8px] p-3">{planErr}</div>
+                  )}
+                  <div>
+                    <label className="text-[11px] font-medium text-graphite block mb-1.5">¿Quieres ajustar el plan?</label>
+                    <textarea
+                      value={planFeedback}
+                      onChange={e => setPlanFeedback(e.target.value)}
+                      rows={3}
+                      placeholder={"Ej: Agrega una slide de valuación. Quita la sección de financials y añade más detalle en tesis. El overview debe ser más detallado con datos de clientes y geografía."}
+                      className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-[#004F46] resize-none leading-relaxed"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handlePlan(planFeedback || undefined)}
+                      disabled={planning || building}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-[#004F46] text-[#004F46] rounded-[9px] text-[12px] font-medium hover:bg-[#004F46]/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      {planning ? (
+                        <>
+                          <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                          </svg>
+                          Refinando…
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path d="M10 2L2 10M2 2l8 8" stroke="none"/>
+                            <path d="M1 6a5 5 0 1010 0A5 5 0 001 6z" stroke="currentColor" strokeWidth="1.3"/>
+                            <path d="M9 4l2-2M9 4l-1-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                          </svg>
+                          Refinar plan
+                        </>
+                      )}
+                    </button>
+                    <button onClick={handleBuildFromPlan}
+                      disabled={planning || building}
+                      className="flex-[2] flex items-center justify-center gap-1.5 py-2.5 bg-[#004F46] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      {building ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                          </svg>
+                          Construyendo presentación…
+                        </>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <rect x="1" y="1" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
+                            <rect x="8" y="1" width="5" height="5" rx="1" fill="currentColor"/>
+                            <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor"/>
+                            <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
+                          </svg>
+                          Aprobar y construir presentación
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
           </div>
         )}

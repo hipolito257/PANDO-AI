@@ -78,6 +78,9 @@ LAYOUT RULES:
 - Each panel: textbox title (h≈0.45, accounting for subtitle line) immediately above the chart, then the chart (h≈1.9-2.1 for 2×2, h≈3.8-4.2 for a single full-width chart).
 - Takeaway layout: set category (small text), title (ALL CAPS), takeaway (key insight 1-2 sentences, bold the specific number/finding), note (source attribution, "Source  [name]" format).
 - Divider layout: only set title (1-3 word section name). No elements.
+- Cover slide: ALWAYS the first slide. Use layout "cover" with fields: title (company name), subtitle (e.g. "Investment Overview | June 2026"). No elements needed — the cover design is drawn automatically.
+- Back cover: ALWAYS the last slide. Use layout "back_cover" with fields: title ("Preguntas" or "Gracias"), subtitle (optional tagline). No elements needed.
+- Every deck MUST start with a cover slide (index 0) and end with a back_cover (last slide).
 
 CONTENT JUDGMENT — think like an analyst, not a template filler:
 - Every slide must make a specific, falsifiable claim using real numbers from the company data, peer comparables, or uploaded documents. Never write generic placeholder content ("Illustrative", "Segment A", "Chart Area", "Lorem"). If a real number isn't available, do not invent one — choose a different angle you do have data for, or omit that slide.
@@ -175,9 +178,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const formData = await req.formData();
-    const templateId = formData.get("templateId") as string;
-    const companyId  = formData.get("companyId")  as string | null;
-    const userPrompt = (formData.get("userPrompt") as string) || "";
+    const templateId   = formData.get("templateId")   as string;
+    const companyId    = formData.get("companyId")    as string | null;
+    const userPrompt   = (formData.get("userPrompt")  as string) || "";
+    const approvedPlan = (formData.get("approvedPlan") as string | null) || null;
     const contextFiles = formData.getAll("files") as File[];
 
     // ── 1. Load template ──────────────────────────────────────────────────────
@@ -298,14 +302,18 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
     // ── 5. Call Claude to generate slide plan ─────────────────────────────────
     const claude = new Anthropic({ apiKey });
 
+    const instructionText = [
+      approvedPlan
+        ? `PLAN APROBADO POR EL USUARIO — sigue esta estructura exactamente (mismas secciones, mismos títulos, mismos tipos de gráfica):\n${approvedPlan}\n\nConvierte este plan al JSON de slides completo.`
+        : null,
+      userPrompt || "Genera una presentación de inversión completa para esta empresa usando el formato PANDO.",
+    ].filter(Boolean).join("\n\n");
+
     const userMessage: Anthropic.MessageParam = {
       role: "user",
       content: [
         ...contextParts,
-        {
-          type: "text",
-          text: userPrompt || "Genera una presentación de inversión completa para esta empresa usando el formato PANDO.",
-        },
+        { type: "text", text: instructionText },
       ],
     };
 

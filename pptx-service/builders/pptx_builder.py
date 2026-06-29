@@ -55,9 +55,11 @@ PALETTE = {
 
 # Layout index map  (master_index, layout_index)
 LAYOUT_MAP = {
-    "takeaway": (1, 0),
-    "divider":  (0, 2),
-    "blank":    (2, 0),
+    "cover":      (2, 0),   # blank master — cover is drawn programmatically
+    "takeaway":   (1, 0),
+    "divider":    (0, 2),
+    "blank":      (2, 0),
+    "back_cover": (2, 0),   # blank master — back cover drawn programmatically
 }
 
 # Placeholder indices
@@ -96,12 +98,23 @@ class PptxBuilder:
     # ── Slide assembly ─────────────────────────────────────────────────────────
     def _add_slide(self, sd: dict):
         layout_key = sd.get("layout", "takeaway")
+        # Resolve layout, falling back through masters if index out of range
         mi, li = LAYOUT_MAP.get(layout_key, (1, 0))
+        n_masters = len(self.prs.slide_masters)
+        mi = min(mi, n_masters - 1)
+        n_layouts = len(self.prs.slide_masters[mi].slide_layouts)
+        li = min(li, n_layouts - 1)
         layout = self.prs.slide_masters[mi].slide_layouts[li]
         slide = self.prs.slides.add_slide(layout)
-        self._fill_phs(slide, sd)
-        for el in sd.get("elements", []):
-            self._element(slide, el)
+
+        if layout_key == "cover":
+            self._draw_cover(slide, sd)
+        elif layout_key == "back_cover":
+            self._draw_back_cover(slide, sd)
+        else:
+            self._fill_phs(slide, sd)
+            for el in sd.get("elements", []):
+                self._element(slide, el)
 
     def _fill_phs(self, slide, sd: dict):
         mapping = {
@@ -117,6 +130,87 @@ class PptxBuilder:
                 self._set_markdown_text(ph, val)
             elif idx == PH["content"]:
                 ph._element.getparent().remove(ph._element)
+
+    # ── Cover slide (programmatic, template-independent) ──────────────────────
+    def _draw_cover(self, slide, sd: dict):
+        """Draw a professional PANDO-branded front cover on a blank slide."""
+        W, H = 13.33, 7.5
+
+        def _txt(text, x, y, w, h, size, bold=False, italic=False, fg=PALETTE["NKB"], align="l", wrap=True):
+            box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+            tf = box.text_frame; tf.word_wrap = wrap
+            p = tf.paragraphs[0]
+            p.alignment = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
+            r = p.add_run(); r.text = text
+            r.font.name = DEFAULT_FONT; r.font.size = Pt(size)
+            r.font.bold = bold; r.font.italic = italic
+            r.font.color.rgb = _rgb(fg)
+
+        def _rect(x, y, w, h, color):
+            sh = slide.shapes.add_shape(1, Inches(x), Inches(y), Inches(w), Inches(h))
+            sh.fill.solid(); sh.fill.fore_color.rgb = _rgb(color)
+            sh.line.fill.background()
+
+        # Dark green vertical bar on the left edge
+        _rect(0, 0, 0.40, H, PALETTE["DKG"])
+
+        # Thin olive accent line
+        _rect(0.40, H * 0.6, W - 0.40, 0.04, PALETTE["OLV"])
+
+        # Company name — large
+        title = sd.get("title", sd.get("company", ""))
+        _txt(title, 0.75, 2.20, W - 1.2, 1.40, 44, bold=True, fg=PALETTE["NKB"], align="l")
+
+        # Subtitle / deck name
+        subtitle = sd.get("subtitle", "Investment Overview")
+        _txt(subtitle, 0.75, 3.80, W - 1.2, 0.60, 20, fg=PALETTE["TEL"], align="l")
+
+        # Horizontal rule below company name
+        _rect(0.75, 3.70, W - 1.5, 0.025, PALETTE["DKG"])
+
+        # Confidentiality + date bottom
+        _txt("Private & Confidential", 0.75, H - 0.65, 6, 0.35, 8, italic=True, fg="999999")
+
+        # Strictly Confidential sidebar (rotated is not supported, so put it vertical below)
+        _txt("STRICTLY CONFIDENTIAL", 0.02, 2.5, 0.28, 3.5, 6.5, bold=False, fg=PALETTE["WHT"], align="c", wrap=True)
+
+    # ── Back cover (programmatic) ──────────────────────────────────────────────
+    def _draw_back_cover(self, slide, sd: dict):
+        """Draw a PANDO-branded back cover — full dark green with centered message."""
+        W, H = 13.33, 7.5
+
+        def _rect(x, y, w, h, color):
+            sh = slide.shapes.add_shape(1, Inches(x), Inches(y), Inches(w), Inches(h))
+            sh.fill.solid(); sh.fill.fore_color.rgb = _rgb(color)
+            sh.line.fill.background()
+
+        def _txt(text, x, y, w, h, size, bold=False, italic=False, fg=PALETTE["WHT"], align="c"):
+            box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+            tf = box.text_frame; tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.alignment = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
+            r = p.add_run(); r.text = text
+            r.font.name = DEFAULT_FONT; r.font.size = Pt(size)
+            r.font.bold = bold; r.font.italic = italic
+            r.font.color.rgb = _rgb(fg)
+
+        # Full dark background
+        _rect(0, 0, W, H, PALETTE["DKG"])
+
+        # Thin olive accent stripe
+        _rect(0, H * 0.75, W, 0.05, PALETTE["OLV"])
+
+        # Large centered message
+        message = sd.get("title", "Preguntas")
+        _txt(message, 1, H / 2 - 0.8, W - 2, 1.4, 48, bold=True, fg=PALETTE["WHT"], align="c")
+
+        # Subtitle
+        subtitle = sd.get("subtitle", "")
+        if subtitle:
+            _txt(subtitle, 1, H / 2 + 0.7, W - 2, 0.5, 16, fg="A5C8D1", align="c")
+
+        # Bottom: PANDO / contact
+        _txt("pando.vc  |  Private & Confidential", 0, H - 0.55, W, 0.35, 9, italic=True, fg="FFFFFF", align="c")
 
     def _set_markdown_text(self, ph, text: str):
         """Set placeholder text, rendering **bold** spans as bold runs.
