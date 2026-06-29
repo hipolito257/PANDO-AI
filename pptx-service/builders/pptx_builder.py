@@ -123,13 +123,19 @@ class PptxBuilder:
             PH["takeaway"]: sd.get("takeaway"),
             PH["note"]: sd.get("note"),
         }
+        to_remove = []
         for ph in slide.placeholders:
             idx = ph.placeholder_format.idx
             val = mapping.get(idx)
             if val:
                 self._set_markdown_text(ph, val)
-            elif idx == PH["content"]:
-                ph._element.getparent().remove(ph._element)
+            else:
+                # Remove every unfilled placeholder so default label text doesn't show
+                to_remove.append(ph._element)
+        for el in to_remove:
+            parent = el.getparent()
+            if parent is not None:
+                parent.remove(el)
 
     # ── Cover slide (programmatic, template-independent) ──────────────────────
     def _draw_cover(self, slide, sd: dict):
@@ -230,6 +236,9 @@ class PptxBuilder:
 
     def _element(self, slide, el: dict):
         t = el.get("type", "")
+        # Clamp x so no element ever overlaps the template's left margin line
+        if "x" in el:
+            el = dict(el, x=max(el["x"], 0.85))
         dispatch = {
             "panel_hdr":  self._panel_hdr,
             "textbox":    self._textbox,
@@ -547,7 +556,8 @@ class PptxBuilder:
         rows = el.get("rows", [])
         n_cols = len(headers)
         n_rows = len(rows) + 1
-        x, y, w = el["x"], el["y"], el["w"]
+        x = max(el["x"], 0.85)   # never overlap the template's left margin line
+        y, w = el["y"], el["w"]
         header_h = el.get("header_h", 0.32)
         row_h = el.get("row_h", 0.28)
         h = el.get("h", header_h + row_h * len(rows))

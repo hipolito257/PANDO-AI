@@ -72,9 +72,9 @@ NEVER do this (common mistake to avoid): wrapping a chart's title in a solid col
 
 LAYOUT RULES:
 - The slide canvas is 13.33 inches wide × 7.5 inches tall.
-- Standard content area: x=0.70 to x=13.03 (w=12.93), y=1.78 to y=6.50.
-- For two side-by-side panels: left at x=0.70 w=6.10, right at x=7.00 w=6.10.
-- For four panels (2×2): left col x=0.70, right col x=7.00, top row y=1.78, bottom row y=4.15.
+- Standard content area: x=0.85 to x=13.03 (w=12.18), y=1.78 to y=6.50. MINIMUM x for ANY element is 0.85 — never place anything at x < 0.85 or it overlaps the template's left margin line.
+- For two side-by-side panels: left at x=0.85 w=5.95, right at x=7.00 w=6.03.
+- For four panels (2×2): left col x=0.85, right col x=7.00, top row y=1.78, bottom row y=4.15.
 - Each panel: textbox title (h≈0.45, accounting for subtitle line) immediately above the chart, then the chart (h≈1.9-2.1 for 2×2, h≈3.8-4.2 for a single full-width chart).
 - Takeaway layout: set category (small text), title (ALL CAPS), takeaway (key insight 1-2 sentences, bold the specific number/finding), note (source attribution, "Source  [name]" format).
 - Divider layout: only set title (1-3 word section name). No elements.
