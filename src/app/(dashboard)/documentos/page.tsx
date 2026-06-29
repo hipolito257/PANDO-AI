@@ -53,6 +53,8 @@ export default function DocumentosPage() {
   const [genErr, setGenErr]           = useState<string | null>(null);
   const [genSuccess, setGenSuccess]   = useState(false);
   const [genResult, setGenResult]     = useState<GenResult | null>(null);
+  const [building, setBuilding]       = useState(false);
+  const [buildErr, setBuildErr]       = useState<string | null>(null);
   const [showUpload, setShowUpload]   = useState(false);
   const [dragOver, setDragOver]       = useState(false);
   const [ctxDragOver, setCtxDragOver] = useState(false);
@@ -232,6 +234,37 @@ export default function DocumentosPage() {
     setGenResult(null);
     setGenSuccess(true);
     setTimeout(() => setGenSuccess(false), 5000);
+  }
+
+  // ── Build native PPTX (advanced mode with charts) ─────────────────────────
+  async function handleBuild() {
+    if (!selected || selected.type !== "pptx") return;
+    setBuilding(true); setBuildErr(null);
+    const fd = new FormData();
+    fd.append("templateId", selected.id);
+    if (companyId) fd.append("companyId", companyId);
+    if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
+    for (const f of contextFiles) fd.append("files", f);
+    try {
+      const res = await fetch("/api/documents/build", { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({})) as { success?: boolean; data?: string; filename?: string; slide_count?: number; error?: string };
+      if (!res.ok || !j.success) {
+        setBuildErr(j.error ?? "Error al construir presentación");
+      } else {
+        // Download the PPTX
+        const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        const bytes = Uint8Array.from(atob(j.data!), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = j.filename!; a.click();
+        URL.revokeObjectURL(url);
+        setGenSuccess(true);
+        setTimeout(() => setGenSuccess(false), 5000);
+      }
+    } catch (err: unknown) {
+      setBuildErr((err as Error)?.message ?? "Error de red");
+    }
+    setBuilding(false);
   }
 
   // ── Context file drag & drop ───────────────────────────────────────────────
@@ -732,6 +765,37 @@ export default function DocumentosPage() {
                 )}
               </button>
 
+
+              {/* Advanced Build button — PPTX only */}
+              {selected?.type === "pptx" && (
+                <div className="mt-3 pt-3 border-t border-chalk">
+                  <div className="text-[10px] text-slate mb-2 font-medium">Modo avanzado — gráficas nativas editables en PowerPoint</div>
+                  {buildErr && (
+                    <div className="mb-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[7px] p-2.5">{buildErr}</div>
+                  )}
+                  <button onClick={handleBuild} disabled={building || generating || !selected}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-[#004F46] text-white rounded-[10px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    {building ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                        </svg>
+                        Construyendo presentación…
+                      </>
+                    ) : (
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <rect x="1" y="1" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
+                          <rect x="8" y="1" width="5" height="5" rx="1" fill="currentColor"/>
+                          <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor"/>
+                          <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
+                        </svg>
+                        Construir con gráficas nativas
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               <div className="mt-4 pt-4 border-t border-chalk flex items-start gap-2">
                 <span className="text-sm shrink-0">🔒</span>
