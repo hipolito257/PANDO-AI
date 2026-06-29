@@ -138,6 +138,16 @@ function extractOfficeText(buffer: Buffer, ext: string): string {
   } catch { return ""; }
 }
 
+// Escape XML special chars so replacements don't corrupt the document XML
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 // ── Apply text replacements to Office docs ────────────────────────────────────
 function applyReplacementsToOffice(
   buffer: Buffer, type: string,
@@ -153,14 +163,13 @@ function applyReplacementsToOffice(
   });
   for (const fname of xmlFiles) {
     try {
-      // Normalize runs first so find/replace works on merged text
       let content = type === "pptx"
         ? normalizeXmlRuns(zip.files[fname].asText())
         : zip.files[fname].asText();
       for (const { find, replace } of replacements) {
         if (find && find.length > 1) {
-          // Escape special regex chars in 'find' for reliable splitting
-          content = content.split(find).join(replace);
+          // Escape replacement value so special chars don't break the XML
+          content = content.split(find).join(escapeXml(replace));
         }
       }
       zip.file(fname, content);
@@ -386,7 +395,7 @@ Si el documento tiene contenido real, genera entre 5 y 60 pares. Responde [] sol
     return { buffer, replacements };
   } catch (e: any) {
     console.error("AI generate error:", e.message);
-    return { buffer: templateBuffer, replacements: [] };
+    throw new Error(`Error al generar con IA: ${e.message}`);
   }
 }
 
@@ -520,7 +529,8 @@ export async function POST(req: NextRequest) {
   }
 
   const safeName = (company?.name ?? "documento").replace(/[^a-zA-Z0-9_\-]/g, "_");
-  const fileName = `${safeName}_${template.name.replace(/[^a-zA-Z0-9_\-]/g, "_")}.${ext}`;
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `${safeName}_${dateStr}.${ext}`;
 
   // Extract readable preview of generated content (slide-by-slide for PPTX)
   let previewText = "";

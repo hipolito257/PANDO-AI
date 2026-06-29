@@ -147,6 +147,7 @@ export async function POST(req: NextRequest) {
     // ── 2. Load company data ──────────────────────────────────────────────────
     let companyData = "No se seleccionó empresa.";
     let peersData   = "No hay comparables disponibles.";
+    let companyName = "presentacion";
 
     if (companyId) {
       const [co] = await db
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
         .limit(1);
 
       if (co) {
+        companyName = co.name;
         // Latest financial snapshot
         const [snap] = await db
           .select()
@@ -326,7 +328,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
       success: true,
       data: pptxBase64,
       slide_count,
-      filename: `${template.name.replace(/\s+/g, "_")}_generado.pptx`,
+      filename: `${companyName.replace(/[^a-zA-Z0-9_\-]/g, "_")}_${new Date().toISOString().slice(0, 10)}.pptx`,
       slide_plan: slidePlan,   // expose for debugging / preview
     });
 
