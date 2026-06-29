@@ -4,5 +4,11 @@
       "path": "/api/cron/sync",
       "schedule": "0 8 * * 1-5"
     }
-  ]
+  ],
+  "functions": {
+    "api/pptx_build.py": {
+      "runtime": "python3.12",
+      "maxDuration": 60
+    }
+  }
 }

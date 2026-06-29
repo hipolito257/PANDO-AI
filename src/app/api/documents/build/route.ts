@@ -5,7 +5,13 @@ import { documentTemplates, companies, compSets, publicComps, userSettings, fina
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
-const PPTX_SERVICE = process.env.PPTX_SERVICE_URL ?? "http://127.0.0.1:5053";
+// In production (Vercel): call the Python serverless function on the same domain.
+// In local dev: call the local FastAPI service on port 5053.
+function getPptxEndpoint(): string {
+  if (process.env.PPTX_SERVICE_URL) return `${process.env.PPTX_SERVICE_URL}/build/pptx`;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/pptx_build`;
+  return "http://127.0.0.1:5053/build/pptx";
+}
 
 // ── PANDO template profile (colors, font, available layouts) ──────────────────
 // Sent to Claude so it knows what's available to use.
@@ -280,7 +286,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
     }
 
     // ── 6. Call Python pptx-service ───────────────────────────────────────────
-    const buildResp = await fetch(`${PPTX_SERVICE}/build/pptx`, {
+    const buildResp = await fetch(getPptxEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
