@@ -148,6 +148,135 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
+// ── Build a new DOCX body from structured content blocks ─────────────────────
+// Replaces the template body with Claude-generated content, keeping styles/theme.
+type ContentBlock = { type: "title"|"heading1"|"heading2"|"heading3"|"paragraph"|"bullet"|"divider"; text: string };
+
+function buildDocxBody(templateBuffer: Buffer, blocks: ContentBlock[]): Buffer {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const PizZip = require("pizzip");
+  const zip = new PizZip(templateBuffer);
+  const docXml = zip.files["word/document.xml"].asText();
+
+  // Preserve the page settings (margins, page size, etc.) from the template
+  const sectPrMatch = docXml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/);
+  const sectPr = sectPrMatch ? sectPrMatch[0] : "";
+
+  const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const styleMap: Record<string, string> = {
+    title:    "Title",
+    heading1: "Heading1",
+    heading2: "Heading2",
+    heading3: "Heading3",
+    paragraph:"Normal",
+    bullet:   "ListParagraph",
+    divider:  "Normal",
+  };
+
+  const paras = blocks.map(b => {
+    if (b.type === "divider") {
+      return `<w:p xmlns:w="${W}"><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="AAAAAA"/></w:pBdr></w:pPr></w:p>`;
+    }
+    const style = styleMap[b.type] ?? "Normal";
+    const text  = escapeXml(b.text ?? "");
+    const isBold = b.type === "title" || b.type === "heading1" || b.type === "heading2" || b.type === "heading3";
+    const rPr   = isBold ? "<w:rPr><w:b/></w:rPr>" : "";
+    const bullet = b.type === "bullet"
+      ? `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>` : "";
+    return `<w:p xmlns:w="${W}"><w:pPr><w:pStyle w:val="${style}"/>${bullet}</w:pPr><w:r>${rPr}<w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  });
+
+  const newBody = `<w:body xmlns:w="${W}">${paras.join("")}${sectPr}</w:body>`;
+  const newDocXml = docXml.replace(/<w:body[\s\S]*<\/w:body>/, newBody);
+  zip.file("word/document.xml", newDocXml);
+  return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
+}
+
+// ── Generate a DOCX with fully new Claude-decided content ────────────────────
+async function generateDocxNewContent(
+  templateBuffer: Buffer,
+  company: CompanyRow | null,
+  peers: { ticker: string; evRevenue?: number|null; evEbitda?: number|null }[],
+  contextFiles: ContextFile[],
+  apiKey: string,
+  userPrompt: string | null
+): Promise<Buffer> {
+  const medRev  = median(peers.map(p => Number(p.evRevenue)).filter(n => !isNaN(n) && n > 0));
+  const medEbit = median(peers.map(p => Number(p.evEbitda)).filter(n => !isNaN(n) && n > 0));
+
+  const companyCard = company ? `
+Empresa: ${company.name} | Sector: ${company.sector ?? "N/D"} | País: ${company.country}
+Revenue: ${fmtB(company.revenueUsd)} | Crecimiento: ${fmtPct(company.revenueGrowth)}
+EBITDA: ${fmtB(company.ebitdaUsd)} | Margen: ${fmtPct(company.ebitdaMargin)}
+Empleados: ${company.employees ?? "N/D"} | Etapa: ${company.stage ?? "N/D"}
+Fondeo total: ${fmtB(company.totalFunding)} | Descripción: ${company.description ?? "N/D"}
+EV/Revenue peers: ${medRev ? fmtX(medRev) : "N/D"} | EV/EBITDA peers: ${medEbit ? fmtX(medEbit) : "N/D"}
+Fecha: ${today()}
+`.trim() : null;
+
+  const contentBlocks: any[] = [];
+
+  if (contextFiles.length > 0) {
+    contentBlocks.push({ type: "text", text: `Documentos de referencia (${contextFiles.length}):` });
+    for (const f of contextFiles) {
+      const block = buildContextBlock(f);
+      if (block) contentBlocks.push(block);
+    }
+  }
+
+  contentBlocks.push({
+    type: "text",
+    text: `Eres un redactor profesional de documentos corporativos para PANDO, un fondo de private equity.
+
+TU TAREA: Escribe un documento Word COMPLETAMENTE NUEVO con contenido original.
+- NO copies ni sigas la estructura de ninguna plantilla.
+- TÚ decides los temas, secciones, subtemas, extensión y organización.
+- Usa ÚNICAMENTE los datos de la empresa y los documentos de referencia para el contenido.
+- El documento debe ser profesional, bien estructurado y apropiado para inversores.
+
+${companyCard ? `DATOS DE LA EMPRESA:\n${companyCard}` : ""}
+${userPrompt ? `\nINSTRUCCIONES DEL USUARIO:\n${userPrompt}` : ""}
+
+FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto adicional, sin markdown):
+[
+  {"type": "title",     "text": "Título del documento"},
+  {"type": "heading1",  "text": "Sección principal"},
+  {"type": "paragraph", "text": "Párrafo de contenido..."},
+  {"type": "heading2",  "text": "Sub-sección"},
+  {"type": "bullet",    "text": "Punto importante"},
+  {"type": "divider",   "text": ""}
+]
+
+Tipos disponibles: title (1 por documento), heading1, heading2, heading3, paragraph, bullet, divider.
+Genera entre 20 y 60 bloques. Escribe contenido completo y detallado, no placeholders.`
+  });
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      messages: [{ role: "user", content: contentBlocks }],
+    }),
+    signal: AbortSignal.timeout(120000),
+  });
+
+  if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`);
+  const data = await res.json();
+  const aiText: string = data?.content?.[0]?.text ?? "";
+
+  const jsonMatch = aiText.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error("Claude no devolvió JSON válido para el documento");
+
+  const blocks: ContentBlock[] = JSON.parse(jsonMatch[0]);
+  return buildDocxBody(templateBuffer, blocks);
+}
+
 // ── Apply text replacements to Office docs ────────────────────────────────────
 function applyReplacementsToOffice(
   buffer: Buffer, type: string,
@@ -511,7 +640,7 @@ export async function POST(req: NextRequest) {
         outBuffer = generateWithPlaceholders(templateBuffer, values);
       }
     } else {
-      // AI path: context files, userPrompt, no placeholders, or no company
+      // AI path
       if (!userApiKey) {
         return NextResponse.json({
           error: "API key no configurada",
@@ -519,9 +648,16 @@ export async function POST(req: NextRequest) {
           code: "NO_API_KEY"
         }, { status: 400 });
       }
-      const result = await generateWithAI(templateBuffer, ext, company, peers, contextFiles, userApiKey, userPrompt);
-      outBuffer = result.buffer;
-      usedReplacements = result.replacements;
+      if (ext === "docx") {
+        // DOCX: generate completely new content — Claude decides all topics/structure
+        outBuffer = await generateDocxNewContent(templateBuffer, company, peers, contextFiles, userApiKey, userPrompt);
+        usedReplacements = [];
+      } else {
+        // PPTX / XLSX: find-and-replace AI path
+        const result = await generateWithAI(templateBuffer, ext, company, peers, contextFiles, userApiKey, userPrompt);
+        outBuffer = result.buffer;
+        usedReplacements = result.replacements;
+      }
     }
   } catch (e: any) {
     console.error("Document generation error:", e);
