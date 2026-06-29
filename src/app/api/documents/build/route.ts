@@ -257,8 +257,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
       max_tokens: 8192,
       system: buildSystemPrompt(companyData, peersData),
       messages: [userMessage],
-      betas: ["pdfs-2024-09-25"],
-    } as never);
+    });
 
     const rawText = claudeResp.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
