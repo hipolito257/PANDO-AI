@@ -207,7 +207,7 @@ export default function DocumentosPage() {
         if (j.code === "NO_API_KEY") {
           setGenErr("⚠️ " + j.error + " → Ve a Configuración para agregarla");
         } else {
-          setGenErr(j.error ?? "Error al generar");
+          setGenErr((j.error ?? "Error al generar") + (j.detail ? `: ${j.detail}` : ""));
         }
       } else {
         setGenResult(j as GenResult);

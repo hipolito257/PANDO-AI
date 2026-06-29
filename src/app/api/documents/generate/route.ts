@@ -476,12 +476,17 @@ Genera entre 1 y 4 hojas con datos reales y completos. No uses placeholders.`
   const ExcelJS = require("exceljs");
   const wb = new ExcelJS.Workbook();
 
-  // Load template to inherit its theme/styles, then replace all sheets
-  const templateWb = new ExcelJS.Workbook();
-  await templateWb.xlsx.load(templateBuffer);
-
   for (const sheetDef of plan.sheets) {
     const ws = wb.addWorksheet(sheetDef.name);
+
+    // Define columns with width up-front (required for ExcelJS to track them)
+    ws.columns = sheetDef.headers.map((h: string, idx: number) => {
+      const maxLen = Math.max(
+        h.length,
+        ...sheetDef.rows.map((r: (string|number)[]) => String(r[idx] ?? "").length)
+      );
+      return { header: "", key: `c${idx}`, width: Math.min(Math.max(maxLen + 4, 12), 40) };
+    });
 
     // Header row — bold, dark green background (PANDO brand)
     const headerRow = ws.addRow(sheetDef.headers);
@@ -489,9 +494,7 @@ Genera entre 1 y 4 hojas con datos reales y completos. No uses placeholders.`
       cell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Calibri", size: 11 };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF004F46" } };
       cell.alignment = { vertical: "middle", horizontal: "center" };
-      cell.border = {
-        bottom: { style: "thin", color: { argb: "FF437742" } },
-      };
+      cell.border = { bottom: { style: "thin", color: { argb: "FF437742" } } };
     });
     headerRow.height = 22;
 
@@ -503,15 +506,6 @@ Genera entre 1 y 4 hojas con datos reales y completos. No uses placeholders.`
         cell.alignment = { vertical: "middle", horizontal: colIdx === 1 ? "left" : "center" };
       });
     }
-
-    // Auto-fit columns (approximate)
-    ws.columns.forEach((col: any, idx: number) => {
-      const maxLen = Math.max(
-        sheetDef.headers[idx]?.length ?? 10,
-        ...sheetDef.rows.map(r => String(r[idx] ?? "").length)
-      );
-      col.width = Math.min(Math.max(maxLen + 4, 12), 40);
-    });
   }
 
   return Buffer.from(await wb.xlsx.writeBuffer());
