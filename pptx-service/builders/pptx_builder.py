@@ -71,6 +71,18 @@ def _rgb(h: str) -> RGBColor:
 class PptxBuilder:
     def __init__(self, template_bytes: bytes):
         self.prs = Presentation(io.BytesIO(template_bytes))
+        self._clear_slides()
+
+    def _clear_slides(self):
+        """Remove all existing slides from the template, keeping masters/layouts."""
+        sldIdLst = self.prs.slides._sldIdLst
+        for sldId in list(sldIdLst):
+            rId = sldId.get(qn("r:id"))
+            try:
+                self.prs.slides.part.drop_rel(rId)
+            except Exception:
+                pass
+            sldIdLst.remove(sldId)
 
     # ── Public ─────────────────────────────────────────────────────────────────
     def build(self, slide_plan: dict) -> bytes:
