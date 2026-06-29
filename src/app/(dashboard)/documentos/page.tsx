@@ -266,9 +266,12 @@ export default function DocumentosPage() {
     for (const f of contextFiles) fd.append("files", f);
     try {
       const res = await fetch("/api/documents/plan", { method: "POST", body: fd });
-      const j = await res.json().catch(() => ({})) as { success?: boolean; plan?: DeckPlan; error?: string };
+      let j: { success?: boolean; plan?: DeckPlan; error?: string; raw?: string } = {};
+      let rawText = "";
+      try { rawText = await res.text(); j = JSON.parse(rawText); } catch { /* ignore */ }
       if (!res.ok || !j.success) {
-        setPlanErr(j.error ?? "Error al generar el plan");
+        const detail = j.error ?? (rawText.length < 200 ? rawText : `HTTP ${res.status}`);
+        setPlanErr(detail || `Error HTTP ${res.status}`);
       } else {
         setPlan(j.plan!);
         setPlanFeedback("");
