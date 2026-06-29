@@ -285,24 +285,41 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
     }
 
     // ── 6. Call Python pptx-service ───────────────────────────────────────────
-    const buildResp = await fetch(getPptxEndpoint(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        template_url: template.filePath,
-        slide_plan: slidePlan,
-      }),
-    });
-
-    if (!buildResp.ok) {
-      const err = await buildResp.text();
+    const endpoint = getPptxEndpoint();
+    let buildResp: Response;
+    try {
+      buildResp = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template_url: template.filePath, slide_plan: slidePlan }),
+      });
+    } catch (fetchErr) {
       return NextResponse.json(
-        { error: `Error en pptx-service: ${err}` },
+        { error: `No se pudo conectar al servicio PPTX (${endpoint}): ${fetchErr instanceof Error ? fetchErr.message : fetchErr}` },
         { status: 500 }
       );
     }
 
-    const { data: pptxBase64, slide_count } = await buildResp.json();
+    // Always read as text first so HTML error pages don't crash JSON.parse
+    const rawBody = await buildResp.text();
+    let buildJson: { data?: string; slide_count?: number; error?: string } = {};
+    try {
+      buildJson = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json(
+        { error: `El servicio PPTX devolvió una respuesta inválida (HTTP ${buildResp.status}): ${rawBody.slice(0, 300)}` },
+        { status: 500 }
+      );
+    }
+
+    if (!buildResp.ok || buildJson.error) {
+      return NextResponse.json(
+        { error: buildJson.error ?? `Error en pptx-service (HTTP ${buildResp.status})` },
+        { status: 500 }
+      );
+    }
+
+    const { data: pptxBase64, slide_count } = buildJson;
 
     // ── 7. Return the generated PPTX ──────────────────────────────────────────
     return NextResponse.json({
