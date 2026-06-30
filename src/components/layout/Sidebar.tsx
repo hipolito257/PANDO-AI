@@ -42,14 +42,14 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
       )}
     >
       {/* Logo + collapse toggle */}
-      <div className="flex items-center h-[60px] px-2 border-b border-chalk shrink-0 gap-2">
+      <div className="flex items-center h-[60px] px-2 border-b border-chalk shrink-0 gap-2 bg-orange">
         <div className={cn("flex-1 overflow-hidden transition-opacity duration-200", collapsed ? "opacity-0 w-0" : "opacity-100")}>
           <Logo size="sm" />
         </div>
         <button
           onClick={() => setCollapsed(v => !v)}
           title={collapsed ? "Expand menu" : "Collapse menu"}
-          className="w-8 h-8 flex items-center justify-center rounded-[7px] hover:bg-fog text-slate hover:text-carbon transition-colors shrink-0"
+          className="w-8 h-8 flex items-center justify-center rounded-[7px] hover:bg-white/10 text-white/60 hover:text-white transition-colors shrink-0"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             {collapsed ? (
