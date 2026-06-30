@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { documentTemplates, companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
@@ -457,16 +456,14 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
 
         const filename = `${companyName.replace(/[^a-zA-Z0-9_-]/g, "_")}_${new Date().toISOString().slice(0, 10)}.pptx`;
 
-        // Upload to Vercel Blob so the client downloads directly from there —
-        // avoids sending 9 MB of base64 through the SSE stream (Vercel 4.5 MB limit).
-        const pptxBuffer = Buffer.from(buildJson.data!, "base64");
-        const blobResult = await put(`presentations/${filename}`, pptxBuffer, {
-          access: "public",
-          contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          addRandomSuffix: true,
-        });
-
-        send({ type: "done", downloadUrl: blobResult.url, filename, slide_count: slideCount });
+        // Stream PPTX as 500 KB base64 chunks to avoid any single-event size limits.
+        const base64 = buildJson.data!;
+        const CHUNK = 500_000;
+        const totalChunks = Math.ceil(base64.length / CHUNK);
+        for (let i = 0; i < totalChunks; i++) {
+          send({ type: "chunk", index: i, total: totalChunks, data: base64.slice(i * CHUNK, (i + 1) * CHUNK) });
+        }
+        send({ type: "done", filename, slide_count: slideCount });
         controller.close();
 
       } catch (err) {

@@ -369,6 +369,7 @@ export default function DocumentosPage() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      const pptxChunks: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -382,22 +383,29 @@ export default function DocumentosPage() {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
           if (!raw) continue;
-          let event: { type: string; message?: string; current?: number; total?: number; downloadUrl?: string; filename?: string; slide_count?: number };
+          let event: { type: string; message?: string; current?: number; total?: number; index?: number; data?: string; filename?: string; slide_count?: number };
           try { event = JSON.parse(raw); } catch { continue; }
 
           if (event.type === "progress") {
             setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
+          } else if (event.type === "chunk") {
+            // Accumulate base64 chunks — server splits the PPTX into 500 KB pieces
+            if (event.index !== undefined) pptxChunks[event.index] = event.data ?? "";
           } else if (event.type === "done") {
-            // PPTX is stored in Vercel Blob — download directly from URL (avoids 4.5 MB SSE limit)
-            const dlUrl = event.downloadUrl!;
+            const base64 = pptxChunks.join("");
+            const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: mime });
+            const url = URL.createObjectURL(blob);
             const dlFilename = event.filename!;
-            setLastDownload({ url: dlUrl, filename: dlFilename });
+            setLastDownload({ url, filename: dlFilename });
             const a = document.createElement("a");
-            a.href = dlUrl;
+            a.href = url;
             a.download = dlFilename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 60_000);
             setPlan(null); setPlanFeedback("");
             setGenSuccess(true);
             setTimeout(() => setGenSuccess(false), 8000);
