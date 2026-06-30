@@ -62,7 +62,7 @@ NEVER wrap a chart's title in a solid colored rectangle (panel_hdr). Chart title
 
 LAYOUT RULES:
 - The slide canvas is 13.33 inches wide × 7.5 inches tall.
-- Standard content area: x=0.85 to x=13.03 (w=12.18), y=1.78 to y=6.50. MINIMUM x for ANY element is 0.85.
+- Standard content area: x=0.85 to x=13.03 (w=12.18), y=2.0 to y=6.50. MINIMUM x for ANY element is 0.85. MINIMUM y for ANY element is 2.0 (content area starts at 2.0" — below the title and takeaway text).
 - For two side-by-side panels: left at x=0.85 w=5.95, right at x=7.00 w=6.03.
 - For four panels (2×2): left col x=0.85, right col x=7.00, top row y=1.78, bottom row y=4.15.
 - Takeaway layout: set category (small text), title (ALL CAPS), takeaway (key insight 1-2 sentences, bold the specific number/finding), note (source attribution, "Source  [name]" format).
