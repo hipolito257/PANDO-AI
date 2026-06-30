@@ -67,9 +67,16 @@ LAYOUT_MAP = {
 PH = {"cat": 18, "title": 16, "takeaway": 17, "note": 14, "content": 26}
 
 
-def _rgb(h: str) -> RGBColor:
+def _rgb(h) -> RGBColor:
+    if not isinstance(h, str) or not h:
+        return RGBColor(0x00, 0x4F, 0x46)  # fallback: DKG
     h = h.lstrip("#")
-    return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    if len(h) != 6:
+        return RGBColor(0x00, 0x4F, 0x46)
+    try:
+        return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    except ValueError:
+        return RGBColor(0x00, 0x4F, 0x46)
 
 
 class PptxBuilder:
