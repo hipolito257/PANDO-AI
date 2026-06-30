@@ -169,6 +169,20 @@ function fmtNum(n: unknown): string {
   return `$${v.toFixed(0)}`;
 }
 
+// ── JSON repair: fix common issues in Claude's output before JSON.parse ────────
+function repairJson(s: string): string {
+  return s
+    .replace(/\/\/[^\n"]*(?=\n|$)/g, "")    // strip // line comments not inside strings
+    .replace(/\/\*[\s\S]*?\*\//g, "")        // strip /* block comments */
+    .replace(/\bNone\b/g, "null")            // Python None → null
+    .replace(/\bTrue\b/g, "true")            // Python True → true
+    .replace(/\bFalse\b/g, "false")          // Python False → false
+    .replace(/,(\s*[\]}])/g, "$1")           // trailing commas before ] or }
+    .replace(/(['"])?([a-zA-Z_]\w*)(['"])?\s*:/g,  // unquoted keys → "key":
+      (_m, q1, key, q3) => (q1 || q3) ? `"${key}":` : `"${key}":`)
+    .trim();
+}
+
 // ── Route handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -321,12 +335,13 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
       ],
     };
 
-    const claudeResp = await claude.messages.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const claudeResp = await (claude.messages.create as any)({
       model: "claude-sonnet-4-6",
-      max_tokens: 8192,
+      max_tokens: 16000,
       system: buildSystemPrompt(companyData, peersData),
       messages: [userMessage],
-    });
+    }) as Awaited<ReturnType<typeof claude.messages.create>> & { content: Anthropic.TextBlock[] };
 
     const rawText = claudeResp.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -345,11 +360,13 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
 
     let slidePlan: Record<string, unknown>;
     try {
-      const repaired = jsonMatch[1].replace(/,\s*]/g, "]").replace(/,\s*}/g, "}");
-      slidePlan = JSON.parse(repaired);
-    } catch {
+      slidePlan = JSON.parse(repairJson(jsonMatch[1]));
+    } catch (parseErr) {
       return NextResponse.json(
-        { error: "Error parseando JSON de Claude.", raw: jsonMatch[1].slice(0, 500) },
+        {
+          error: `Error parseando JSON de Claude: ${(parseErr as Error).message}`,
+          raw: jsonMatch[1].slice(0, 600),
+        },
         { status: 500 }
       );
     }
