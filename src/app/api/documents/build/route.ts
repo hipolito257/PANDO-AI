@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { documentTemplates, companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { jsonrepair } from "jsonrepair";
 
 // Allow up to 5 minutes — Claude + Railway can easily exceed Vercel's 60s default.
 export const maxDuration = 300;
@@ -169,18 +170,14 @@ function fmtNum(n: unknown): string {
   return `$${v.toFixed(0)}`;
 }
 
-// ── JSON repair: fix common issues in Claude's output before JSON.parse ────────
+// ── JSON repair ────────────────────────────────────────────────────────────────
 function repairJson(s: string): string {
-  return s
-    .replace(/\/\/[^\n"]*(?=\n|$)/g, "")    // strip // line comments not inside strings
-    .replace(/\/\*[\s\S]*?\*\//g, "")        // strip /* block comments */
-    .replace(/\bNone\b/g, "null")            // Python None → null
-    .replace(/\bTrue\b/g, "true")            // Python True → true
-    .replace(/\bFalse\b/g, "false")          // Python False → false
-    .replace(/,(\s*[\]}])/g, "$1")           // trailing commas before ] or }
-    .replace(/(['"])?([a-zA-Z_]\w*)(['"])?\s*:/g,  // unquoted keys → "key":
-      (_m, q1, key, q3) => (q1 || q3) ? `"${key}":` : `"${key}":`)
-    .trim();
+  // Pre-process Python literals before passing to jsonrepair
+  const pre = s
+    .replace(/\bNone\b/g, "null")
+    .replace(/\bTrue\b/g, "true")
+    .replace(/\bFalse\b/g, "false");
+  return jsonrepair(pre);
 }
 
 // ── Route handler ──────────────────────────────────────────────────────────────

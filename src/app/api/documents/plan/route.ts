@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { jsonrepair } from "jsonrepair";
 
 export const maxDuration = 120;
 
@@ -158,10 +159,12 @@ FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto extra, sin ma
     const jsonStr = fenced ? fenced[1] : (raw.match(/\{[\s\S]*\}/) ?? [null])[0];
     if (!jsonStr) return NextResponse.json({ error: "Claude no devolvió un plan válido", raw: raw.slice(0, 300) }, { status: 500 });
 
-    // Repair common Claude JSON issues: trailing commas before ] or }
-    const repaired = jsonStr
-      .replace(/,\s*]/g, "]")
-      .replace(/,\s*}/g, "}");
+    // Repair common Claude JSON issues using jsonrepair
+    const pre = jsonStr
+      .replace(/\bNone\b/g, "null")
+      .replace(/\bTrue\b/g, "true")
+      .replace(/\bFalse\b/g, "false");
+    const repaired = jsonrepair(pre);
 
     let plan: unknown;
     try {
