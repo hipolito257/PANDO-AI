@@ -313,94 +313,87 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
           total: totalSteps,
         });
 
-        // ── Generate slides section by section ──────────────────────────────
-        const allContentSlides: object[] = [];
+        // ── Generate all sections in parallel ───────────────────────────────
+        send({
+          type: "progress",
+          message: `Generando ${sections.length} sección${sections.length !== 1 ? "es" : ""} en paralelo…`,
+          current: 0,
+          total: totalSteps,
+        });
 
-        for (let i = 0; i < sections.length; i++) {
-          if (cancelled) {
-            send({ type: "cancelled" }); controller.close(); return;
-          }
+        let completedSections = 0;
 
-          const section = sections[i];
-          send({
-            type: "progress",
-            message: `Generando sección ${i + 1}/${sections.length}: ${section.name}…`,
-            current: i + 1,
-            total: totalSteps,
-          });
+        let sectionResults: object[][];
+        try {
+          sectionResults = await Promise.all(
+          sections.map(async (section, i): Promise<object[]> => {
+            if (cancelled) throw new Error("cancelled");
 
-          // Sections with 0 content slides — add divider directly, skip Claude call
-          if (section.slides.length === 0 && section.divider) {
-            allContentSlides.push({
-              layout: "divider",
-              title: section.divider.title || section.name,
-              takeaway: section.divider.takeaway || "",
-            });
-            continue;
-          }
+            // Empty sections — add divider directly, no Claude call needed
+            if (section.slides.length === 0 && section.divider) {
+              completedSections++;
+              send({ type: "progress", message: `${completedSections}/${sections.length} secciones listas…`, current: completedSections, total: totalSteps });
+              return [{
+                layout: "divider",
+                title: section.divider.title || section.name,
+                takeaway: section.divider.takeaway || "",
+              }];
+            }
 
-          // ── Build the user message for this section ─────────────────────
-          const slidesOutline = section.slides.map((s, idx) =>
-            `${idx + 1}. "${s.title || "Slide"}"${s.takeaway ? ` — ${s.takeaway}` : ""}${s.chart ? ` [${s.chart}]` : ""}`
-          ).join("\n");
+            const slidesOutline = section.slides.map((s, idx) =>
+              `${idx + 1}. "${s.title || "Slide"}"${s.takeaway ? ` — ${s.takeaway}` : ""}${s.chart ? ` [${s.chart}]` : ""}`
+            ).join("\n");
 
-          const sectionUserText = [
-            `PRESENTACIÓN: "${deckTitle}" | EMPRESA: ${deckCompany} | FECHA: ${today}`,
-            "",
-            section.divider
-              ? `SECCIÓN ${i + 1}/${sections.length}: ${section.name}`
-              : "CONTENIDO DE LA PRESENTACIÓN",
-            "",
-            `SLIDES A GENERAR (${section.slides.length} slides de contenido):`,
-            slidesOutline,
-            "",
-            userPrompt ? `INSTRUCCIONES ADICIONALES: ${userPrompt}` : null,
-            blobUrls.length ? `ARCHIVOS DE RESPALDO ADJUNTOS: ${blobUrls.map(b => b.name).join(", ")}` : null,
-            "",
-            section.divider
-              ? `Genera el JSON de slides para ESTA SECCIÓN ÚNICAMENTE. Comienza con un slide "divider" para "${section.name}" con un takeaway que introduzca la sección; luego los ${section.slides.length} slides de contenido.`
-              : `Genera el JSON para los ${section.slides.length} slides de contenido.`,
-          ].filter((l): l is string => l != null).join("\n");
+            const sectionUserText = [
+              `PRESENTACIÓN: "${deckTitle}" | EMPRESA: ${deckCompany} | FECHA: ${today}`,
+              "",
+              section.divider
+                ? `SECCIÓN ${i + 1}/${sections.length}: ${section.name}`
+                : "CONTENIDO DE LA PRESENTACIÓN",
+              "",
+              `SLIDES A GENERAR (${section.slides.length} slides de contenido):`,
+              slidesOutline,
+              "",
+              userPrompt ? `INSTRUCCIONES ADICIONALES: ${userPrompt}` : null,
+              blobUrls.length ? `ARCHIVOS DE RESPALDO ADJUNTOS: ${blobUrls.map(b => b.name).join(", ")}` : null,
+              "",
+              section.divider
+                ? `Genera el JSON de slides para ESTA SECCIÓN ÚNICAMENTE. Comienza con un slide "divider" para "${section.name}" con un takeaway que introduzca la sección; luego los ${section.slides.length} slides de contenido.`
+                : `Genera el JSON para los ${section.slides.length} slides de contenido.`,
+            ].filter((l): l is string => l != null).join("\n");
 
-          // ── Call Claude ─────────────────────────────────────────────────
-          let claudeResp: Anthropic.Message;
-          try {
-            claudeResp = await claude.messages.create({
+            const claudeResp = await claude.messages.create({
               model: "claude-sonnet-4-6",
               max_tokens: 8000,
               system: buildSystemPrompt(companyData, peersData),
-              messages: [{
-                role: "user",
-                content: [...contextParts, { type: "text", text: sectionUserText }],
-              }],
+              messages: [{ role: "user", content: [...contextParts, { type: "text", text: sectionUserText }] }],
             });
-          } catch (claudeErr) {
-            send({ type: "error", message: `Error en Claude (sección ${i + 1}): ${(claudeErr as Error).message}` });
-            controller.close(); return;
-          }
 
-          const rawText = claudeResp.content
-            .filter((b): b is Anthropic.TextBlock => b.type === "text")
-            .map(b => b.text).join("");
+            const rawText = claudeResp.content
+              .filter((b): b is Anthropic.TextBlock => b.type === "text")
+              .map(b => b.text).join("");
 
-          const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/)
-            ?? rawText.match(/(\{[\s\S]*\})/);
-          if (!jsonMatch) {
-            send({ type: "error", message: `Sección ${i + 1} no devolvió JSON válido` });
-            controller.close(); return;
-          }
+            const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\})/);
+            if (!jsonMatch) throw new Error(`Sección "${section.name}" no devolvió JSON válido`);
 
-          let sectionSlides: object[] = [];
-          try {
             const parsed = JSON.parse(repairJson(jsonMatch[1]));
-            sectionSlides = Array.isArray(parsed.slides) ? parsed.slides : [];
-          } catch (parseErr) {
-            send({ type: "error", message: `Error parseando sección ${i + 1}: ${(parseErr as Error).message}` });
-            controller.close(); return;
-          }
+            const slides: object[] = Array.isArray(parsed.slides) ? parsed.slides : [];
 
-          allContentSlides.push(...sectionSlides);
+            completedSections++;
+            send({ type: "progress", message: `${completedSections}/${sections.length} secciones listas…`, current: completedSections, total: totalSteps });
+            return slides;
+          })
+          );
+        } catch (sectionErr) {
+          const msg = (sectionErr as Error).message ?? "Error generando secciones";
+          if (msg === "cancelled") { send({ type: "cancelled" }); }
+          else { send({ type: "error", message: msg }); }
+          controller.close(); return;
         }
+
+        if (cancelled) { send({ type: "cancelled" }); controller.close(); return; }
+
+        const allContentSlides = sectionResults.flat();
 
         if (cancelled) { send({ type: "cancelled" }); controller.close(); return; }
 
