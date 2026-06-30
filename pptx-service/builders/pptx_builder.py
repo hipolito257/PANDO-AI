@@ -238,15 +238,23 @@ class PptxBuilder:
             PH["takeaway"]: sd.get("takeaway"),
             PH["note"]:     sd.get("note"),
         }
-        for ph in slide.placeholders:
+        # Collect placeholders first — modifying while iterating is unsafe
+        phs = list(slide.placeholders)
+        to_remove = []
+        for ph in phs:
             idx = ph.placeholder_format.idx
             val = mapping.get(idx)
             if val:
                 self._set_markdown_text(ph, val)
             else:
-                # Clear to empty paragraph — prevents "[Header]" ghost text
-                # without removing the placeholder (keeps layout styling for divider subtitles etc.)
-                ph.text_frame.clear()
+                to_remove.append(ph)
+        # Remove unfilled placeholders from the XML so they don't render as
+        # dashed empty boxes (e.g. "[Étendard]" content placeholder).
+        for ph in to_remove:
+            sp = ph._element
+            parent = sp.getparent()
+            if parent is not None:
+                parent.remove(sp)
 
     # ── Cover slide fallback (used only when template has no slides) ───────────
     def _draw_cover(self, slide, sd: dict):
@@ -328,9 +336,22 @@ class PptxBuilder:
 
     def _element(self, slide, el: dict):
         t = el.get("type", "")
-        # Clamp x so no element ever overlaps the template's left margin line
-        if "x" in el:
-            el = dict(el, x=max(el["x"], 0.85))
+
+        # Skip text-only elements with no actual content — avoids rendering empty boxes
+        if t in ("textbox", "panel_hdr") and not str(el.get("text", "")).strip():
+            return
+        if t == "shape" and not str(el.get("text", "")).strip() and not el.get("bg") and not el.get("border"):
+            return
+
+        # Clamp x and y so elements stay within the content area and never
+        # overlap the title/category/header zone (x≥0.85, y≥1.78).
+        clamped = dict(el)
+        if "x" in clamped:
+            clamped["x"] = max(clamped["x"], 0.85)
+        if "y" in clamped:
+            clamped["y"] = max(clamped["y"], 1.78)
+        el = clamped
+
         dispatch = {
             "panel_hdr":  self._panel_hdr,
             "textbox":    self._textbox,
