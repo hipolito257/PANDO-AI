@@ -362,16 +362,25 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
                 : `Genera el JSON para los ${section.slides.length} slides de contenido.`,
             ].filter((l): l is string => l != null).join("\n");
 
-            const claudeResp = await claude.messages.create({
-              model: "claude-sonnet-4-6",
-              max_tokens: 8000,
-              system: buildSystemPrompt(companyData, peersData),
-              messages: [{ role: "user", content: [...contextParts, { type: "text", text: sectionUserText }] }],
-            });
-
-            const rawText = claudeResp.content
-              .filter((b): b is Anthropic.TextBlock => b.type === "text")
-              .map(b => b.text).join("");
+            // Retry up to 2 times on transient Claude errors
+            let rawText = "";
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const claudeResp = await claude.messages.create({
+                  model: "claude-sonnet-4-6",
+                  max_tokens: 8000,
+                  system: buildSystemPrompt(companyData, peersData),
+                  messages: [{ role: "user", content: [...contextParts, { type: "text", text: sectionUserText }] }],
+                });
+                rawText = claudeResp.content
+                  .filter((b): b is Anthropic.TextBlock => b.type === "text")
+                  .map(b => b.text).join("");
+                break;
+              } catch (e) {
+                if (attempt === 2) throw e;
+                await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+              }
+            }
 
             const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\})/);
             if (!jsonMatch) throw new Error(`Sección "${section.name}" no devolvió JSON válido`);
