@@ -182,7 +182,8 @@ export async function POST(req: NextRequest) {
     const companyId    = formData.get("companyId")    as string | null;
     const userPrompt   = (formData.get("userPrompt")  as string) || "";
     const approvedPlan = (formData.get("approvedPlan") as string | null) || null;
-    const contextFiles = formData.getAll("files") as File[];
+    const blobUrlsRaw  = (formData.get("blobUrls")    as string | null) || null;
+    const blobUrls: { name: string; url: string; type: string }[] = blobUrlsRaw ? JSON.parse(blobUrlsRaw) : [];
 
     // ── 1. Load template ──────────────────────────────────────────────────────
     if (!templateId) {
@@ -265,23 +266,26 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
       }
     }
 
-    // ── 3. Read context files ─────────────────────────────────────────────────
+    // ── 3. Download context files from Vercel Blob ────────────────────────────
     const contextParts: Anthropic.MessageParam["content"] = [];
-    for (const file of contextFiles.slice(0, 5)) {
-      const buf = Buffer.from(await file.arrayBuffer());
-      const mime = file.type;
-      if (mime === "application/pdf") {
-        contextParts.push({
-          type: "document",
-          source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") },
-        } as never);
-      } else if (mime.startsWith("image/")) {
-        contextParts.push({
-          type: "image",
-          source: { type: "base64", media_type: mime as "image/png" | "image/jpeg", data: buf.toString("base64") },
-        });
-      }
-      // PPTX/DOCX/XLSX text extraction could be added here
+    for (const bf of blobUrls.slice(0, 5)) {
+      try {
+        const r = await fetch(bf.url);
+        const buf = Buffer.from(await r.arrayBuffer());
+        const mime = bf.type || "application/octet-stream";
+        if (mime === "application/pdf") {
+          contextParts.push({
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") },
+          } as never);
+        } else if (mime.startsWith("image/")) {
+          contextParts.push({
+            type: "image",
+            source: { type: "base64", media_type: mime as "image/png" | "image/jpeg", data: buf.toString("base64") },
+          });
+        }
+        // xlsx/docx/pptx: binary formats Claude can't read — file name noted in prompt
+      } catch { /* skip unreadable files */ }
     }
 
     // ── 4. Get user API key ───────────────────────────────────────────────────

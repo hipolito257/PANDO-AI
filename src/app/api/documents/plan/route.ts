@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     const companyId  = formData.get("companyId")  as string | null;
     const userPrompt = (formData.get("userPrompt") as string | null)?.trim() || null;
     const feedback   = (formData.get("feedback")   as string | null)?.trim() || null;
-    const fileNames  = (formData.get("fileNames")  as string | null)?.trim() || null;
+    const blobUrlsRaw = (formData.get("blobUrls") as string | null) || null;
+    const blobUrls: { name: string; url: string; type: string }[] = blobUrlsRaw ? JSON.parse(blobUrlsRaw) : [];
 
     const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, session.user.id)).limit(1);
     const apiKey = settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
@@ -69,14 +70,30 @@ Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripc
 
     const today = new Date().toLocaleDateString("es-MX", { month: "long", year: "numeric" });
 
+    // Download blob files and build multimodal content parts
+    const msgContent: Anthropic.MessageParam["content"] = [];
+    for (const bf of blobUrls.slice(0, 5)) {
+      try {
+        const r = await fetch(bf.url);
+        const buf = Buffer.from(await r.arrayBuffer());
+        const mime = bf.type || "application/octet-stream";
+        if (mime === "application/pdf") {
+          msgContent.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") } } as never);
+        } else if (mime.startsWith("image/")) {
+          msgContent.push({ type: "image", source: { type: "base64", media_type: mime as "image/png", data: buf.toString("base64") } });
+        }
+        // xlsx/docx/pptx: skip binary, just note file name (Claude can't read them)
+      } catch { /* skip unreadable files */ }
+    }
+
     const userText = [
-      userPrompt   ? `INSTRUCCIONES DEL USUARIO:\n${userPrompt}` : null,
-      fileNames    ? `ARCHIVOS DE RESPALDO DISPONIBLES (el usuario los subirá en la fase de construcción): ${fileNames}` : null,
-      feedback     ? `FEEDBACK SOBRE EL PLAN ANTERIOR (ajusta el plan en consecuencia):\n${feedback}` : null,
+      userPrompt ? `INSTRUCCIONES DEL USUARIO:\n${userPrompt}` : null,
+      blobUrls.length ? `ARCHIVOS DE RESPALDO ADJUNTOS: ${blobUrls.map(b => b.name).join(", ")}` : null,
+      feedback   ? `FEEDBACK SOBRE EL PLAN ANTERIOR:\n${feedback}` : null,
       "Genera el plan de presentación.",
     ].filter(Boolean).join("\n\n");
 
-    const msgContent: Anthropic.MessageParam["content"] = [{ type: "text", text: userText }];
+    msgContent.push({ type: "text", text: userText });
 
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({

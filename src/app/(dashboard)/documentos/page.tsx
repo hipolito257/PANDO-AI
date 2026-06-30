@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { upload } from "@vercel/blob/client";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -70,10 +71,12 @@ export default function DocumentosPage() {
   const [genResult, setGenResult]     = useState<GenResult | null>(null);
   const [building, setBuilding]       = useState(false);
   const [buildErr, setBuildErr]       = useState<string | null>(null);
-  const [planning, setPlanning]       = useState(false);
-  const [planErr, setPlanErr]         = useState<string | null>(null);
-  const [plan, setPlan]               = useState<DeckPlan | null>(null);
+  const [planning, setPlanning]         = useState(false);
+  const [planErr, setPlanErr]           = useState<string | null>(null);
+  const [plan, setPlan]                 = useState<DeckPlan | null>(null);
   const [planFeedback, setPlanFeedback] = useState("");
+  const [uploadingCtx, setUploadingCtx] = useState(false);
+  const [contextBlobUrls, setContextBlobUrls] = useState<{ name: string; url: string; type: string }[]>([]);
   const [showUpload, setShowUpload]   = useState(false);
   const [dragOver, setDragOver]       = useState(false);
   const [ctxDragOver, setCtxDragOver] = useState(false);
@@ -255,16 +258,40 @@ export default function DocumentosPage() {
     setTimeout(() => setGenSuccess(false), 5000);
   }
 
+  // ── Upload context files directly to Vercel Blob (bypasses 4.5MB function limit) ──
+  async function ensureContextBlobsUploaded(): Promise<{ name: string; url: string; type: string }[]> {
+    if (contextFiles.length === 0) return [];
+    // If already uploaded (same files), reuse
+    if (contextBlobUrls.length === contextFiles.length) return contextBlobUrls;
+    setUploadingCtx(true);
+    const results: { name: string; url: string; type: string }[] = [];
+    for (const file of contextFiles) {
+      const blob = await upload(`context/${Date.now()}_${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/context-files/upload",
+      });
+      results.push({ name: file.name, url: blob.url, type: file.type });
+    }
+    setContextBlobUrls(results);
+    setUploadingCtx(false);
+    return results;
+  }
+
   // ── Plan-first workflow (PPTX build mode) ─────────────────────────────────
   async function handlePlan(feedback?: string) {
     if (!selected || selected.type !== "pptx") return;
     setPlanning(true); setPlanErr(null);
-    // Plan uses only company data + prompt — no file upload (avoids Vercel 4.5 MB limit)
+    // Upload context files to Blob so plan route can download them server-side
+    let blobUrls: { name: string; url: string; type: string }[] = [];
+    try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
+      setPlanErr("Error subiendo archivos: " + (e instanceof Error ? e.message : String(e)));
+      setPlanning(false); return;
+    }
     const fd = new FormData();
     if (companyId) fd.append("companyId", companyId);
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     if (feedback?.trim()) fd.append("feedback", feedback.trim());
-    if (contextFiles.length) fd.append("fileNames", contextFiles.map(f => f.name).join(", "));
+    if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
     try {
       const res = await fetch("/api/documents/plan", { method: "POST", body: fd });
       let j: { success?: boolean; plan?: DeckPlan; error?: string; raw?: string } = {};
@@ -286,12 +313,20 @@ export default function DocumentosPage() {
   async function handleBuildFromPlan() {
     if (!selected || selected.type !== "pptx") return;
     setBuilding(true); setBuildErr(null);
+    // Ensure context files are uploaded (they may already be from the plan step)
+    let blobUrls = contextBlobUrls;
+    if (contextFiles.length > 0 && blobUrls.length !== contextFiles.length) {
+      try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
+        setBuildErr("Error subiendo archivos: " + (e instanceof Error ? e.message : String(e)));
+        setBuilding(false); return;
+      }
+    }
     const fd = new FormData();
     fd.append("templateId", selected.id);
     if (companyId) fd.append("companyId", companyId);
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     if (plan) fd.append("approvedPlan", JSON.stringify(plan));
-    for (const f of contextFiles) fd.append("files", f);
+    if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
     try {
       const res = await fetch("/api/documents/build", { method: "POST", body: fd });
       const j = await res.json().catch(() => ({})) as { success?: boolean; data?: string; filename?: string; slide_count?: number; error?: string };
@@ -321,9 +356,11 @@ export default function DocumentosPage() {
       const existing = new Set(prev.map(f => f.name + f.size));
       return [...prev, ...arr.filter(f => !existing.has(f.name + f.size))];
     });
+    setContextBlobUrls([]); // reset blobs — force re-upload on next plan/build
   }
   function removeContextFile(idx: number) {
     setContextFiles(prev => prev.filter((_, i) => i !== idx));
+    setContextBlobUrls([]);
   }
 
   function handleTemplateDrop(e: React.DragEvent) {
@@ -820,9 +857,16 @@ export default function DocumentosPage() {
                   {planErr && (
                     <div className="mb-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[7px] p-2.5">{planErr}</div>
                   )}
-                  <button onClick={() => handlePlan()} disabled={planning || generating}
+                  <button onClick={() => handlePlan()} disabled={planning || generating || uploadingCtx}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-[#004F46] text-white rounded-[10px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    {planning ? (
+                    {uploadingCtx ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                        </svg>
+                        Subiendo archivos…
+                      </>
+                    ) : planning ? (
                       <>
                         <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
