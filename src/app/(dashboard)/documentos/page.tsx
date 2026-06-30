@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { upload } from "@vercel/blob/client";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -258,19 +257,39 @@ export default function DocumentosPage() {
     setTimeout(() => setGenSuccess(false), 5000);
   }
 
-  // ── Upload context files directly to Vercel Blob (bypasses 4.5MB function limit) ──
+  // ── Upload context files via chunked upload (reuses template chunk endpoints) ──
+  // Each chunk is ≤3 MB so it stays under Vercel's 4.5 MB payload limit.
+  const CTX_CHUNK = 3 * 1024 * 1024;
+
   async function ensureContextBlobsUploaded(): Promise<{ name: string; url: string; type: string }[]> {
     if (contextFiles.length === 0) return [];
-    // If already uploaded (same files), reuse
     if (contextBlobUrls.length === contextFiles.length) return contextBlobUrls;
     setUploadingCtx(true);
     const results: { name: string; url: string; type: string }[] = [];
     for (const file of contextFiles) {
-      const blob = await upload(`context/${Date.now()}_${file.name}`, file, {
-        access: "public",
-        handleUploadUrl: "/api/context-files/upload",
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(file.size / CTX_CHUNK) || 1;
+      const chunkUrls: string[] = [];
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = file.slice(i * CTX_CHUNK, (i + 1) * CTX_CHUNK);
+        const fd = new FormData();
+        fd.append("chunk", chunk);
+        fd.append("uploadId", uploadId);
+        fd.append("chunkIndex", String(i));
+        fd.append("filename", file.name);
+        const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`Error subiendo ${file.name} (parte ${i + 1})`);
+        const { chunkUrl } = await res.json();
+        chunkUrls.push(chunkUrl);
+      }
+      const finalRes = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: `ctx_${Date.now()}_${file.name}` }),
       });
-      results.push({ name: file.name, url: blob.url, type: file.type });
+      if (!finalRes.ok) throw new Error(`Error ensamblando ${file.name}`);
+      const { blobUrl } = await finalRes.json();
+      results.push({ name: file.name, url: blobUrl, type: file.type });
     }
     setContextBlobUrls(results);
     setUploadingCtx(false);
