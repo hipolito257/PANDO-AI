@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const companyId  = formData.get("companyId")  as string | null;
     const userPrompt = (formData.get("userPrompt") as string | null)?.trim() || null;
     const feedback   = (formData.get("feedback")   as string | null)?.trim() || null;
-    const contextFiles = formData.getAll("files") as File[];
+    const fileNames  = (formData.get("fileNames")  as string | null)?.trim() || null;
 
     const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, session.user.id)).limit(1);
     const apiKey = settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
@@ -67,23 +67,16 @@ Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripc
       }
     }
 
-    // Build message with context files
-    const msgContent: Anthropic.MessageParam["content"] = [];
-    for (const file of contextFiles.slice(0, 5)) {
-      const buf = Buffer.from(await file.arrayBuffer());
-      if (file.type === "application/pdf") {
-        msgContent.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") } } as never);
-      } else if (file.type.startsWith("image/")) {
-        msgContent.push({ type: "image", source: { type: "base64", media_type: file.type as "image/png", data: buf.toString("base64") } });
-      }
-    }
-
     const today = new Date().toLocaleDateString("es-MX", { month: "long", year: "numeric" });
 
-    msgContent.push({
-      type: "text",
-      text: `${userPrompt ? `INSTRUCCIONES DEL USUARIO:\n${userPrompt}\n\n` : ""}${feedback ? `FEEDBACK SOBRE EL PLAN ANTERIOR (ajusta el plan en consecuencia):\n${feedback}\n\n` : ""}Genera el plan de presentación.`
-    });
+    const userText = [
+      userPrompt   ? `INSTRUCCIONES DEL USUARIO:\n${userPrompt}` : null,
+      fileNames    ? `ARCHIVOS DE RESPALDO DISPONIBLES (el usuario los subirá en la fase de construcción): ${fileNames}` : null,
+      feedback     ? `FEEDBACK SOBRE EL PLAN ANTERIOR (ajusta el plan en consecuencia):\n${feedback}` : null,
+      "Genera el plan de presentación.",
+    ].filter(Boolean).join("\n\n");
+
+    const msgContent: Anthropic.MessageParam["content"] = [{ type: "text", text: userText }];
 
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({

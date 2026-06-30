@@ -259,11 +259,12 @@ export default function DocumentosPage() {
   async function handlePlan(feedback?: string) {
     if (!selected || selected.type !== "pptx") return;
     setPlanning(true); setPlanErr(null);
+    // Plan uses only company data + prompt — no file upload (avoids Vercel 4.5 MB limit)
     const fd = new FormData();
     if (companyId) fd.append("companyId", companyId);
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     if (feedback?.trim()) fd.append("feedback", feedback.trim());
-    for (const f of contextFiles) fd.append("files", f);
+    if (contextFiles.length) fd.append("fileNames", contextFiles.map(f => f.name).join(", "));
     try {
       const res = await fetch("/api/documents/plan", { method: "POST", body: fd });
       let j: { success?: boolean; plan?: DeckPlan; error?: string; raw?: string } = {};
