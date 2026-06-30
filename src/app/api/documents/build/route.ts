@@ -345,7 +345,8 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x  (range: ${evEbitd
 
     let slidePlan: Record<string, unknown>;
     try {
-      slidePlan = JSON.parse(jsonMatch[1]);
+      const repaired = jsonMatch[1].replace(/,\s*]/g, "]").replace(/,\s*}/g, "}");
+      slidePlan = JSON.parse(repaired);
     } catch {
       return NextResponse.json(
         { error: "Error parseando JSON de Claude.", raw: jsonMatch[1].slice(0, 500) },

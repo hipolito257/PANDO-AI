@@ -98,7 +98,7 @@ Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripc
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 4096,
       system: `Eres un analista senior de PANDO, un fondo de private equity. Tu tarea es planear una presentación de inversión (NO construirla todavía — solo el plan).
 
 DATOS DE LA EMPRESA:
@@ -152,10 +152,26 @@ FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto extra, sin ma
     });
 
     const raw = resp.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("");
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return NextResponse.json({ error: "Claude no devolvió un plan válido", raw: raw.slice(0, 500) }, { status: 500 });
 
-    const plan = JSON.parse(jsonMatch[0]);
+    // Extract JSON — strip markdown fences if present
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = fenced ? fenced[1] : (raw.match(/\{[\s\S]*\}/) ?? [null])[0];
+    if (!jsonStr) return NextResponse.json({ error: "Claude no devolvió un plan válido", raw: raw.slice(0, 300) }, { status: 500 });
+
+    // Repair common Claude JSON issues: trailing commas before ] or }
+    const repaired = jsonStr
+      .replace(/,\s*]/g, "]")
+      .replace(/,\s*}/g, "}");
+
+    let plan: unknown;
+    try {
+      plan = JSON.parse(repaired);
+    } catch (parseErr) {
+      return NextResponse.json({
+        error: `Error de formato en el plan: ${(parseErr as Error).message}`,
+        raw: jsonStr.slice(0, 400),
+      }, { status: 500 });
+    }
     return NextResponse.json({ success: true, plan });
 
   } catch (err) {
