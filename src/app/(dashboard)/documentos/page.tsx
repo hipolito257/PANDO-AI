@@ -71,6 +71,7 @@ export default function DocumentosPage() {
   const [building, setBuilding]       = useState(false);
   const [buildErr, setBuildErr]       = useState<string | null>(null);
   const [buildProgress, setBuildProgress] = useState<{ message: string; current: number; total: number } | null>(null);
+  const [lastDownload, setLastDownload] = useState<{ url: string; filename: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [planning, setPlanning]         = useState(false);
   const [planErr, setPlanErr]           = useState<string | null>(null);
@@ -381,21 +382,25 @@ export default function DocumentosPage() {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
           if (!raw) continue;
-          let event: { type: string; message?: string; current?: number; total?: number; data?: string; filename?: string; slide_count?: number };
+          let event: { type: string; message?: string; current?: number; total?: number; downloadUrl?: string; filename?: string; slide_count?: number };
           try { event = JSON.parse(raw); } catch { continue; }
 
           if (event.type === "progress") {
             setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
           } else if (event.type === "done") {
-            const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-            const bytes = Uint8Array.from(atob(event.data!), c => c.charCodeAt(0));
-            const blob = new Blob([bytes], { type: mime });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a"); a.href = url; a.download = event.filename!; a.click();
-            URL.revokeObjectURL(url);
+            // PPTX is stored in Vercel Blob — download directly from URL (avoids 4.5 MB SSE limit)
+            const dlUrl = event.downloadUrl!;
+            const dlFilename = event.filename!;
+            setLastDownload({ url: dlUrl, filename: dlFilename });
+            const a = document.createElement("a");
+            a.href = dlUrl;
+            a.download = dlFilename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
             setPlan(null); setPlanFeedback("");
             setGenSuccess(true);
-            setTimeout(() => setGenSuccess(false), 5000);
+            setTimeout(() => setGenSuccess(false), 8000);
             setBuilding(false); setBuildProgress(null);
             return;
           } else if (event.type === "error") {
@@ -875,7 +880,18 @@ export default function DocumentosPage() {
                     <circle cx="7" cy="7" r="6" fill="#22c55e"/>
                     <polyline points="4,7 6,9 10,5" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  ¡Documento generado y descargado exitosamente!
+                  ¡Documento generado exitosamente!
+                </div>
+              )}
+              {lastDownload && (
+                <div className="mb-4 flex items-center gap-2 text-[12px] text-[#004F46] bg-[#004F46]/5 border border-[#004F46]/20 rounded-[8px] p-3">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  <span className="flex-1">Última presentación generada</span>
+                  <a href={lastDownload.url} download={lastDownload.filename} className="font-semibold underline underline-offset-2 hover:text-[#002a24]">
+                    Descargar de nuevo
+                  </a>
                 </div>
               )}
 
