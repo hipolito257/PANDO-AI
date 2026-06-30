@@ -24,8 +24,8 @@ const config: Config = {
         green:    "#437742",  // PANDO medium green (MDG)
       },
       fontFamily: {
-        poly:  ["'Work Sans'", "ui-sans-serif", "system-ui", "sans-serif"],
-        inter: ["'Work Sans'", "ui-sans-serif", "system-ui", "sans-serif"],
+        poly:  ["'Space Grotesk'", "ui-sans-serif", "system-ui", "sans-serif"],
+        inter: ["'Inter'", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       borderRadius: {
         card: "8px",
