@@ -70,6 +70,8 @@ export default function DocumentosPage() {
   const [genResult, setGenResult]     = useState<GenResult | null>(null);
   const [building, setBuilding]       = useState(false);
   const [buildErr, setBuildErr]       = useState<string | null>(null);
+  const [buildProgress, setBuildProgress] = useState<{ message: string; current: number; total: number } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [planning, setPlanning]         = useState(false);
   const [planErr, setPlanErr]           = useState<string | null>(null);
   const [plan, setPlan]                 = useState<DeckPlan | null>(null);
@@ -331,41 +333,94 @@ export default function DocumentosPage() {
 
   async function handleBuildFromPlan() {
     if (!selected || selected.type !== "pptx") return;
-    setBuilding(true); setBuildErr(null);
-    // Ensure context files are uploaded (they may already be from the plan step)
+    setBuildErr(null);
+    setBuilding(true);
+    setBuildProgress({ message: "Iniciando…", current: 0, total: 0 });
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Reuse already-uploaded blobs from plan step when possible
     let blobUrls = contextBlobUrls;
     if (contextFiles.length > 0 && blobUrls.length !== contextFiles.length) {
       try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
         setBuildErr("Error subiendo archivos: " + (e instanceof Error ? e.message : String(e)));
-        setBuilding(false); return;
+        setBuilding(false); setBuildProgress(null); return;
       }
     }
+
     const fd = new FormData();
     fd.append("templateId", selected.id);
     if (companyId) fd.append("companyId", companyId);
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     if (plan) fd.append("approvedPlan", JSON.stringify(plan));
     if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
+
     try {
-      const res = await fetch("/api/documents/build", { method: "POST", body: fd });
-      const j = await res.json().catch(() => ({})) as { success?: boolean; data?: string; filename?: string; slide_count?: number; error?: string };
-      if (!res.ok || !j.success) {
-        setBuildErr(j.error ?? "Error al construir presentación");
-      } else {
-        const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-        const bytes = Uint8Array.from(atob(j.data!), c => c.charCodeAt(0));
-        const blob = new Blob([bytes], { type: mime });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a"); a.href = url; a.download = j.filename!; a.click();
-        URL.revokeObjectURL(url);
-        setPlan(null); setPlanFeedback("");
-        setGenSuccess(true);
-        setTimeout(() => setGenSuccess(false), 5000);
+      const res = await fetch("/api/documents/build", {
+        method: "POST",
+        body: fd,
+        signal: controller.signal,
+      });
+
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          let event: { type: string; message?: string; current?: number; total?: number; data?: string; filename?: string; slide_count?: number };
+          try { event = JSON.parse(raw); } catch { continue; }
+
+          if (event.type === "progress") {
+            setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
+          } else if (event.type === "done") {
+            const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            const bytes = Uint8Array.from(atob(event.data!), c => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a"); a.href = url; a.download = event.filename!; a.click();
+            URL.revokeObjectURL(url);
+            setPlan(null); setPlanFeedback("");
+            setGenSuccess(true);
+            setTimeout(() => setGenSuccess(false), 5000);
+            setBuilding(false); setBuildProgress(null);
+            return;
+          } else if (event.type === "error") {
+            setBuildErr(event.message ?? "Error desconocido");
+            setBuilding(false); setBuildProgress(null);
+            return;
+          } else if (event.type === "cancelled") {
+            setBuilding(false); setBuildProgress(null);
+            return;
+          }
+        }
       }
     } catch (err: unknown) {
-      setBuildErr((err as Error)?.message ?? "Error de red");
+      if ((err as Error).name !== "AbortError") {
+        setBuildErr((err as Error)?.message ?? "Error de red");
+      }
+    } finally {
+      setBuilding(false); setBuildProgress(null);
     }
+  }
+
+  function handleCancelBuild() {
+    abortRef.current?.abort();
     setBuilding(false);
+    setBuildProgress(null);
   }
 
   // ── Context file drag & drop ───────────────────────────────────────────────
@@ -1005,47 +1060,91 @@ export default function DocumentosPage() {
                   {planErr && (
                     <div className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[8px] p-3">{planErr}</div>
                   )}
-                  <div>
-                    <label className="text-[11px] font-medium text-graphite block mb-1.5">¿Quieres ajustar el plan?</label>
-                    <textarea
-                      value={planFeedback}
-                      onChange={e => setPlanFeedback(e.target.value)}
-                      rows={3}
-                      placeholder={"Ej: Agrega una slide de valuación. Quita la sección de financials y añade más detalle en tesis. El overview debe ser más detallado con datos de clientes y geografía."}
-                      className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-[#004F46] resize-none leading-relaxed"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handlePlan(planFeedback || undefined)}
-                      disabled={planning || building}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-[#004F46] text-[#004F46] rounded-[9px] text-[12px] font-medium hover:bg-[#004F46]/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      {planning ? (
-                        <>
-                          <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+
+                  {/* Build progress panel */}
+                  {building && buildProgress && (
+                    <div className="rounded-[10px] border border-[#004F46]/20 bg-[#004F46]/5 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <svg className="animate-spin w-4 h-4 text-[#004F46] shrink-0" viewBox="0 0 24 24" fill="none">
                             <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                           </svg>
-                          Refinando…
-                        </>
-                      ) : (
-                        <>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                            <path d="M10 2L2 10M2 2l8 8" stroke="none"/>
-                            <path d="M1 6a5 5 0 1010 0A5 5 0 001 6z" stroke="currentColor" strokeWidth="1.3"/>
-                            <path d="M9 4l2-2M9 4l-1-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                          </svg>
-                          Refinar plan
-                        </>
+                          <span className="text-[12px] font-semibold text-[#004F46] truncate">{buildProgress.message}</span>
+                        </div>
+                        <button onClick={handleCancelBuild}
+                          className="shrink-0 ml-3 text-[11px] text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-[6px] hover:bg-red-50 transition-colors">
+                          Cancelar
+                        </button>
+                      </div>
+                      {buildProgress.total > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="flex gap-1">
+                            {Array.from({ length: buildProgress.total }).map((_, idx) => (
+                              <div key={idx} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${
+                                idx < buildProgress.current
+                                  ? "bg-[#004F46]"
+                                  : idx === buildProgress.current
+                                  ? "bg-[#004F46]/50 animate-pulse"
+                                  : "bg-[#004F46]/15"
+                              }`} />
+                            ))}
+                          </div>
+                          <div className="text-[10px] text-slate">
+                            Paso {buildProgress.current} de {buildProgress.total}
+                            {buildProgress.total - buildProgress.current > 0
+                              ? ` — ${buildProgress.total - buildProgress.current} restante${buildProgress.total - buildProgress.current !== 1 ? "s" : ""}`
+                              : ""}
+                          </div>
+                        </div>
                       )}
-                    </button>
+                    </div>
+                  )}
+
+                  {!building && (
+                    <div>
+                      <label className="text-[11px] font-medium text-graphite block mb-1.5">¿Quieres ajustar el plan?</label>
+                      <textarea
+                        value={planFeedback}
+                        onChange={e => setPlanFeedback(e.target.value)}
+                        rows={3}
+                        placeholder={"Ej: Agrega una slide de valuación. Quita la sección de financials y añade más detalle en tesis. El overview debe ser más detallado con datos de clientes y geografía."}
+                        className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-[#004F46] resize-none leading-relaxed"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    {!building && (
+                      <button onClick={() => handlePlan(planFeedback || undefined)}
+                        disabled={planning || building}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-[#004F46] text-[#004F46] rounded-[9px] text-[12px] font-medium hover:bg-[#004F46]/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                        {planning ? (
+                          <>
+                            <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                            </svg>
+                            Refinando…
+                          </>
+                        ) : (
+                          <>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                              <path d="M1 6a5 5 0 1010 0A5 5 0 001 6z" stroke="currentColor" strokeWidth="1.3"/>
+                              <path d="M9 4l2-2M9 4l-1-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                            </svg>
+                            Refinar plan
+                          </>
+                        )}
+                      </button>
+                    )}
                     <button onClick={handleBuildFromPlan}
                       disabled={planning || building}
-                      className="flex-[2] flex items-center justify-center gap-1.5 py-2.5 bg-[#004F46] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      className={`flex items-center justify-center gap-1.5 py-2.5 bg-[#004F46] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${building ? "flex-[3]" : "flex-[2]"}`}>
                       {building ? (
                         <>
-                          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <svg className="animate-spin w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
                             <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                           </svg>
-                          Construyendo presentación…
+                          Construyendo…
                         </>
                       ) : (
                         <>

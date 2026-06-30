@@ -27,6 +27,7 @@ Element types:
   scatter    — XY scatter chart
   quadrant   — 2×2 positioning matrix with labels
 """
+import copy
 import io
 import re
 from typing import Any
@@ -55,11 +56,11 @@ PALETTE = {
 
 # Layout index map  (master_index, layout_index)
 LAYOUT_MAP = {
-    "cover":      (2, 0),   # blank master — cover is drawn programmatically
+    "cover":      (2, 0),
     "takeaway":   (1, 0),
     "divider":    (0, 2),
     "blank":      (2, 0),
-    "back_cover": (2, 0),   # blank master — back cover drawn programmatically
+    "back_cover": (2, 0),
 }
 
 # Placeholder indices
@@ -74,7 +75,43 @@ def _rgb(h: str) -> RGBColor:
 class PptxBuilder:
     def __init__(self, template_bytes: bytes):
         self.prs = Presentation(io.BytesIO(template_bytes))
+        self._save_template_covers()
         self._clear_slides()
+
+    def _save_template_covers(self):
+        """Save the XML + media rels of the template's first and last slides before clearing."""
+        slides = list(self.prs.slides)
+        self._cover_info = None
+        self._back_cover_info = None
+
+        if slides:
+            self._cover_info = self._capture_slide(slides[0])
+        if len(slides) >= 2:
+            self._back_cover_info = self._capture_slide(slides[-1])
+
+    def _capture_slide(self, slide) -> dict:
+        """Deep-copy a slide's element tree and record its non-layout relationships."""
+        rels = []
+        for rId, rel in slide.part.rels.items():
+            if "notesSlide" in rel.reltype or "slideLayout" in rel.reltype:
+                continue
+            rels.append((rId, rel))
+        return {"xml": copy.deepcopy(slide._element), "rels": rels}
+
+    def _restore_slide(self, info: dict) -> Any:
+        """Add a blank slide to the presentation and replace its XML with the captured slide."""
+        mi = min(0, len(self.prs.slide_masters) - 1)
+        li = min(0, len(self.prs.slide_masters[mi].slide_layouts) - 1)
+        layout = self.prs.slide_masters[mi].slide_layouts[li]
+        slide = self.prs.slides.add_slide(layout)
+        slide._element = info["xml"]
+        # Restore media/image relationships (images remain in the package after _clear_slides)
+        for rId, rel in info["rels"]:
+            try:
+                slide.part._rels[rId] = rel
+            except Exception:
+                pass
+        return slide
 
     def _clear_slides(self):
         """Remove all existing slides from the template, keeping masters/layouts."""
@@ -89,16 +126,99 @@ class PptxBuilder:
 
     # ── Public ─────────────────────────────────────────────────────────────────
     def build(self, slide_plan: dict) -> bytes:
-        for slide_def in slide_plan.get("slides", []):
-            self._add_slide(slide_def)
+        slides_data = slide_plan.get("slides", [])
+
+        cover_data      = next((s for s in slides_data if s.get("layout") == "cover"),      {})
+        back_cover_data = next((s for s in slides_data if s.get("layout") == "back_cover"), {})
+        content_slides  = [s for s in slides_data if s.get("layout") not in ("cover", "back_cover")]
+
+        # 1. Add cover (template's first slide, with updated text)
+        if self._cover_info:
+            cover_slide = self._restore_slide(self._cover_info)
+            if cover_data:
+                self._update_cover_text(cover_slide, cover_data)
+        else:
+            # Fallback: draw programmatic cover
+            mi = min(2, len(self.prs.slide_masters) - 1)
+            li = min(0, len(self.prs.slide_masters[mi].slide_layouts) - 1)
+            slide = self.prs.slides.add_slide(self.prs.slide_masters[mi].slide_layouts[li])
+            self._draw_cover(slide, cover_data)
+
+        # 2. Add content slides
+        for sd in content_slides:
+            self._add_slide(sd)
+
+        # 3. Add back cover (template's last slide)
+        if self._back_cover_info:
+            self._restore_slide(self._back_cover_info)
+        else:
+            mi = min(2, len(self.prs.slide_masters) - 1)
+            li = min(0, len(self.prs.slide_masters[mi].slide_layouts) - 1)
+            slide = self.prs.slides.add_slide(self.prs.slide_masters[mi].slide_layouts[li])
+            self._draw_back_cover(slide, back_cover_data)
+
         out = io.BytesIO()
         self.prs.save(out)
         return out.getvalue()
 
+    def _update_cover_text(self, slide, cover_data: dict):
+        """Heuristically replace the template cover's main title and subtitle text."""
+        title    = cover_data.get("title", "").strip()
+        subtitle = cover_data.get("subtitle", "").strip()
+        if not title and not subtitle:
+            return
+
+        # Collect all text-bearing shapes sorted by max font size descending
+        shapes_by_size = []
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            max_sz = 0
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    sz = run.font.size or 0
+                    if sz > max_sz:
+                        max_sz = sz
+            if max_sz > 0:
+                shapes_by_size.append((max_sz, shape))
+        shapes_by_size.sort(reverse=True)
+
+        def _replace_text(shape, new_text: str):
+            tf = shape.text_frame
+            # Grab format from the first run to preserve color/font
+            first_run_el = None
+            for para in tf.paragraphs:
+                for run in para.runs:
+                    first_run_el = copy.deepcopy(run._r)
+                    break
+                if first_run_el is not None:
+                    break
+            tf.clear()
+            p = tf.paragraphs[0]
+            if first_run_el is not None:
+                t_el = first_run_el.find(qn("a:t"))
+                if t_el is not None:
+                    t_el.text = new_text
+                p._p.append(first_run_el)
+            else:
+                r = p.add_run()
+                r.text = new_text
+                r.font.color.rgb = _rgb(PALETTE["WHT"])
+
+        if title and shapes_by_size:
+            _replace_text(shapes_by_size[0][1], title)
+
+        if subtitle and len(shapes_by_size) > 1:
+            # Find the next-largest shape that's different from the title shape
+            title_shape = shapes_by_size[0][1]
+            for _, shape in shapes_by_size[1:]:
+                if shape is not title_shape:
+                    _replace_text(shape, subtitle)
+                    break
+
     # ── Slide assembly ─────────────────────────────────────────────────────────
     def _add_slide(self, sd: dict):
         layout_key = sd.get("layout", "takeaway")
-        # Resolve layout, falling back through masters if index out of range
         mi, li = LAYOUT_MAP.get(layout_key, (1, 0))
         n_masters = len(self.prs.slide_masters)
         mi = min(mi, n_masters - 1)
@@ -107,39 +227,30 @@ class PptxBuilder:
         layout = self.prs.slide_masters[mi].slide_layouts[li]
         slide = self.prs.slides.add_slide(layout)
 
-        if layout_key == "cover":
-            self._draw_cover(slide, sd)
-        elif layout_key == "back_cover":
-            self._draw_back_cover(slide, sd)
-        else:
-            self._fill_phs(slide, sd)
-            for el in sd.get("elements", []):
-                self._element(slide, el)
+        self._fill_phs(slide, sd)
+        for el in sd.get("elements", []):
+            self._element(slide, el)
 
     def _fill_phs(self, slide, sd: dict):
         mapping = {
-            PH["cat"]: sd.get("category"),
-            PH["title"]: sd.get("title"),
+            PH["cat"]:      sd.get("category"),
+            PH["title"]:    sd.get("title"),
             PH["takeaway"]: sd.get("takeaway"),
-            PH["note"]: sd.get("note"),
+            PH["note"]:     sd.get("note"),
         }
-        to_remove = []
         for ph in slide.placeholders:
             idx = ph.placeholder_format.idx
             val = mapping.get(idx)
             if val:
                 self._set_markdown_text(ph, val)
             else:
-                # Remove every unfilled placeholder so default label text doesn't show
-                to_remove.append(ph._element)
-        for el in to_remove:
-            parent = el.getparent()
-            if parent is not None:
-                parent.remove(el)
+                # Clear to empty paragraph — prevents "[Header]" ghost text
+                # without removing the placeholder (keeps layout styling for divider subtitles etc.)
+                ph.text_frame.clear()
 
-    # ── Cover slide (programmatic, template-independent) ──────────────────────
+    # ── Cover slide fallback (used only when template has no slides) ───────────
     def _draw_cover(self, slide, sd: dict):
-        """Draw a professional PANDO-branded front cover on a blank slide."""
+        """Draw a PANDO-branded front cover on a blank slide."""
         W, H = 13.33, 7.5
 
         def _txt(text, x, y, w, h, size, bold=False, italic=False, fg=PALETTE["NKB"], align="l", wrap=True):
@@ -157,32 +268,19 @@ class PptxBuilder:
             sh.fill.solid(); sh.fill.fore_color.rgb = _rgb(color)
             sh.line.fill.background()
 
-        # Dark green vertical bar on the left edge
         _rect(0, 0, 0.40, H, PALETTE["DKG"])
-
-        # Thin olive accent line
         _rect(0.40, H * 0.6, W - 0.40, 0.04, PALETTE["OLV"])
-
-        # Company name — large
         title = sd.get("title", sd.get("company", ""))
         _txt(title, 0.75, 2.20, W - 1.2, 1.40, 44, bold=True, fg=PALETTE["NKB"], align="l")
-
-        # Subtitle / deck name
         subtitle = sd.get("subtitle", "Investment Overview")
         _txt(subtitle, 0.75, 3.80, W - 1.2, 0.60, 20, fg=PALETTE["TEL"], align="l")
-
-        # Horizontal rule below company name
         _rect(0.75, 3.70, W - 1.5, 0.025, PALETTE["DKG"])
-
-        # Confidentiality + date bottom
         _txt("Private & Confidential", 0.75, H - 0.65, 6, 0.35, 8, italic=True, fg="999999")
-
-        # Strictly Confidential sidebar (rotated is not supported, so put it vertical below)
         _txt("STRICTLY CONFIDENTIAL", 0.02, 2.5, 0.28, 3.5, 6.5, bold=False, fg=PALETTE["WHT"], align="c", wrap=True)
 
-    # ── Back cover (programmatic) ──────────────────────────────────────────────
+    # ── Back cover fallback ────────────────────────────────────────────────────
     def _draw_back_cover(self, slide, sd: dict):
-        """Draw a PANDO-branded back cover — full dark green with centered message."""
+        """Draw a PANDO-branded back cover on a blank slide."""
         W, H = 13.33, 7.5
 
         def _rect(x, y, w, h, color):
@@ -200,39 +298,33 @@ class PptxBuilder:
             r.font.bold = bold; r.font.italic = italic
             r.font.color.rgb = _rgb(fg)
 
-        # Full dark background
         _rect(0, 0, W, H, PALETTE["DKG"])
-
-        # Thin olive accent stripe
         _rect(0, H * 0.75, W, 0.05, PALETTE["OLV"])
-
-        # Large centered message
         message = sd.get("title", "Preguntas")
         _txt(message, 1, H / 2 - 0.8, W - 2, 1.4, 48, bold=True, fg=PALETTE["WHT"], align="c")
-
-        # Subtitle
         subtitle = sd.get("subtitle", "")
         if subtitle:
             _txt(subtitle, 1, H / 2 + 0.7, W - 2, 0.5, 16, fg="A5C8D1", align="c")
-
-        # Bottom: PANDO / contact
         _txt("pando.vc  |  Private & Confidential", 0, H - 0.55, W, 0.35, 9, italic=True, fg="FFFFFF", align="c")
 
     def _set_markdown_text(self, ph, text: str):
         """Set placeholder text, rendering **bold** spans as bold runs.
-        Inherits font name/size/color from the layout's placeholder defaults."""
+        Handles \\n line breaks by creating separate paragraphs."""
         tf = ph.text_frame
         tf.clear()
-        p = tf.paragraphs[0]
-        for part in re.split(r'(\*\*.*?\*\*)', text):
-            if not part:
-                continue
-            r = p.add_run()
-            if part.startswith("**") and part.endswith("**"):
-                r.text = part[2:-2]
-                r.font.bold = True
-            else:
-                r.text = part
+
+        lines = text.split("\n")
+        for line_idx, line in enumerate(lines):
+            p = tf.paragraphs[0] if line_idx == 0 else tf.add_paragraph()
+            for part in re.split(r'(\*\*.*?\*\*)', line):
+                if not part:
+                    continue
+                r = p.add_run()
+                if part.startswith("**") and part.endswith("**"):
+                    r.text = part[2:-2]
+                    r.font.bold = True
+                else:
+                    r.text = part
 
     def _element(self, slide, el: dict):
         t = el.get("type", "")
@@ -274,14 +366,25 @@ class PptxBuilder:
         box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
         tf = box.text_frame; tf.word_wrap = el.get("wrap", True)
         align_map = {"c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT, "l": PP_ALIGN.LEFT}
-        p = tf.paragraphs[0]
-        p.alignment = align_map.get(el.get("align", "l"), PP_ALIGN.LEFT)
-        r = p.add_run(); r.text = el.get("text", "")
-        r.font.name = DEFAULT_FONT
-        r.font.size = Pt(el.get("size", 7.5))
-        r.font.bold = el.get("bold", False)
-        r.font.italic = el.get("italic", False)
-        r.font.color.rgb = _rgb(el.get("fg", PALETTE["NKB"]))
+        font_name  = DEFAULT_FONT
+        font_size  = Pt(el.get("size", 7.5))
+        font_bold  = el.get("bold", False)
+        font_ital  = el.get("italic", False)
+        font_color = _rgb(el.get("fg", PALETTE["NKB"]))
+        align      = align_map.get(el.get("align", "l"), PP_ALIGN.LEFT)
+
+        # Split on newlines — store as separate paragraphs (literal \n in <a:t> is invalid OOXML)
+        lines = el.get("text", "").split("\n")
+        for i, line in enumerate(lines):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.alignment = align
+            r = p.add_run()
+            r.text = line
+            r.font.name = font_name
+            r.font.size = font_size
+            r.font.bold = font_bold
+            r.font.italic = font_ital
+            r.font.color.rgb = font_color
 
     def _shape(self, slide, el: dict):
         x, y, w, h = el["x"], el["y"], el["w"], el.get("h", 0.27)
@@ -299,13 +402,21 @@ class PptxBuilder:
             sh.line.fill.background()
         text = el.get("text", "")
         if text:
-            tf = sh.text_frame; tf.word_wrap = False
-            p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-            r = p.add_run(); r.text = text
-            r.font.name = DEFAULT_FONT
-            r.font.size = Pt(el.get("size", 8))
-            r.font.bold = el.get("bold", False)
-            r.font.color.rgb = _rgb(el.get("fg", PALETTE["WHT"]))
+            tf = sh.text_frame; tf.word_wrap = True
+            font_name  = DEFAULT_FONT
+            font_size  = Pt(el.get("size", 8))
+            font_bold  = el.get("bold", False)
+            font_color = _rgb(el.get("fg", PALETTE["WHT"]))
+            lines = text.split("\n")
+            for i, line in enumerate(lines):
+                p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                p.alignment = PP_ALIGN.CENTER
+                r = p.add_run()
+                r.text = line
+                r.font.name = font_name
+                r.font.size = font_size
+                r.font.bold = font_bold
+                r.font.color.rgb = font_color
 
     # ── Charts: shared helpers ─────────────────────────────────────────────────
     def _smooth_all(self, ch):
@@ -390,18 +501,15 @@ class PptxBuilder:
         ch = cf.chart
         ch.has_title = False; ch.has_legend = False
 
-        # Spacer invisible
         sp = ch.series[0]
         sp.format.fill.background()
         sp.format.line.fill.background()
 
-        # Color range bars
         colors = el.get("colors", [PALETTE["DKG"], PALETTE["MDG"], PALETTE["OLV"], PALETTE["TEL"],
                                     PALETTE["LBL"], PALETTE["GRG"]])
         rng = ch.series[1]
         self._color_bar_points(rng, colors, len(series_defs))
 
-        # Axes
         ch.value_axis.has_major_gridlines = True
         try:
             ch.value_axis.major_gridlines.format.line.color.rgb = _rgb("EBEBEB")
@@ -481,11 +589,8 @@ class PptxBuilder:
         ch.legend.position = XL_LEGEND_POSITION.BOTTOM
         ch.legend.include_in_layout = False
 
-    # ── Clustered vertical column chart (grouped category comparisons) ────────
+    # ── Clustered vertical column chart ──────────────────────────────────────
     def _bar(self, slide, el: dict):
-        """Vertical clustered bar chart — e.g. Perception vs Experience across attributes.
-        Supports per-series solid colors, optional hatched/textured fill on one series,
-        and optional in-chart data labels."""
         series_list = el.get("series", [])
         cd = ChartData()
         cd.categories = el["labels"]
@@ -529,7 +634,6 @@ class PptxBuilder:
             ch.has_legend = False
 
     def _set_hatch(self, series, color: str):
-        """Apply a diagonal-line hatch pattern fill to a bar series (matches PANDO 'perception' style)."""
         ser_el = series._element
         spPr = ser_el.find("{%s}spPr" % C_NS)
         if spPr is None: return
@@ -550,13 +654,11 @@ class PptxBuilder:
 
     # ── Native table ────────────────────────────────────────────────────────────
     def _table(self, slide, el: dict):
-        """Native PPTX table. PANDO style: dark-green header row with white bold text,
-        light-grey zebra striping on body rows, no default PowerPoint banding theme."""
         headers = el.get("headers", [])
         rows = el.get("rows", [])
         n_cols = len(headers)
         n_rows = len(rows) + 1
-        x = max(el["x"], 0.85)   # never overlap the template's left margin line
+        x = max(el["x"], 0.85)
         y, w = el["y"], el["w"]
         header_h = el.get("header_h", 0.32)
         row_h = el.get("row_h", 0.28)
@@ -565,7 +667,6 @@ class PptxBuilder:
         gframe = slide.shapes.add_table(n_rows, n_cols, Inches(x), Inches(y), Inches(w), Inches(h))
         table = gframe.table
 
-        # Strip PowerPoint's default banded theme style so our colors aren't overridden
         tbl_el = table._tbl
         tblPr = tbl_el.find(qn("a:tblPr"))
         if tblPr is not None:
@@ -583,7 +684,7 @@ class PptxBuilder:
             cell.fill.solid(); cell.fill.fore_color.rgb = _rgb(bg)
             cell.margin_left = Inches(0.06); cell.margin_right = Inches(0.06)
             cell.margin_top = Inches(0.02); cell.margin_bottom = Inches(0.02)
-            cell.vertical_anchor = 3  # middle
+            cell.vertical_anchor = 3
             tf = cell.text_frame; tf.word_wrap = True
             p = tf.paragraphs[0]
             p.alignment = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
@@ -616,7 +717,6 @@ class PptxBuilder:
             XL_CHART_TYPE.DOUGHNUT, Inches(x), Inches(y), Inches(w), Inches(h), cd
         )
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
-        # Per-slice colors
         ser = ch.series[0]
         NS = f'xmlns:c="{C_NS}" xmlns:a="{A_NS}"'
         cat_el = ser._element.find(qn("c:cat"))
@@ -629,14 +729,13 @@ class PptxBuilder:
                 f'<c:spPr><a:solidFill><a:srgbClr val="{col}"/></a:solidFill>'
                 f'<a:ln><a:noFill/></a:ln></c:spPr></c:dPt>'
             ))
-        # Hole size
         hole = el.get("hole", 55)
         for dc in ch._element.findall(".//{%s}doughnutChart" % C_NS):
             hs = dc.find("{%s}holeSize" % C_NS)
             if hs is not None: hs.set("val", str(hole))
             else: dc.append(parse_xml(f'<c:holeSize xmlns:c="{C_NS}" val="{hole}"/>'))
 
-    # ── Scatter chart (CAGR vs EBITDA) ────────────────────────────────────────
+    # ── Scatter chart ────────────────────────────────────────────────────────
     def _scatter(self, slide, el: dict):
         points = el.get("points", [])
         cd = XyChartData()
@@ -656,7 +755,6 @@ class PptxBuilder:
             s.marker.format.fill.fore_color.rgb = _rgb(col)
             s.marker.format.line.fill.background()
             s.marker.size = pt.get("size", 10)
-        # Axes
         try:
             ch.value_axis.tick_labels.font.size = Pt(6)
             ch.value_axis.tick_labels.number_format = "0%"
@@ -666,20 +764,15 @@ class PptxBuilder:
 
     # ── Quadrant positioning map ───────────────────────────────────────────────
     def _quadrant(self, slide, el: dict):
-        """Draw a 2×2 quadrant map with brand label textboxes."""
         x, y, w, h = el["x"], el["y"], el["w"], el["h"]
         labels = el.get("axis_labels", {})
-        # Draw quadrant lines
         mid_x = x + w / 2; mid_y = y + h / 2
-        # Vertical line
         vl = slide.shapes.add_connector(1,
             Inches(mid_x), Inches(y), Inches(mid_x), Inches(y + h))
         vl.line.color.rgb = _rgb("CCCCCC"); vl.line.width = Pt(0.5)
-        # Horizontal line
         hl = slide.shapes.add_connector(1,
             Inches(x), Inches(mid_y), Inches(x + w), Inches(mid_y))
         hl.line.color.rgb = _rgb("CCCCCC"); hl.line.width = Pt(0.5)
-        # Axis labels
         font = DEFAULT_FONT
         def _lbl(text, lx, ly, lw=1.5, lh=0.22, size=6.5, fg="888888", bold=False, align="c"):
             box = slide.shapes.add_textbox(Inches(lx), Inches(ly), Inches(lw), Inches(lh))
@@ -692,16 +785,14 @@ class PptxBuilder:
         if labels.get("bottom"): _lbl(labels["bottom"], mid_x-0.75, y+h+0.03)
         if labels.get("left"):   _lbl(labels["left"],   x-1.6,      mid_y-0.10, 1.5, align="c")
         if labels.get("right"):  _lbl(labels["right"],  x+w+0.05,   mid_y-0.10, 1.5, align="c")
-        # Brand dots
         for brand in el.get("brands", []):
-            bx = x + brand["px"] * w   # px: 0-1 horizontal position
-            by = y + (1 - brand["py"]) * h  # py: 0-1 vertical (0=bottom)
+            bx = x + brand["px"] * w
+            by = y + (1 - brand["py"]) * h
             col = brand.get("color", PALETTE["DKG"])
-            dot = slide.shapes.add_shape(9,  # oval
+            dot = slide.shapes.add_shape(9,
                 Inches(bx - 0.08), Inches(by - 0.08), Inches(0.16), Inches(0.16))
             dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
             dot.line.fill.background()
-            # Label
             box = slide.shapes.add_textbox(
                 Inches(bx - 0.5), Inches(by + 0.10), Inches(1.0), Inches(0.20))
             tf = box.text_frame; p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER

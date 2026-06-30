@@ -99,7 +99,7 @@ Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripc
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: `Eres un analista senior de PANDO, un fondo de private equity. Tu tarea es planear una presentación de inversión (NO construirla todavía — solo el plan).
 
 DATOS DE LA EMPRESA:
