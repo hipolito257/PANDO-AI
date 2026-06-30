@@ -15,21 +15,21 @@ function timeAgo(dateStr: string | null): string {
   if (!dateStr) return "";
   const diff = Date.now() - new Date(dateStr).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1) return "ahora";
-  if (m < 60) return `hace ${m}m`;
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `hace ${h}h`;
+  if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
-  return `hace ${d}d`;
+  return `${d}d ago`;
 }
 
 const ACTION_LABELS: Record<string, string> = {
-  added_company:      "agregó empresa",
-  edited_company:     "editó empresa",
-  added_mandate:      "creó mandato",
-  edited_mandate:     "editó mandato",
-  uploaded_template:  "subió plantilla",
-  generated_document: "generó documento",
+  added_company:      "added company",
+  edited_company:     "edited company",
+  added_mandate:      "created mandate",
+  edited_mandate:     "edited mandate",
+  uploaded_template:  "uploaded template",
+  generated_document: "generated document",
 };
 
 export const revalidate = 0;
@@ -79,22 +79,22 @@ export default async function DashboardPage() {
   const highSignals = signals.filter((s) => s.severity === "high");
 
   const statusDist = [
-    { label: "Monitoreando", value: monitoring.length, color: "#e8e8e8" },
-    { label: "Pipeline",     value: pipeline.length,   color: "#202020" },
-    { label: "Portafolio",   value: companies.filter(c => c.status === "portfolio").length, color: "#059669" },
+    { label: "Monitoring", value: monitoring.length, color: "#D9DBD4" },
+    { label: "Pipeline",   value: pipeline.length,   color: "#0A231F" },
+    { label: "Portfolio",  value: companies.filter(c => c.status === "portfolio").length, color: "#059669" },
   ].filter((s) => s.value > 0);
 
   return (
     <div>
-      <Topbar title="Dashboard" subtitle={`${new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`} />
+      <Topbar title="Dashboard" subtitle={`${new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`} />
 
       <div className="p-6 space-y-6">
         {/* KPIs */}
         <div className="grid grid-cols-4 gap-4">
-          <KpiCard label="Empresas monitoreadas" value={companies.length} delta={8} accent />
-          <KpiCard label="En pipeline activo" value={pipeline.length} sub={`${mandates.length} mandatos activos`} />
-          <KpiCard label="Señales esta semana" value={signals.length} delta={signals.length > 5 ? 22 : -5} sub={`${highSignals.length} alta prioridad`} />
-          <KpiCard label="Conectores activos" value={sources.length} sub="de 15 disponibles" />
+          <KpiCard label="Companies monitored" value={companies.length} delta={8} accent />
+          <KpiCard label="Active pipeline" value={pipeline.length} sub={`${mandates.length} active mandates`} />
+          <KpiCard label="Signals this week" value={signals.length} delta={signals.length > 5 ? 22 : -5} sub={`${highSignals.length} high priority`} />
+          <KpiCard label="Active connectors" value={sources.length} sub="of 15 available" />
         </div>
 
         {/* Daily digest */}
@@ -104,8 +104,8 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-3 gap-4">
           <Card className="col-span-2" padding="none">
             <div className="p-5 border-b border-chalk">
-              <SectionHeader title="Señales recientes" subtitle="Actividad que requiere atención"
-                action={<Link href="/radar" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">Ver radar →</Link>}
+              <SectionHeader title="Recent signals" subtitle="Activity requiring attention"
+                action={<Link href="/radar" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">View radar →</Link>}
                 className="mb-0" />
             </div>
             <div className="divide-y divide-chalk">
@@ -147,11 +147,11 @@ export default async function DashboardPage() {
             </Card>
             <Card padding="none" className="flex flex-col">
               <div className="px-4 pt-4 pb-3 border-b border-chalk flex-none">
-                <SectionHeader title="Actividad reciente" subtitle="Cambios del equipo" className="mb-0" />
+                <SectionHeader title="Recent activity" subtitle="Team changes" className="mb-0" />
               </div>
               <div className="divide-y divide-chalk overflow-y-auto" style={{ maxHeight: 220 }}>
                 {activity.length === 0 ? (
-                  <p className="text-[11px] text-slate px-4 py-3">Sin actividad registrada</p>
+                  <p className="text-[11px] text-slate px-4 py-3">No activity recorded</p>
                 ) : activity.map((a) => (
                   <div key={a.id} className="px-4 py-2.5 hover:bg-fog/40 transition-colors">
                     <div className="flex items-start justify-between gap-2">
@@ -172,22 +172,22 @@ export default async function DashboardPage() {
         {/* Company table */}
         <Card padding="none">
           <div className="p-5 border-b border-chalk">
-            <SectionHeader title="Top empresas por score" subtitle="Ordenadas por relevancia para mandatos activos"
-              action={<Link href="/radar" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">Ver todas →</Link>}
+            <SectionHeader title="Top companies by score" subtitle="Sorted by relevance for active mandates"
+              action={<Link href="/radar" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">View all →</Link>}
               className="mb-0" />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="text-[10px] text-slate uppercase tracking-wide border-b border-chalk">
-                  <th className="px-5 py-2.5 text-left font-medium">Empresa</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Company</th>
                   <th className="px-3 py-2.5 text-left font-medium">Sector</th>
-                  <th className="px-3 py-2.5 text-left font-medium">País</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Country</th>
                   <th className="px-3 py-2.5 text-right font-medium">Revenue</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Crec.</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Estado</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Growth</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Status</th>
                   <th className="px-3 py-2.5 text-right font-medium">Score</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Señales</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Signals</th>
                   <th className="px-3 py-2.5 text-center font-medium">Trend</th>
                 </tr>
               </thead>
@@ -216,7 +216,7 @@ export default async function DashboardPage() {
                         {topSig && <SignalBadge type={topSig.type as SignalType} severity={topSig.severity} />}
                       </td>
                       <td className="px-3 py-3 flex justify-center">
-                        <Spark values={[50, 55, 58, 60, 63, 65, 68, c.score]} width={60} height={24} color={c.score >= 85 ? "#059669" : "#ff682c"} />
+                        <Spark values={[50, 55, 58, 60, 63, 65, 68, c.score]} width={60} height={24} color={c.score >= 85 ? "#059669" : "#004F46"} />
                       </td>
                     </tr>
                   );

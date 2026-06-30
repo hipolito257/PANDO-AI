@@ -70,12 +70,22 @@ def _num(val, default: float = 0.0) -> float:
         return default
 
 
-def _geom(el: dict, defaults=(0.85, 1.78, 12.18, 4.0)):
-    """Extract x, y, w, h from element dict with safe defaults and content-area clamps."""
-    x = max(_num(el.get("x"), defaults[0]), 0.85)
-    y = max(_num(el.get("y"), defaults[1]), 1.78)
+CONTENT_X = 0.918      # left edge of title/takeaway/content placeholders in the template (839788 EMU)
+CONTENT_RIGHT = 12.415  # right edge of the content placeholder (839788 + 10512714 EMU) — symmetric margin
+
+
+def _geom(el: dict, defaults=(CONTENT_X, 2.0, 11.5, 4.0)):
+    """Extract x, y, w, h from element dict with safe defaults and content-area clamps.
+    y minimum is 2.0" — where the main content area starts in the template (1826680 EMU).
+    x minimum is 0.918" and right edge capped at 12.415" — matches the template's title/
+    takeaway/content placeholder bounds exactly, so generated elements stay left- and
+    right-aligned with the headers instead of drifting outside them."""
+    x = max(_num(el.get("x"), defaults[0]), CONTENT_X)
+    y = max(_num(el.get("y"), defaults[1]), 2.0)
     w = max(_num(el.get("w"), defaults[2]), 0.1)
     h = max(_num(el.get("h"), defaults[3]), 0.1)
+    if x + w > CONTENT_RIGHT:
+        w = max(CONTENT_RIGHT - x, 0.1)
     return x, y, w, h
 
 
@@ -222,19 +232,58 @@ class PptxBuilder:
         slide = self.prs.slides.add_slide(layout)
 
         self._fill_phs(slide, sd)
-        for el in sd.get("elements", []):
-            if not isinstance(el, dict):
-                continue
+
+        elements = [el for el in sd.get("elements", []) if isinstance(el, dict)]
+        # Shift all elements up so the topmost one starts at y=2.0" (content area start).
+        # This corrects Claude placing the first element at e.g. y=2.8 which leaves a large gap.
+        if elements and layout_key != "divider":
+            min_y = min(_num(el.get("y"), 2.0) for el in elements)
+            if min_y > 2.0:
+                shift = min_y - 2.0
+                for el in elements:
+                    el["y"] = _num(el.get("y"), min_y) - shift
+
+        for el in elements:
             self._element(slide, el)
 
     def _fill_phs(self, slide, sd: dict):
-        mapping = {
-            PH["cat"]:      _str(sd.get("category")) or None,
-            PH["title"]:    _str(sd.get("title"))    or None,
-            PH["takeaway"]: _str(sd.get("takeaway")) or None,
-            PH["note"]:     _str(sd.get("note"))     or None,
-        }
+        layout_key = _str(sd.get("layout"), "takeaway")
+        title_val    = _str(sd.get("title"))    or None
+        takeaway_val = _str(sd.get("takeaway")) or None
+        cat_val      = _str(sd.get("category")) or None
+        note_val     = _str(sd.get("note"))     or None
+
         phs = list(slide.placeholders)
+
+        if layout_key == "divider":
+            # Divider slides live on a different master with different placeholder
+            # indices — fill by vertical position rather than by index number.
+            text_phs = sorted(
+                [p for p in phs if p.has_text_frame],
+                key=lambda p: p.top if p.top is not None else 0,
+            )
+            filled = set()
+            if text_phs and title_val:
+                self._set_markdown_text(text_phs[0], title_val)
+                filled.add(id(text_phs[0]))
+            if len(text_phs) > 1 and takeaway_val:
+                self._set_markdown_text(text_phs[1], takeaway_val)
+                filled.add(id(text_phs[1]))
+            for ph in phs:
+                if id(ph) not in filled:
+                    sp = ph._element
+                    parent = sp.getparent()
+                    if parent is not None:
+                        parent.remove(sp)
+            return
+
+        # Regular content slides: fill by known placeholder index
+        mapping = {
+            PH["cat"]:      cat_val,
+            PH["title"]:    title_val,
+            PH["takeaway"]: takeaway_val,
+            PH["note"]:     note_val,
+        }
         to_remove = []
         for ph in phs:
             idx = ph.placeholder_format.idx
@@ -243,7 +292,6 @@ class PptxBuilder:
                 self._set_markdown_text(ph, val)
             else:
                 to_remove.append(ph)
-        # Delete unfilled placeholders so they don't show as dashed empty boxes
         for ph in to_remove:
             sp = ph._element
             parent = sp.getparent()

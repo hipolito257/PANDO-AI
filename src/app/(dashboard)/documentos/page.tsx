@@ -1,5 +1,9 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  LayoutTemplate, FileText, Table2, File, ImageIcon,
+  Paperclip, Sparkles, Target, Flag, Lock, FileCode,
+} from "lucide-react";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -39,18 +43,29 @@ const TYPE_COLOR: Record<string, string> = {
   docx: "bg-blue-500/10 text-blue-600 border-blue-400/30",
   xlsx: "bg-green-500/10 text-green-700 border-green-400/30",
 };
-const TYPE_ICON: Record<string, string>  = { pptx: "📊", docx: "📝", xlsx: "📋" };
 const TYPE_LABEL: Record<string, string> = { pptx: "PowerPoint", docx: "Word", xlsx: "Excel" };
+
+function DocTypeIcon({ type, size = 18 }: { type: string; size?: number }) {
+  if (type === "pptx") return <LayoutTemplate size={size} className="text-orange" />;
+  if (type === "docx") return <FileText size={size} className="text-blue-600" />;
+  if (type === "xlsx") return <Table2 size={size} className="text-green-600" />;
+  return <File size={size} className="text-graphite" />;
+}
+
+function FileTypeIcon({ name, size = 16 }: { name: string; size?: number }) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return <FileText size={size} className="text-red-500" />;
+  if (ext === "docx" || ext === "doc") return <FileText size={size} className="text-blue-500" />;
+  if (ext === "pptx" || ext === "ppt") return <LayoutTemplate size={size} className="text-orange" />;
+  if (ext === "xlsx" || ext === "xls") return <Table2 size={size} className="text-green-600" />;
+  if (ext === "png" || ext === "jpg" || ext === "jpeg") return <ImageIcon size={size} className="text-graphite" />;
+  if (ext === "txt" || ext === "csv") return <FileCode size={size} className="text-graphite" />;
+  return <File size={size} className="text-graphite" />;
+}
 
 function fmtSize(b: number | null): string {
   if (!b) return "";
   return b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`;
-}
-
-function fileIcon(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  return { pdf: "📕", docx: "📝", pptx: "📊", xlsx: "📋", txt: "📃", csv: "📋",
-           png: "🖼", jpg: "🖼", jpeg: "🖼" }[ext] ?? "📄";
 }
 
 export default function DocumentosPage() {
@@ -104,11 +119,11 @@ export default function DocumentosPage() {
   useEffect(() => { loadTemplates(); loadCompanies(); checkApiKey(); }, [loadTemplates, loadCompanies, checkApiKey]);
 
   const GEN_STEPS = [
-    "Descargando plantilla…",
-    "Analizando estructura del documento…",
-    "Cargando datos de la empresa…",
-    "Procesando con IA…",
-    "Aplicando cambios al documento…",
+    "Downloading template…",
+    "Analyzing document structure…",
+    "Loading company data…",
+    "Processing with AI…",
+    "Applying changes to document…",
   ];
 
   // Advance progress steps on a schedule while generating
@@ -128,7 +143,7 @@ export default function DocumentosPage() {
     e.preventDefault();
     if (!pendingFile || !uploadName.trim()) return;
     if (pendingFile.size > MAX_UPLOAD_BYTES) {
-      setUploadErr(`El archivo es demasiado grande (${fmtSize(pendingFile.size)}). El límite es 25 MB.`);
+      setUploadErr(`File too large (${fmtSize(pendingFile.size)}). Maximum size is 25 MB.`);
       return;
     }
 
@@ -152,7 +167,7 @@ export default function DocumentosPage() {
         const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
-          let msg = `Parte ${i + 1}/${totalChunks} falló (HTTP ${res.status})`;
+          let msg = `Part ${i + 1}/${totalChunks} failed (HTTP ${res.status})`;
           try { msg = JSON.parse(text).error ?? msg; } catch { if (text) msg += `: ${text.slice(0, 300)}`; }
           throw new Error(msg);
         }
@@ -168,7 +183,7 @@ export default function DocumentosPage() {
       });
       if (!finalRes.ok) {
         const j = await finalRes.json().catch(() => ({}));
-        throw new Error((j as any).error ?? "Error ensamblando archivo");
+        throw new Error((j as any).error ?? "Error assembling file");
       }
       const { blobUrl } = await finalRes.json();
 
@@ -185,7 +200,7 @@ export default function DocumentosPage() {
       });
       if (!regRes.ok) {
         const j = await regRes.json().catch(() => ({}));
-        throw new Error((j as any).error ?? "Error registrando plantilla");
+        throw new Error((j as any).error ?? "Error registering template");
       }
 
       const t = await regRes.json() as DocTemplate;
@@ -194,14 +209,14 @@ export default function DocumentosPage() {
       setSelected(t);
 
     } catch (err: any) {
-      setUploadErr(err?.message ?? "Error al subir archivo");
+      setUploadErr(err?.message ?? "Error uploading file");
     }
 
     setUploading(false);
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("¿Eliminar esta plantilla?")) return;
+    if (!confirm("Delete this template?")) return;
     await fetch(`/api/templates/${id}`, { method: "DELETE" });
     setTemplates(prev => prev.filter(t => t.id !== id));
     if (selected?.id === id) setSelected(null);
@@ -212,7 +227,7 @@ export default function DocumentosPage() {
     if (!selected) return;
 
     if ((contextFiles.length > 0 || userPrompt.trim() || companyId) && !hasApiKey) {
-      setGenErr("Necesitas configurar tu API key de Anthropic en Configuración para usar esta función");
+      setGenErr("You need to configure your Anthropic API key in Settings to use this feature");
       return;
     }
 
@@ -229,15 +244,15 @@ export default function DocumentosPage() {
       const j = await res.json().catch(() => ({})) as any;
       if (!res.ok) {
         if (j.code === "NO_API_KEY") {
-          setGenErr("⚠️ " + j.error + " → Ve a Configuración para agregarla");
+          setGenErr("⚠ " + j.error + " → Go to Settings to add it");
         } else {
-          setGenErr((j.error ?? "Error al generar") + (j.detail ? `: ${j.detail}` : ""));
+          setGenErr((j.error ?? "Generation error") + (j.detail ? `: ${j.detail}` : ""));
         }
       } else {
         setGenResult(j as GenResult);
       }
     } catch (err: any) {
-      setGenErr(err?.message ?? "Error de red al generar");
+      setGenErr(err?.message ?? "Network error during generation");
     }
 
     setGenerating(false);
@@ -281,7 +296,7 @@ export default function DocumentosPage() {
         fd.append("chunkIndex", String(i));
         fd.append("filename", file.name);
         const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
-        if (!res.ok) throw new Error(`Error subiendo ${file.name} (parte ${i + 1})`);
+        if (!res.ok) throw new Error(`Error uploading ${file.name} (part ${i + 1})`);
         const { chunkUrl } = await res.json();
         chunkUrls.push(chunkUrl);
       }
@@ -290,7 +305,7 @@ export default function DocumentosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chunkUrls, filename: `ctx_${Date.now()}_${file.name}` }),
       });
-      if (!finalRes.ok) throw new Error(`Error ensamblando ${file.name}`);
+      if (!finalRes.ok) throw new Error(`Error assembling ${file.name}`);
       const { blobUrl } = await finalRes.json();
       results.push({ name: file.name, url: blobUrl, type: file.type });
     }
@@ -306,7 +321,7 @@ export default function DocumentosPage() {
     // Upload context files to Blob so plan route can download them server-side
     let blobUrls: { name: string; url: string; type: string }[] = [];
     try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
-      setPlanErr("Error subiendo archivos: " + (e instanceof Error ? e.message : String(e)));
+      setPlanErr("Error uploading files: " + (e instanceof Error ? e.message : String(e)));
       setPlanning(false); return;
     }
     const fd = new FormData();
@@ -336,7 +351,7 @@ export default function DocumentosPage() {
     if (!selected || selected.type !== "pptx") return;
     setBuildErr(null);
     setBuilding(true);
-    setBuildProgress({ message: "Iniciando…", current: 0, total: 0 });
+    setBuildProgress({ message: "Starting…", current: 0, total: 0 });
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -345,7 +360,7 @@ export default function DocumentosPage() {
     let blobUrls = contextBlobUrls;
     if (contextFiles.length > 0 && blobUrls.length !== contextFiles.length) {
       try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
-        setBuildErr("Error subiendo archivos: " + (e instanceof Error ? e.message : String(e)));
+        setBuildErr("Error uploading files: " + (e instanceof Error ? e.message : String(e)));
         setBuilding(false); setBuildProgress(null); return;
       }
     }
@@ -412,7 +427,7 @@ export default function DocumentosPage() {
             setBuilding(false); setBuildProgress(null);
             return;
           } else if (event.type === "error") {
-            setBuildErr(event.message ?? "Error desconocido");
+            setBuildErr(event.message ?? "Unknown error");
             setBuilding(false); setBuildProgress(null);
             return;
           } else if (event.type === "cancelled") {
@@ -423,7 +438,7 @@ export default function DocumentosPage() {
       }
     } catch (err: unknown) {
       if ((err as Error).name !== "AbortError") {
-        setBuildErr((err as Error)?.message ?? "Error de red");
+        setBuildErr((err as Error)?.message ?? "Network error");
       }
     } finally {
       setBuilding(false); setBuildProgress(null);
@@ -463,8 +478,8 @@ export default function DocumentosPage() {
       <aside className="w-72 shrink-0 border-r border-chalk bg-paper flex flex-col h-full">
         <div className="px-5 py-4 border-b border-chalk flex items-center justify-between">
           <div>
-            <h2 className="text-[15px] font-semibold text-carbon">Documentos</h2>
-            <p className="text-[11px] text-slate mt-0.5">Plantillas guardadas</p>
+            <h2 className="text-[15px] font-semibold text-carbon">Documents</h2>
+            <p className="text-[11px] text-slate mt-0.5">Saved templates</p>
           </div>
           <button onClick={() => setShowUpload(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-carbon text-white text-[12px] font-medium rounded-[7px] hover:bg-graphite transition-colors">
@@ -480,19 +495,19 @@ export default function DocumentosPage() {
           onDragLeave={() => setDragOver(false)} onDrop={handleTemplateDrop}
           className={`mx-3 mt-3 mb-1 rounded-[8px] border-2 border-dashed text-center py-3 text-[11px] transition-colors ${
             dragOver ? "border-carbon bg-fog text-carbon" : "border-chalk/60 text-slate/60"}`}>
-          Arrastra plantilla aquí
+          Drop template here
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
           {templates.length === 0 && (
-            <div className="text-center py-12 text-slate text-[12px]"><div className="text-3xl mb-2">📄</div>Sube tu primera plantilla</div>
+            <div className="text-center py-12 text-slate text-[12px]"><div className="flex justify-center mb-2"><File size={28} className="text-chalk" /></div>Upload your first template</div>
           )}
           {templates.map(t => (
             <button key={t.id} onClick={() => { setSelected(t); setGenSuccess(false); setGenErr(null); setBuildErr(null); setPlanErr(null); setPlan(null); setPlanFeedback(""); setContextFiles([]); }}
               className={`w-full text-left rounded-[8px] p-3 border transition-all group ${
                 selected?.id === t.id ? "bg-carbon text-white border-carbon" : "bg-white border-chalk hover:border-graphite/30 hover:shadow-sm"}`}>
               <div className="flex items-start gap-2">
-                <span className="text-lg leading-none mt-0.5">{TYPE_ICON[t.type]}</span>
+                <span className="shrink-0 mt-0.5"><DocTypeIcon type={t.type} size={16} /></span>
                 <div className="flex-1 min-w-0">
                   <div className={`text-[12px] font-semibold truncate ${selected?.id === t.id ? "text-white" : "text-carbon"}`}>{t.name}</div>
                   <div className="flex items-center gap-2 mt-1">
@@ -526,8 +541,8 @@ export default function DocumentosPage() {
             <div className="bg-white rounded-[14px] shadow-xl w-full max-w-md p-6">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-carbon">Subir Plantilla</h3>
-                  <p className="text-[11px] text-slate mt-0.5">Sube tu documento sin modificarlo</p>
+                  <h3 className="text-[15px] font-semibold text-carbon">Upload Template</h3>
+                  <p className="text-[11px] text-slate mt-0.5">Upload your document without modifying it</p>
                 </div>
                 <button onClick={() => { setShowUpload(false); setPendingFile(null); setUploadErr(null); }} className="text-slate hover:text-carbon">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -540,7 +555,7 @@ export default function DocumentosPage() {
                 <div>
                   {pendingFile ? (
                     <div className="flex items-center gap-3 p-3 bg-fog rounded-[8px] border border-chalk">
-                      <span className="text-xl">{fileIcon(pendingFile.name)}</span>
+                      <span className="shrink-0"><FileTypeIcon name={pendingFile.name} size={18} /></span>
                       <div className="flex-1 min-w-0">
                         <div className="text-[12px] font-medium text-carbon truncate">{pendingFile.name}</div>
                         <div className="text-[10px] text-slate">{fmtSize(pendingFile.size)}</div>
@@ -550,8 +565,8 @@ export default function DocumentosPage() {
                   ) : (
                     <button type="button" onClick={() => templateFileRef.current?.click()}
                       className="w-full border-2 border-dashed border-chalk rounded-[8px] py-8 text-center text-[12px] text-slate hover:border-graphite/40 hover:bg-fog transition-colors">
-                      <div className="text-3xl mb-2">📎</div>
-                      <div className="font-medium text-carbon">Click para seleccionar</div>
+                      <div className="flex justify-center mb-2"><Paperclip size={26} className="text-chalk" /></div>
+                      <div className="font-medium text-carbon">Click to select</div>
                       <div className="text-[10px] mt-1 text-slate">PowerPoint · Word · Excel</div>
                     </button>
                   )}
@@ -559,24 +574,24 @@ export default function DocumentosPage() {
                     onChange={e => { const f = e.target.files?.[0]; if (f) { setPendingFile(f); setUploadName(prev => prev || f.name.replace(/\.[^.]+$/, "")); } }} />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-graphite mb-1.5">Nombre *</label>
+                  <label className="block text-[11px] font-medium text-graphite mb-1.5">Name *</label>
                   <input value={uploadName} onChange={e => setUploadName(e.target.value)}
-                    placeholder="Ej: 2-Pager Inversión, Presentación LP..."
+                    placeholder="e.g. Investment 2-Pager, LP Presentation..."
                     className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[13px] text-carbon placeholder:text-slate/50 focus:outline-none focus:border-carbon"/>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-graphite mb-1.5">Descripción (opcional)</label>
+                  <label className="block text-[11px] font-medium text-graphite mb-1.5">Description (optional)</label>
                   <input value={uploadDesc} onChange={e => setUploadDesc(e.target.value)}
-                    placeholder="Para qué se usa esta plantilla..."
+                    placeholder="What this template is used for..."
                     className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[13px] text-carbon placeholder:text-slate/50 focus:outline-none focus:border-carbon"/>
                 </div>
                 {uploadErr && <div className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-[8px] p-3">{uploadErr}</div>}
                 <div className="flex gap-2 pt-1">
                   <button type="button" onClick={() => { setShowUpload(false); setPendingFile(null); setUploadErr(null); }}
-                    className="flex-1 border border-chalk rounded-[8px] py-2 text-[13px] text-graphite hover:bg-fog">Cancelar</button>
+                    className="flex-1 border border-chalk rounded-[8px] py-2 text-[13px] text-graphite hover:bg-fog">Cancel</button>
                   <button type="submit" disabled={uploading || !pendingFile || !uploadName.trim()}
-                    className="flex-1 bg-carbon text-white rounded-[8px] py-2 text-[13px] font-medium hover:bg-graphite disabled:opacity-40 disabled:cursor-not-allowed">
-                    {uploading ? "Subiendo…" : "Subir"}
+                    className="flex-1 bg-orange text-white rounded-[8px] py-2 text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed">
+                    {uploading ? "Uploading…" : "Upload"}
                   </button>
                 </div>
               </form>
@@ -591,11 +606,11 @@ export default function DocumentosPage() {
               {/* Header */}
               <div className="px-6 py-4 border-b border-chalk flex items-center justify-between shrink-0">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-carbon">Vista previa del documento</h3>
+                  <h3 className="text-[15px] font-semibold text-carbon">Document preview</h3>
                   <p className="text-[11px] text-slate mt-0.5">
                     {genResult.replacements.length > 0
-                      ? `${genResult.replacements.length} cambio${genResult.replacements.length > 1 ? "s" : ""} realizados por la IA`
-                      : "Documento listo — sin cambios de IA detectados"}
+                      ? `${genResult.replacements.length} change${genResult.replacements.length > 1 ? "s" : ""} made by AI`
+                      : "Document ready — no AI changes detected"}
                   </p>
                 </div>
                 <button onClick={() => setGenResult(null)} className="text-slate hover:text-carbon p-1">
@@ -612,18 +627,18 @@ export default function DocumentosPage() {
                 {/* No changes warning */}
                 {genResult.replacements.length === 0 && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-[10px] p-4 space-y-2">
-                    <div className="text-[13px] font-semibold text-yellow-800">⚠️ La IA no generó cambios</div>
+                    <div className="text-[13px] font-semibold text-yellow-800">⚠ AI did not generate changes</div>
                     <div className="text-[11px] text-yellow-700 space-y-1">
                       {genResult._debug && (
                         <div className="font-mono bg-yellow-100 rounded p-2 space-y-0.5">
-                          <div>empresa seleccionada: <b>{genResult._debug.hadCompany ? "sí" : "NO"}</b></div>
-                          <div>archivos adjuntos: <b>{genResult._debug.hadContextFiles}</b></div>
-                          <div>instrucciones: <b>{genResult._debug.hadUserPrompt ? "sí" : "NO"}</b></div>
-                          <div>API key: <b>{genResult._debug.hadApiKey ? "sí" : "NO"}</b></div>
-                          <div>texto extraído: <b>{genResult._debug.templateTextLength} chars</b></div>
+                          <div>company selected: <b>{genResult._debug.hadCompany ? "yes" : "NO"}</b></div>
+                          <div>attached files: <b>{genResult._debug.hadContextFiles}</b></div>
+                          <div>instructions: <b>{genResult._debug.hadUserPrompt ? "yes" : "NO"}</b></div>
+                          <div>API key: <b>{genResult._debug.hadApiKey ? "yes" : "NO"}</b></div>
+                          <div>extracted text: <b>{genResult._debug.templateTextLength} chars</b></div>
                         </div>
                       )}
-                      <p>Si la API key está activa y hay empresa/instrucciones, la IA debería generar cambios. Si dice "NO" en empresa y API key, configúralos primero.</p>
+                      <p>If the API key is active and there is a company/instructions, AI should generate changes. If it says "NO" for company and API key, configure them first.</p>
                     </div>
                   </div>
                 )}
@@ -631,7 +646,7 @@ export default function DocumentosPage() {
                 {/* Replacements list */}
                 {genResult.replacements.length > 0 && (
                   <div>
-                    <div className="text-[12px] font-semibold text-carbon mb-2">Cambios aplicados</div>
+                    <div className="text-[12px] font-semibold text-carbon mb-2">Changes applied</div>
                     <div className="space-y-1.5 max-h-48 overflow-y-auto">
                       {genResult.replacements.slice(0, 30).map((r, i) => (
                         <div key={i} className="flex items-start gap-2 bg-fog rounded-[8px] px-3 py-2 text-[11px]">
@@ -643,7 +658,7 @@ export default function DocumentosPage() {
                         </div>
                       ))}
                       {genResult.replacements.length > 30 && (
-                        <div className="text-[10px] text-slate pl-2">…y {genResult.replacements.length - 30} cambios más</div>
+                        <div className="text-[10px] text-slate pl-2">…and {genResult.replacements.length - 30} more changes</div>
                       )}
                     </div>
                   </div>
@@ -652,7 +667,7 @@ export default function DocumentosPage() {
                 {/* Preview text */}
                 {genResult.previewText && (
                   <div>
-                    <div className="text-[12px] font-semibold text-carbon mb-2">Contenido del documento generado</div>
+                    <div className="text-[12px] font-semibold text-carbon mb-2">Generated document content</div>
                     <pre className="bg-fog border border-chalk rounded-[8px] p-4 text-[11px] text-graphite whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-64 font-mono">
                       {genResult.previewText
                         .replace(/&amp;/g, "&").replace(/&lt;/g, "<")
@@ -666,15 +681,15 @@ export default function DocumentosPage() {
               <div className="px-6 py-4 border-t border-chalk flex gap-3 shrink-0">
                 <button onClick={() => setGenResult(null)}
                   className="flex-1 border border-chalk rounded-[9px] py-2.5 text-[13px] text-graphite hover:bg-fog transition-colors">
-                  Cancelar
+                  Cancel
                 </button>
                 <button onClick={() => downloadResult(genResult)}
-                  className="flex-1 bg-carbon text-white rounded-[9px] py-2.5 text-[13px] font-semibold hover:bg-graphite transition-colors flex items-center justify-center gap-2">
+                  className="flex-1 bg-orange text-white rounded-[9px] py-2.5 text-[13px] font-semibold hover:opacity-85 transition-colors flex items-center justify-center gap-2">
                   <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                     <path d="M6.5 1v8M3.5 6l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     <path d="M1 10v1.5A1.5 1.5 0 002.5 13h8a1.5 1.5 0 001.5-1.5V10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
                   </svg>
-                  Descargar {genResult.filename.split(".").pop()?.toUpperCase()}
+                  Download {genResult.filename.split(".").pop()?.toUpperCase()}
                 </button>
               </div>
             </div>
@@ -684,28 +699,28 @@ export default function DocumentosPage() {
         {/* Empty state */}
         {!selected && (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
-            <div className="text-5xl mb-4">✨</div>
-            <h3 className="text-[20px] font-semibold text-carbon mb-2">Generador de Documentos con IA</h3>
+            <div className="flex justify-center mb-4"><Sparkles size={40} className="text-orange" /></div>
+            <h3 className="text-[20px] font-semibold text-carbon mb-2">AI Document Generator</h3>
             <p className="text-[13px] text-slate max-w-md mb-8 leading-relaxed">
-              Sube tu presentación o documento existente. Adjunta archivos de respaldo
-              (PDFs, Excels con datos, reports) y la IA extrae la información relevante
-              para construir el documento personalizado.
+              Upload your existing presentation or document. Attach backup files
+              (PDFs, Excels with data, reports) and AI extracts the relevant information
+              to build a personalized document.
             </p>
             <div className="grid grid-cols-3 gap-4 mb-8 w-full max-w-sm">
               {(["pptx","docx","xlsx"] as const).map(type => (
                 <div key={type} className={`rounded-[12px] border-2 p-5 text-center ${TYPE_COLOR[type]}`}>
-                  <div className="text-3xl mb-2">{TYPE_ICON[type]}</div>
+                  <div className="flex justify-center mb-2"><DocTypeIcon type={type} size={28} /></div>
                   <div className="text-[12px] font-semibold">{TYPE_LABEL[type]}</div>
                 </div>
               ))}
             </div>
             <button onClick={() => setShowUpload(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-carbon text-white rounded-[10px] text-[14px] font-medium hover:bg-graphite transition-colors shadow-sm">
+              className="flex items-center gap-2 px-6 py-3 bg-orange text-white rounded-[10px] text-[14px] font-medium hover:opacity-85 transition-colors shadow-sm">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                 <line x1="6.5" y1="1" x2="6.5" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 <line x1="1" y1="6.5" x2="12" y2="6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
-              Subir primera plantilla
+              Upload first template
             </button>
           </div>
         )}
@@ -716,13 +731,13 @@ export default function DocumentosPage() {
 
             {/* Template header */}
             <div className="flex items-center gap-4">
-              <div className="text-5xl">{TYPE_ICON[selected.type]}</div>
+              <div className="shrink-0"><DocTypeIcon type={selected.type} size={44} /></div>
               <div>
                 <h1 className="text-[20px] font-semibold text-carbon">{selected.name}</h1>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${TYPE_COLOR[selected.type]}`}>{TYPE_LABEL[selected.type]}</span>
                   {selected.fileSize && <span className="text-[11px] text-slate">{fmtSize(selected.fileSize)}</span>}
-                  <span className="text-[11px] text-green-600 font-medium">✨ IA</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-medium"><Sparkles size={11} />AI</span>
                 </div>
                 {selected.description && <p className="text-[12px] text-slate mt-1">{selected.description}</p>}
               </div>
@@ -731,22 +746,22 @@ export default function DocumentosPage() {
             {/* Step 1 — Company (optional) */}
             <div className="bg-white border border-chalk rounded-[12px] p-5">
               <div className="flex items-center gap-2 mb-3">
-                <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+                <span className="w-5 h-5 rounded-full bg-orange text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
                 <div>
-                  <div className="text-[13px] font-semibold text-carbon">Empresa <span className="text-[11px] font-normal text-slate">(Opcional)</span></div>
-                  <div className="text-[10px] text-slate">Si seleccionas una, la IA usa sus datos financieros. Puedes generar sin empresa usando solo instrucciones.</div>
+                  <div className="text-[13px] font-semibold text-carbon">Company <span className="text-[11px] font-normal text-slate">(Optional)</span></div>
+                  <div className="text-[10px] text-slate">If selected, AI uses its financial data. You can generate without a company using instructions only.</div>
                 </div>
               </div>
               <select value={companyId} onChange={e => setCompanyId(e.target.value)}
                 className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
-                <option value="">— Sin empresa específica —</option>
+                <option value="">— No specific company —</option>
                 {companies.map(c => (
                   <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
                 ))}
               </select>
               {companyId && (
                 <div className="mt-2 text-[10px] text-slate">
-                  La IA usará los datos financieros, comparables y métricas de esta empresa desde el radar.
+                  AI will use the financial data, comparables and metrics for this company from the radar.
                 </div>
               )}
             </div>
@@ -755,15 +770,15 @@ export default function DocumentosPage() {
             <div className="bg-white border border-chalk rounded-[12px] p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+                  <span className="w-5 h-5 rounded-full bg-orange text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
                   <div>
-                    <div className="text-[13px] font-semibold text-carbon">Archivos de respaldo</div>
-                    <div className="text-[10px] text-slate">Opcional — La IA los lee para enriquecer el documento</div>
+                    <div className="text-[13px] font-semibold text-carbon">Backup files</div>
+                    <div className="text-[10px] text-slate">Optional — AI reads them to enrich the document</div>
                   </div>
                 </div>
                 <button onClick={() => contextFileRef.current?.click()}
                   className="text-[11px] font-medium text-carbon border border-chalk px-3 py-1.5 rounded-[7px] hover:bg-fog transition-colors">
-                  + Agregar
+                  + Add
                 </button>
               </div>
               <input ref={contextFileRef} type="file" multiple
@@ -781,12 +796,12 @@ export default function DocumentosPage() {
                   ctxDragOver ? "border-carbon bg-fog" : contextFiles.length === 0 ? "border-chalk hover:border-graphite/40 hover:bg-fog/50" : "border-chalk/40"}`}>
                 {contextFiles.length === 0 ? (
                   <div>
-                    <div className="text-2xl mb-1">📎</div>
-                    <div className="text-[12px] text-slate">Arrastra o click para agregar archivos</div>
-                    <div className="text-[10px] text-slate/60 mt-0.5">PDF · Word · Excel · PowerPoint · TXT · Imágenes</div>
+                    <div className="flex justify-center mb-1"><Paperclip size={22} className="text-chalk" /></div>
+                    <div className="text-[12px] text-slate">Drag or click to add files</div>
+                    <div className="text-[10px] text-slate/60 mt-0.5">PDF · Word · Excel · PowerPoint · TXT · Images</div>
                   </div>
                 ) : (
-                  <div className="text-[11px] text-slate">+ Agregar más archivos</div>
+                  <div className="text-[11px] text-slate">+ Add more files</div>
                 )}
               </div>
 
@@ -795,7 +810,7 @@ export default function DocumentosPage() {
                 <div className="mt-3 space-y-1.5">
                   {contextFiles.map((f, i) => (
                     <div key={i} className="flex items-center gap-2.5 bg-fog rounded-[8px] px-3 py-2">
-                      <span className="text-base shrink-0">{fileIcon(f.name)}</span>
+                      <span className="shrink-0"><FileTypeIcon name={f.name} size={16} /></span>
                       <div className="flex-1 min-w-0">
                         <div className="text-[12px] font-medium text-carbon truncate">{f.name}</div>
                         <div className="text-[10px] text-slate">{fmtSize(f.size)}</div>
@@ -809,7 +824,7 @@ export default function DocumentosPage() {
                     </div>
                   ))}
                   <div className="text-[10px] text-slate pl-1">
-                    ✓ La IA leerá estos {contextFiles.length} archivo{contextFiles.length > 1 ? "s" : ""} para extraer información adicional
+                    ✓ AI will read {contextFiles.length} file{contextFiles.length > 1 ? "s" : ""} to extract additional information
                   </div>
                 </div>
               )}
@@ -817,27 +832,27 @@ export default function DocumentosPage() {
               {/* API key requirement */}
               {contextFiles.length > 0 && !hasApiKey && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-[8px] p-3">
-                  <div className="text-[11px] text-yellow-800 font-medium mb-1">⚠️ Se requiere API key</div>
+                  <div className="text-[11px] text-yellow-800 font-medium mb-1">⚠ API key required</div>
                   <div className="text-[10px] text-yellow-700 mb-2">
-                    Para usar archivos de respaldo con IA, necesitas configurar tu API key de Anthropic.
+                    To use backup files with AI, you need to configure your Anthropic API key.
                   </div>
                   <a href="/settings" className="text-[10px] font-semibold text-yellow-700 underline hover:text-yellow-900">
-                    Ir a Configuración →
+                    Go to Settings →
                   </a>
                 </div>
               )}
 
               {/* What to upload */}
               <div className="mt-3 pt-3 border-t border-chalk">
-                <div className="text-[10px] text-slate font-medium mb-1">¿Qué puedes subir?</div>
+                <div className="text-[10px] text-slate font-medium mb-1">What can you upload?</div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
                   {[
-                    ["📕 PDF", "Estados financieros, reportes"],
-                    ["📋 Excel", "Modelos financieros, datos históricos"],
-                    ["📊 PowerPoint", "Decks anteriores de la empresa"],
-                    ["📝 Word", "Due diligence, memos previos"],
-                    ["🖼 Imagen", "Screenshots, tablas, logos"],
-                    ["📃 TXT / CSV", "Data exportada de sistemas"],
+                    ["PDF", "Financial statements, reports"],
+                    ["Excel", "Financial models, historical data"],
+                    ["PowerPoint", "Previous company decks"],
+                    ["Word", "Due diligence, prior memos"],
+                    ["Image", "Screenshots, tables, logos"],
+                    ["TXT / CSV", "Data exported from systems"],
                   ].map(([type, desc]) => (
                     <div key={type} className="flex gap-1.5 py-0.5">
                       <span className="text-[10px] shrink-0">{type}</span>
@@ -851,23 +866,23 @@ export default function DocumentosPage() {
             {/* Step 3 — User prompt */}
             <div className="bg-white border border-chalk rounded-[12px] p-5">
               <div className="flex items-center gap-2 mb-3">
-                <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                <span className="w-5 h-5 rounded-full bg-orange text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
                 <div>
-                  <div className="text-[13px] font-semibold text-carbon">Instrucciones para la IA <span className="text-[11px] font-normal text-slate">(Opcional)</span></div>
-                  <div className="text-[10px] text-slate">Especifica qué quieres que haga la IA con este documento</div>
+                  <div className="text-[13px] font-semibold text-carbon">AI Instructions <span className="text-[11px] font-normal text-slate">(Optional)</span></div>
+                  <div className="text-[10px] text-slate">Specify what you want AI to do with this document</div>
                 </div>
               </div>
               <textarea
                 value={userPrompt}
                 onChange={e => setUserPrompt(e.target.value)}
                 rows={4}
-                placeholder={"Ejemplos:\n• Adapta esta presentación de Ben & Frank para una empresa de tecnología educativa en Brasil. Usa los datos financieros de los archivos adjuntos.\n• Traduce al español y ajusta el tono para un fondo de LATAM.\n• Reemplaza los datos financieros con los del Excel adjunto y actualiza el año a 2026.\n• Crea una versión genérica sin empresa específica que sirva como plantilla reutilizable."}
+                placeholder={"Examples:\n• Adapt this presentation for an edtech company in Brazil. Use the financial data from the attached files.\n• Replace the financial data with the attached Excel and update the year to 2026.\n• Create a generic version without a specific company that serves as a reusable template.\n• Translate to Spanish and adjust the tone for a LATAM fund."}
                 className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-carbon resize-none leading-relaxed"
               />
               {userPrompt.trim() && !hasApiKey && (
                 <div className="mt-2 flex items-center gap-1.5 text-[10px] text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-[7px] px-2.5 py-1.5">
-                  <span>⚠️</span>
-                  <span>Se requiere API key de Anthropic para usar instrucciones personalizadas. <a href="/settings" className="underline font-medium">Configurar →</a></span>
+                  <span>⚠</span>
+                  <span>Anthropic API key required for custom instructions. <a href="/settings" className="underline font-medium">Configure →</a></span>
                 </div>
               )}
             </div>
@@ -875,7 +890,7 @@ export default function DocumentosPage() {
             {/* Step 4 — Generate */}
             <div className="bg-white border border-chalk rounded-[12px] p-5">
               <div className="flex items-center gap-2 mb-4">
-                <span className="w-5 h-5 rounded-full bg-carbon text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
+                <span className="w-5 h-5 rounded-full bg-orange text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
                 <div className="text-[13px] font-semibold text-carbon">Generar documento</div>
               </div>
 
@@ -888,7 +903,7 @@ export default function DocumentosPage() {
                     <circle cx="7" cy="7" r="6" fill="#22c55e"/>
                     <polyline points="4,7 6,9 10,5" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  ¡Documento generado exitosamente!
+                  Document generated successfully!
                 </div>
               )}
               {lastDownload && (
@@ -896,9 +911,9 @@ export default function DocumentosPage() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                   </svg>
-                  <span className="flex-1">Última presentación generada</span>
+                  <span className="flex-1">Last generated presentation</span>
                   <a href={lastDownload.url} download={lastDownload.filename} className="font-semibold underline underline-offset-2 hover:text-[#002a24]">
-                    Descargar de nuevo
+                    Download again
                   </a>
                 </div>
               )}
@@ -922,27 +937,24 @@ export default function DocumentosPage() {
                     ))}
                   </div>
                   <p className="text-[10px] text-slate mt-2">
-                    La generación puede tomar entre 30 y 90 segundos según el tamaño del documento
+                    Generation may take 30–90 seconds depending on document size
                   </p>
                 </div>
               )}
 
               <button onClick={handleGenerate} disabled={generating || !selected}
-                className="w-full flex items-center justify-center gap-2 py-3.5 bg-carbon text-white rounded-[10px] text-[14px] font-semibold hover:bg-graphite disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                className="w-full flex items-center justify-center gap-2 py-3.5 bg-orange text-white rounded-[10px] text-[14px] font-semibold hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 {generating ? (
                   <>
                     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                     </svg>
-                    Generando…
+                    Generating…
                   </>
                 ) : (
                   <>
-                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                      <path d="M7.5 1v9M4.5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M2 11v1.5A1.5 1.5 0 003.5 14h8a1.5 1.5 0 001.5-1.5V11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                    </svg>
-                    ✨ Generar con IA y Descargar
+                    <Sparkles size={15} />
+                    Generate with AI and Download
                   </>
                 )}
               </button>
@@ -951,7 +963,7 @@ export default function DocumentosPage() {
               {/* Advanced Build button — PPTX only */}
               {selected?.type === "pptx" && !plan && (
                 <div className="mt-3 pt-3 border-t border-chalk">
-                  <div className="text-[10px] text-slate mb-2 font-medium">Modo avanzado — gráficas nativas editables en PowerPoint</div>
+                  <div className="text-[10px] text-slate mb-2 font-medium">Advanced mode — native editable charts in PowerPoint</div>
                   {planErr && (
                     <div className="mb-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[7px] p-2.5">{planErr}</div>
                   )}
@@ -962,14 +974,14 @@ export default function DocumentosPage() {
                         <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                         </svg>
-                        Subiendo archivos…
+                        Uploading files…
                       </>
                     ) : planning ? (
                       <>
                         <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                         </svg>
-                        Planificando presentación…
+                        Planning presentation…
                       </>
                     ) : (
                       <>
@@ -979,7 +991,7 @@ export default function DocumentosPage() {
                           <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor"/>
                           <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
                         </svg>
-                        Planear presentación con gráficas nativas
+                        Plan presentation with native charts
                       </>
                     )}
                   </button>
@@ -987,9 +999,9 @@ export default function DocumentosPage() {
               )}
 
               <div className="mt-4 pt-4 border-t border-chalk flex items-start gap-2">
-                <span className="text-sm shrink-0">🔒</span>
+                <Lock size={14} className="text-slate shrink-0" />
                 <div className="text-[10px] text-slate leading-relaxed">
-                  Tu plantilla original nunca se modifica. Los archivos de respaldo se usan solo en esta generación y no se guardan en el servidor.
+                  Your original template is never modified. Backup files are used only for this generation and are not stored on the server.
                 </div>
               </div>
             </div>
@@ -1000,8 +1012,8 @@ export default function DocumentosPage() {
                 {/* Plan header */}
                 <div className="bg-[#004F46] px-5 py-4 flex items-center justify-between">
                   <div>
-                    <div className="text-white text-[14px] font-semibold">Plan de Presentación</div>
-                    <div className="text-[#A5C8D1] text-[11px] mt-0.5">{plan.slides.length} slides · Revisa y aprueba antes de construir</div>
+                    <div className="text-white text-[14px] font-semibold">Presentation Plan</div>
+                    <div className="text-[#A5C8D1] text-[11px] mt-0.5">{plan.slides.length} slides · Review and approve before building</div>
                   </div>
                   <button onClick={() => { setPlan(null); setPlanFeedback(""); setBuildErr(null); }}
                     className="text-white/60 hover:text-white p-1 rounded transition-colors">
@@ -1024,9 +1036,9 @@ export default function DocumentosPage() {
                     if (slide.type === "cover") {
                       return (
                         <div key={slide.index} className="flex items-start gap-3 py-2">
-                          <span className="text-base shrink-0 mt-0.5">🎯</span>
+                          <Target size={16} className="text-orange shrink-0 mt-0.5" />
                           <div>
-                            <div className="text-[12px] font-semibold text-carbon">Portada</div>
+                            <div className="text-[12px] font-semibold text-carbon">Cover</div>
                             <div className="text-[11px] text-slate">{slide.title}{slide.subtitle ? ` — ${slide.subtitle}` : ""}</div>
                           </div>
                         </div>
@@ -1035,9 +1047,9 @@ export default function DocumentosPage() {
                     if (slide.type === "back_cover") {
                       return (
                         <div key={slide.index} className="flex items-start gap-3 py-2">
-                          <span className="text-base shrink-0 mt-0.5">🏁</span>
+                          <Flag size={16} className="text-graphite shrink-0 mt-0.5" />
                           <div>
-                            <div className="text-[12px] font-semibold text-carbon">Contraportada</div>
+                            <div className="text-[12px] font-semibold text-carbon">Back cover</div>
                             {slide.title && <div className="text-[11px] text-slate">{slide.title}</div>}
                           </div>
                         </div>
@@ -1063,7 +1075,7 @@ export default function DocumentosPage() {
                           <div className="text-[12px] font-semibold text-carbon">{slide.title}</div>
                           {slide.chart && (
                             <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-[9px] font-medium text-[#004F46] bg-[#004F46]/10 rounded px-1.5 py-0.5 shrink-0">gráfica</span>
+                              <span className="text-[9px] font-medium text-[#004F46] bg-[#004F46]/10 rounded px-1.5 py-0.5 shrink-0">chart</span>
                               <span className="text-[11px] text-slate truncate">{slide.chart}</span>
                             </div>
                           )}
@@ -1097,7 +1109,7 @@ export default function DocumentosPage() {
                         </div>
                         <button onClick={handleCancelBuild}
                           className="shrink-0 ml-3 text-[11px] text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-[6px] hover:bg-red-50 transition-colors">
-                          Cancelar
+                          Cancel
                         </button>
                       </div>
                       {buildProgress.total > 0 && (
@@ -1114,9 +1126,9 @@ export default function DocumentosPage() {
                             ))}
                           </div>
                           <div className="text-[10px] text-slate">
-                            Paso {buildProgress.current} de {buildProgress.total}
+                            Step {buildProgress.current} of {buildProgress.total}
                             {buildProgress.total - buildProgress.current > 0
-                              ? ` — ${buildProgress.total - buildProgress.current} restante${buildProgress.total - buildProgress.current !== 1 ? "s" : ""}`
+                              ? ` — ${buildProgress.total - buildProgress.current} remaining`
                               : ""}
                           </div>
                         </div>
@@ -1126,12 +1138,12 @@ export default function DocumentosPage() {
 
                   {!building && (
                     <div>
-                      <label className="text-[11px] font-medium text-graphite block mb-1.5">¿Quieres ajustar el plan?</label>
+                      <label className="text-[11px] font-medium text-graphite block mb-1.5">Want to adjust the plan?</label>
                       <textarea
                         value={planFeedback}
                         onChange={e => setPlanFeedback(e.target.value)}
                         rows={3}
-                        placeholder={"Ej: Agrega una slide de valuación. Quita la sección de financials y añade más detalle en tesis. El overview debe ser más detallado con datos de clientes y geografía."}
+                        placeholder={"e.g. Add a valuation slide. Remove the financials section and add more detail on the thesis. The overview should be more detailed with client and geography data."}
                         className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-[#004F46] resize-none leading-relaxed"
                       />
                     </div>
@@ -1147,7 +1159,7 @@ export default function DocumentosPage() {
                             <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
                               <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                             </svg>
-                            Refinando…
+                            Refining…
                           </>
                         ) : (
                           <>
@@ -1155,7 +1167,7 @@ export default function DocumentosPage() {
                               <path d="M1 6a5 5 0 1010 0A5 5 0 001 6z" stroke="currentColor" strokeWidth="1.3"/>
                               <path d="M9 4l2-2M9 4l-1-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
                             </svg>
-                            Refinar plan
+                            Refine plan
                           </>
                         )}
                       </button>
@@ -1168,7 +1180,7 @@ export default function DocumentosPage() {
                           <svg className="animate-spin w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
                             <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                           </svg>
-                          Construyendo…
+                          Building…
                         </>
                       ) : (
                         <>
@@ -1178,7 +1190,7 @@ export default function DocumentosPage() {
                             <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor"/>
                             <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
                           </svg>
-                          Aprobar y construir presentación
+                          Approve and build presentation
                         </>
                       )}
                     </button>

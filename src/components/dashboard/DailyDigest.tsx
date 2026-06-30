@@ -19,7 +19,7 @@ type CronLog = {
 };
 
 function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
 function fmtDuration(ms: number | null) {
@@ -32,7 +32,7 @@ type ChipProps = { label: string; value: number; accent?: boolean };
 function Chip({ label, value, accent }: ChipProps) {
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
-      accent ? "bg-carbon text-white" : "bg-fog text-graphite"
+      accent ? "bg-orange text-white" : "bg-fog text-graphite"
     }`}>
       <span className="font-bold">{value}</span>
       <span>{label}</span>
@@ -47,12 +47,11 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
     return (
       <div className="flex items-center gap-3 px-4 py-2.5 bg-fog rounded-[10px] border border-chalk text-[12px] text-slate">
         <span className="w-1.5 h-1.5 rounded-full bg-chalk flex-none" />
-        <span>Sin ejecución del cron hoy</span>
+        <span>No cron execution today</span>
       </div>
     );
   }
 
-  // Most recent run
   const latest = logs[0];
   const running = latest.status === "running";
   const ok = latest.status === "ok";
@@ -70,7 +69,7 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
 
         {/* Label */}
         <span className="text-[11px] font-semibold text-carbon uppercase tracking-wide flex-none">
-          Cron diario
+          Daily cron
         </span>
         <span className="text-[11px] text-slate flex-none">{fmtTime(latest.ranAt)}</span>
 
@@ -79,16 +78,16 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
         {/* Chips */}
         <div className="flex items-center gap-1.5 flex-1 flex-wrap">
           {running ? (
-            <span className="text-[11px] text-amber-600 font-medium">Ejecutando ahora…</span>
+            <span className="text-[11px] text-amber-600 font-medium">Running now…</span>
           ) : (
             <>
-              {latest.newsAdded > 0 && <Chip label="noticias" value={latest.newsAdded} />}
-              {latest.signalsAdded > 0 && <Chip label="señales" value={latest.signalsAdded} accent />}
-              {latest.discovered > 0 && <Chip label="empresas nuevas" value={latest.discovered} accent />}
+              {latest.newsAdded > 0 && <Chip label="news" value={latest.newsAdded} />}
+              {latest.signalsAdded > 0 && <Chip label="signals" value={latest.signalsAdded} accent />}
+              {latest.discovered > 0 && <Chip label="new companies" value={latest.discovered} accent />}
               {latest.fundingUpdates > 0 && <Chip label="funding" value={latest.fundingUpdates} />}
               {latest.exitsDetected > 0 && <Chip label="exits" value={latest.exitsDetected} />}
               {latest.newsAdded === 0 && latest.signalsAdded === 0 && latest.discovered === 0 && (
-                <span className="text-[11px] text-slate">Sin cambios hoy</span>
+                <span className="text-[11px] text-slate">No changes today</span>
               )}
             </>
           )}
@@ -96,17 +95,16 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
 
         {/* Toggle */}
         <span className="text-[11px] text-slate flex-none ml-auto">
-          {open ? "Ocultar ↑" : "Ver detalle →"}
+          {open ? "Hide ↑" : "Details →"}
         </span>
       </button>
 
       {/* Expanded body */}
       {open && (
         <div className="border-t border-chalk px-4 py-3 space-y-3">
-          {/* Runs today */}
           {logs.length > 1 && (
             <p className="text-[10px] text-slate">
-              {logs.length} ejecuciones hoy · mostrando la más reciente
+              {logs.length} runs today · showing most recent
             </p>
           )}
 
@@ -114,44 +112,44 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
             {/* Phase 1 */}
             <div>
               <p className="text-[10px] font-semibold text-slate uppercase tracking-wide mb-1.5">
-                Fase 1 — Empresas existentes
+                Phase 1 — Existing companies
               </p>
               <div className="space-y-1">
-                <Row label="Empresas escaneadas" value={latest.companiesScanned} />
-                <Row label="Noticias agregadas"  value={latest.newsAdded} />
-                <Row label="Señales nuevas"      value={latest.signalsAdded} highlight={latest.signalsAdded > 0} />
-                <Row label="Actualizaciones de funding" value={latest.fundingUpdates} highlight={latest.fundingUpdates > 0} />
-                <Row label="Exits detectados"    value={latest.exitsDetected} highlight={latest.exitsDetected > 0} />
+                <Row label="Companies scanned"   value={latest.companiesScanned} />
+                <Row label="News added"           value={latest.newsAdded} />
+                <Row label="New signals"          value={latest.signalsAdded} highlight={latest.signalsAdded > 0} />
+                <Row label="Funding updates"      value={latest.fundingUpdates} highlight={latest.fundingUpdates > 0} />
+                <Row label="Exits detected"       value={latest.exitsDetected} highlight={latest.exitsDetected > 0} />
               </div>
             </div>
 
             {/* Phase 2 */}
             <div>
               <p className="text-[10px] font-semibold text-slate uppercase tracking-wide mb-1.5">
-                Fase 2 — Discovery de nuevas empresas
+                Phase 2 — New company discovery
               </p>
               <div className="space-y-1">
-                <Row label="Candidatas extraídas por IA" value={latest.candidatesExtracted} />
-                <Row label="Filtradas por tesis"         value={latest.filteredByThesis} />
-                <Row label="Agregadas al radar"          value={latest.discovered} highlight={latest.discovered > 0} />
+                <Row label="AI candidates extracted" value={latest.candidatesExtracted} />
+                <Row label="Filtered by thesis"      value={latest.filteredByThesis} />
+                <Row label="Added to radar"          value={latest.discovered} highlight={latest.discovered > 0} />
               </div>
             </div>
           </div>
 
           {/* Footer */}
           <div className="flex items-center gap-3 pt-1 border-t border-chalk text-[10px] text-slate">
-            {dur && <span>Duración: {dur}</span>}
+            {dur && <span>Duration: {dur}</span>}
             <span className={`font-medium ${running ? "text-amber-600" : ok ? "text-emerald-600" : "text-red-500"}`}>
               {running ? (
-              <span className="inline-flex items-center gap-1">
-                <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
-                En ejecución…
-              </span>
-            ) : ok ? "Estado: OK" : `Error: ${latest.errorMsg ?? "desconocido"}`}
+                <span className="inline-flex items-center gap-1">
+                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
+                  Running…
+                </span>
+              ) : ok ? "Status: OK" : `Error: ${latest.errorMsg ?? "unknown"}`}
             </span>
             {logs.length > 1 && (
               <span className="ml-auto">
-                Otras ejecuciones: {logs.slice(1).map((l) => fmtTime(l.ranAt)).join(", ")}
+                Other runs: {logs.slice(1).map((l) => fmtTime(l.ranAt)).join(", ")}
               </span>
             )}
           </div>

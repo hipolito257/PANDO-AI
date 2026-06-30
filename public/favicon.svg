@@ -1,5 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#202020"/>
-  <path d="M4 22 L8 13 L13 18 L17 10 L22 18 L26 13 L29 22" stroke="white" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
-  <circle cx="27" cy="9" r="2.5" fill="#ff682c"/>
+  <rect width="32" height="32" rx="5" fill="#004F46"/>
+  <!-- Left slope -->
+  <path d="M3 28 C8 22 13 16 16 13" stroke="#D9DBD4" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <!-- Right slope -->
+  <path d="M29 28 C24 22 19 16 16 13" stroke="#D9DBD4" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <!-- Central trunk -->
+  <line x1="16" y1="28" x2="16" y2="13" stroke="#D9DBD4" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- Root curves -->
+  <path d="M16 21 C11 20 7 23 3 28" stroke="#D9DBD4" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+  <path d="M16 21 C21 20 25 23 29 28" stroke="#D9DBD4" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+  <!-- Horizontal divider -->
+  <line x1="3" y1="13" x2="29" y2="13" stroke="#D9DBD4" stroke-width="1.2"/>
+  <!-- PANDO text area (top) — represented by dots for favicon readability -->
+  <rect x="5" y="5" width="22" height="6" rx="1" fill="#D9DBD4" opacity="0.3"/>
 </svg>

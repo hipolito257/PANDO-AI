@@ -2,6 +2,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ChatPanel } from "./ChatPanel";
 import Link from "next/link";
+import {
+  DollarSign, Handshake, User, TrendingUp, AlertTriangle,
+  Flag, AlertCircle, Shuffle, Users, Scale, Pin,
+  Bell,
+} from "lucide-react";
 
 interface TopbarProps {
   title: string;
@@ -20,17 +25,17 @@ type Signal = {
   company: { id: string; name: string; slug: string; status: string } | null;
 };
 
-const SIGNAL_ICON: Record<string, string> = {
-  funding_due: "💰",
-  strategic_buyer_interest: "🤝",
-  exec_change: "👤",
-  revenue_inflection: "📈",
-  risk_flag: "⚠️",
-  exit_rumor: "🏁",
-  exit_signal: "🚨",
-  competitor_acquired: "🔀",
-  hiring_surge: "🚀",
-  regulatory_change: "⚖️",
+const SIGNAL_ICON: Record<string, React.ReactNode> = {
+  funding_due:               <DollarSign size={16} className="text-green-600" />,
+  strategic_buyer_interest:  <Handshake size={16} className="text-orange" />,
+  exec_change:               <User size={16} className="text-graphite" />,
+  revenue_inflection:        <TrendingUp size={16} className="text-green-600" />,
+  risk_flag:                 <AlertTriangle size={16} className="text-amber-500" />,
+  exit_rumor:                <Flag size={16} className="text-graphite" />,
+  exit_signal:               <AlertCircle size={16} className="text-red-500" />,
+  competitor_acquired:       <Shuffle size={16} className="text-orange" />,
+  hiring_surge:              <Users size={16} className="text-orange" />,
+  regulatory_change:         <Scale size={16} className="text-graphite" />,
 };
 
 function fmtRelative(dateStr: string | null): string {
@@ -39,11 +44,11 @@ function fmtRelative(dateStr: string | null): string {
   const mins  = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days  = Math.floor(diff / 86400000);
-  if (mins < 2)   return "Ahora";
-  if (mins < 60)  return `Hace ${mins}m`;
-  if (hours < 24) return `Hace ${hours}h`;
-  if (days < 7)   return `Hace ${days}d`;
-  return new Date(dateStr).toLocaleDateString("es-MX", { month: "short", day: "numeric" });
+  if (mins < 2)   return "Just now";
+  if (mins < 60)  return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7)   return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export function Topbar({ title, subtitle, actions }: TopbarProps) {
@@ -80,7 +85,6 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
     try {
       const d = await fetch("/api/signals?limit=30").then(r => r.json());
       setSignals(d.signals ?? []);
-      // Mark all as read
       if ((d.unreadCount ?? 0) > 0) {
         await fetch("/api/signals", { method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ all: true }) });
@@ -131,12 +135,12 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
             </svg>
             <input
               type="text"
-              placeholder="Pregunta algo a PANDO..."
+              placeholder="Ask PANDO anything..."
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               onFocus={() => { if (!query) openChat(""); }}
-              className="w-full pl-8 pr-4 py-1.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon focus:bg-paper transition-colors cursor-pointer"
+              className="w-full pl-8 pr-4 py-1.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-orange focus:bg-paper transition-colors cursor-pointer"
               readOnly={chatOpen}
             />
             {query && (
@@ -152,7 +156,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
           {/* Chat button */}
           <button onClick={() => openChat("")}
             className="relative w-8 h-8 flex items-center justify-center rounded-[8px] hover:bg-fog text-slate hover:text-carbon transition-colors"
-            title="Abrir PANDO AI">
+            title="Open PANDO AI">
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
               <path d="M7.5 1C3.91 1 1 3.69 1 7c0 1.47.56 2.82 1.5 3.87L1.5 14l3.5-1.5C6.1 13 6.79 13 7.5 13c3.59 0 6.5-2.69 6.5-6S11.09 1 7.5 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
             </svg>
@@ -164,7 +168,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
             <button
               onClick={openBell}
               className={`relative w-8 h-8 flex items-center justify-center rounded-[8px] hover:bg-fog transition-colors ${bellOpen ? "bg-fog text-carbon" : "text-slate hover:text-carbon"}`}
-              title="Notificaciones"
+              title="Notifications"
             >
               <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
                 <path d="M7.5 1.5A4.5 4.5 0 003 6v3l-1.5 2h12L12 9V6A4.5 4.5 0 007.5 1.5z" stroke="currentColor" strokeWidth="1.2" />
@@ -182,7 +186,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
               <div className="absolute right-0 top-10 w-[360px] bg-paper border border-chalk rounded-[12px] shadow-xl z-50 overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-chalk">
-                  <p className="text-[13px] font-semibold text-carbon">Señales recientes</p>
+                  <p className="text-[13px] font-semibold text-carbon">Recent signals</p>
                   <div className="flex items-center gap-2">
                     {signals.some(s => !s.isRead) && (
                       <button onClick={async () => {
@@ -191,7 +195,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
                         setSignals(prev => prev.map(s => ({ ...s, isRead: true })));
                         setUnreadCount(0);
                       }} className="text-[10px] text-slate hover:text-carbon transition-colors">
-                        Marcar todo como leído
+                        Mark all as read
                       </button>
                     )}
                     <button onClick={() => setBellOpen(false)} className="text-slate hover:text-carbon transition-colors p-0.5">
@@ -212,9 +216,9 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
                     </div>
                   ) : signals.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12">
-                      <p className="text-[28px] mb-2">🔔</p>
-                      <p className="text-[13px] font-medium text-carbon">Sin señales aún</p>
-                      <p className="text-[11px] text-slate mt-1">Aparecerán aquí cuando el cron detecte actividad</p>
+                      <Bell size={28} className="text-chalk mb-2" />
+                      <p className="text-[13px] font-medium text-carbon">No signals yet</p>
+                      <p className="text-[11px] text-slate mt-1">They&apos;ll appear here when the cron detects activity</p>
                     </div>
                   ) : (
                     <div className="divide-y divide-chalk">
@@ -234,8 +238,8 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
                           </div>
 
                           {/* Icon */}
-                          <span className="text-[18px] shrink-0 mt-0.5 leading-none">
-                            {SIGNAL_ICON[sig.type] ?? "📌"}
+                          <span className="shrink-0 mt-0.5 leading-none">
+                            {SIGNAL_ICON[sig.type] ?? <Pin size={16} className="text-slate" />}
                           </span>
 
                           {/* Content */}
@@ -269,7 +273,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
                 {signals.length > 0 && (
                   <div className="border-t border-chalk px-4 py-2.5">
                     <p className="text-[10px] text-slate text-center">
-                      Señales de las últimas 30 entradas · El cron actualiza Mon–Fri 8am UTC
+                      Last 30 signals · Cron runs Mon–Fri 8am UTC
                     </p>
                   </div>
                 )}
@@ -278,7 +282,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
           </div>
 
           {/* Avatar */}
-          <div className="w-7 h-7 rounded-full bg-carbon flex items-center justify-center text-white text-[11px] font-semibold">
+          <div className="w-7 h-7 rounded-full bg-orange flex items-center justify-center text-white text-[11px] font-semibold">
             PM
           </div>
         </div>

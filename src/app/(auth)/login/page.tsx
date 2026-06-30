@@ -22,13 +22,13 @@ export default function LoginPage() {
         redirect: false,
       });
       if (res?.error) {
-        setError("Credenciales incorrectas. Verifica tu email y contraseña.");
+        setError("Incorrect credentials. Please check your email and password.");
       } else {
         router.push("/");
         router.refresh();
       }
     } catch {
-      setError("Error de conexión. Intenta de nuevo.");
+      setError("Connection error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -44,8 +44,8 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-paper rounded-card shadow-float p-8">
-          <h1 className="text-[20px] font-semibold text-carbon tracking-tight mb-1">Acceso al equipo</h1>
-          <p className="text-[13px] text-slate mb-6">Plataforma de inteligencia privada</p>
+          <h1 className="text-[20px] font-semibold text-carbon tracking-tight mb-1">Team Access</h1>
+          <p className="text-[13px] text-slate mb-6">Private intelligence platform</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -54,20 +54,20 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@firma.com"
+                placeholder="you@firm.com"
                 required
-                className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon focus:bg-paper transition-colors"
+                className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-orange focus:bg-paper transition-colors"
               />
             </div>
             <div>
-              <label className="block text-[12px] font-medium text-graphite mb-1.5">Contraseña</label>
+              <label className="block text-[12px] font-medium text-graphite mb-1.5">Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon focus:bg-paper transition-colors"
+                className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-orange focus:bg-paper transition-colors"
               />
             </div>
 
@@ -80,15 +80,15 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-carbon text-white text-[14px] font-medium rounded-btn hover:opacity-85 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-2.5 bg-orange text-white text-[14px] font-medium rounded-btn hover:opacity-85 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Ingresando..." : "Ingresar"}
+              {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
         </div>
 
         <p className="text-center text-[11px] text-slate mt-6">
-          PANDO — Acceso restringido al equipo de la firma
+          PANDO — Restricted access for firm members
         </p>
       </div>
     </div>

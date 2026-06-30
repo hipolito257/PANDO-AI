@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("analyst") // admin | analyst | viewer
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions  Session[]
+  accounts  Account[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ── Companies ─────────────────────────────────────────────────────────────────
+
+model Company {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  sector        String?
+  subsector     String?
+  country       String   @default("México")
+  city          String?
+  stage         String?  // seed | series-a | series-b | growth | mature
+  website       String?
+  linkedinUrl   String?
+  description   String?
+  // Financials (USD thousands)
+  revenueUsd    Float?
+  revenueGrowth Float?   // % YoY
+  ebitdaUsd     Float?
+  ebitdaMargin  Float?   // %
+  employees     Int?
+  employeeGrowth Float?  // % YoY
+  // Funding
+  totalFunding  Float?
+  lastFundingAmt Float?
+  lastFundingDate DateTime?
+  fundingStage  String?
+  // Scoring
+  score         Float    @default(0)
+  confidence    Float    @default(0.5)
+  // Status
+  status        String   @default("monitoring") // monitoring | pipeline | portfolio | discarded
+  addedAt       DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  signals       Signal[]
+  tags          CompanyTag[]
+  mandateMatches MandateMatch[]
+  newsItems     NewsItem[]
+  founders      Founder[]
+  financialHistory FinancialSnapshot[]
+}
+
+model FinancialSnapshot {
+  id        String  @id @default(cuid())
+  companyId String
+  year      Int
+  quarter   Int?    // 1-4, null = annual
+  revenueUsd Float?
+  ebitdaUsd  Float?
+  employees  Int?
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, year, quarter])
+}
+
+model Founder {
+  id        String  @id @default(cuid())
+  companyId String
+  name      String
+  title     String?
+  linkedinUrl String?
+  bio       String?
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Signal {
+  id        String   @id @default(cuid())
+  companyId String
+  type      String   // funding_due | exec_change | competitor_acquired | hiring_surge | revenue_inflection | regulatory_change | exit_rumor | strategic_buyer_interest
+  title     String
+  detail    String?
+  severity  String   @default("medium") // low | medium | high
+  isRead    Boolean  @default(false)
+  date      DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model CompanyTag {
+  id        String  @id @default(cuid())
+  companyId String
+  tag       String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, tag])
+}
+
+model NewsItem {
+  id        String   @id @default(cuid())
+  companyId String
+  title     String
+  source    String?
+  url       String?
+  summary   String?
+  date      DateTime
+  sentiment String?  // positive | negative | neutral
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+// ── Mandates ──────────────────────────────────────────────────────────────────
+
+model Mandate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  sectors     String   @default("[]") // JSON array
+  countries   String   @default("[\"México\"]") // JSON array
+  stages      String   @default("[]") // JSON array
+  minRevenue  Float?   // USD thousands
+  maxRevenue  Float?
+  minEbitda   Float?
+  minEmployees Int?
+  maxEmployees Int?
+  thesis      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  matches     MandateMatch[]
+}
+
+model MandateMatch {
+  id         String   @id @default(cuid())
+  companyId  String
+  mandateId  String
+  score      Float    @default(0)
+  rationale  String?
+  tier       String   @default("candidate") // strong | candidate | weak
+  updatedAt  DateTime @updatedAt
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  mandate    Mandate  @relation(fields: [mandateId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, mandateId])
+}
+
+// ── Data Sources ──────────────────────────────────────────────────────────────
+
+model DataSource {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  displayName   String
+  category      String   // financial | news | registry | intelligence | alternative
+  isSubscribed  Boolean  @default(false)
+  isEnabled     Boolean  @default(false)
+  description   String?
+  website       String?
+  logoColor     String?
+  updatedAt     DateTime @updatedAt
+}

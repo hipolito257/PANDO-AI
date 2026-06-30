@@ -9,11 +9,11 @@ import { signOut } from "next-auth/react";
 const NAV = [
   { href: "/",            label: "Dashboard"   },
   { href: "/radar",       label: "Radar"       },
-  { href: "/mandatos",    label: "Mandatos"    },
+  { href: "/mandatos",    label: "Mandates"    },
   { href: "/comparables", label: "Comparables" },
   { href: "/exit",        label: "Exit"        },
-  { href: "/documentos",  label: "Documentos"  },
-  { href: "/conectores",  label: "Conectores"  },
+  { href: "/documentos",  label: "Documents"   },
+  { href: "/conectores",  label: "Connectors"  },
 ];
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -48,7 +48,7 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
         </div>
         <button
           onClick={() => setCollapsed(v => !v)}
-          title={collapsed ? "Expandir menú" : "Colapsar menú"}
+          title={collapsed ? "Expand menu" : "Collapse menu"}
           className="w-8 h-8 flex items-center justify-center rounded-[7px] hover:bg-fog text-slate hover:text-carbon transition-colors shrink-0"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -75,7 +75,7 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
               className={cn(
                 "flex items-center rounded-[8px] text-[13px] font-medium transition-colors",
                 collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
-                active ? "bg-carbon text-white" : "text-graphite hover:bg-fog hover:text-carbon",
+                active ? "bg-orange text-white" : "text-graphite hover:bg-fog hover:text-carbon",
               )}
             >
               <span className="w-4 h-4 flex-none flex items-center justify-center opacity-70">
@@ -100,26 +100,26 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
       <div className="p-2 border-t border-chalk space-y-0.5">
         <Link
           href="/settings"
-          title={collapsed ? "Configuración" : undefined}
+          title={collapsed ? "Settings" : undefined}
           className={cn(
             "flex items-center rounded-[8px] text-[13px] font-medium transition-colors w-full",
             collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
-            pathname === "/settings" ? "bg-carbon text-white" : "text-graphite hover:bg-fog hover:text-carbon",
+            pathname === "/settings" ? "bg-orange text-white" : "text-graphite hover:bg-fog hover:text-carbon",
           )}
         >
           <span className="w-4 h-4 flex-none flex items-center justify-center opacity-70"><IconGear /></span>
-          {!collapsed && <span>Configuración</span>}
+          {!collapsed && <span>Settings</span>}
         </Link>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          title={collapsed ? "Cerrar sesión" : undefined}
+          title={collapsed ? "Sign out" : undefined}
           className={cn(
             "flex items-center rounded-[8px] text-[13px] text-slate hover:text-carbon hover:bg-fog transition-colors w-full",
             collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
           )}
         >
           <IconLogout />
-          {!collapsed && <span>Cerrar sesión</span>}
+          {!collapsed && <span>Sign out</span>}
         </button>
       </div>
     </aside>
