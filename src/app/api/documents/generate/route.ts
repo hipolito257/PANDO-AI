@@ -376,6 +376,8 @@ YOUR TASK: Generate a COMPLETELY NEW Excel with original data.
 ${companyCard ? `COMPANY DATA:\n${companyCard}` : ""}
 ${userPrompt ? `\nUSER INSTRUCTIONS:\n${userPrompt}` : ""}
 
+LANGUAGE — CRITICAL: Write every sheet name, header, and cell value in English, even if the reference documents or company data are in Spanish or another language. Translate anything you pull from those sources into English. Never mix languages in the output.
+
 RESPONSE FORMAT — return ONLY this JSON (no extra text, no markdown):
 {
   "sheets": [
@@ -538,8 +540,9 @@ MODIFICATION RULES:
 1. Generate one replacement per element that needs to change, using the EXACT text from the document in "find".
 2. ${hasCompanyData ? "Replace everything specific to the original company with target company data: name(s), metrics, history, people, investors, geography." : "Apply the changes indicated in the instructions to the document text."}
 3. For narrative text, keep the same tone and length as the original.
-4. Keep UNCHANGED: generic section titles, column labels, structural headers.
-5. CRITICAL: The "find" field must be the EXACT text as it appears in the document (including "&amp;" if "&amp;" appears).
+4. Keep UNCHANGED (in content): generic section titles, column labels, structural headers — do not remove or restructure them.
+5. LANGUAGE — CRITICAL: The final document must be entirely in English, with no mixed languages. This applies to every piece of text you write in "replace", INCLUDING generic section titles/column labels/structural headers if they are not already in English — translate them to English as part of your replacements rather than leaving them unchanged. Never output Spanish (or any other language) text anywhere in "replace".
+6. CRITICAL: The "find" field must be the EXACT text as it appears in the document (including "&amp;" if "&amp;" appears), even if that text is in a non-English language.
 
 Respond ONLY with a JSON array (no text, no markdown):
 [{"find": "exact text from the document", "replace": "new content"}, ...]
