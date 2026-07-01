@@ -356,10 +356,14 @@ export default function RadarPage() {
                     {pipelineCompanies.map((c) => (
                       <tr key={c.id} className="hover:bg-fog/30 transition-colors">
                         <td className="px-5 py-3">
-                          <Link href={`/empresa/${c.slug}`} className="text-[13px] font-semibold text-carbon hover:text-orange transition-colors">
-                            {c.name}
-                          </Link>
-                          {c.createdBy && <p className="text-[9px] text-slate mt-0.5">{c.createdBy}</p>}
+                          <div className="flex items-center gap-2">
+                            <CompanyLogo name={c.name} website={c.website} size="sm" />
+                            <Link href={`/empresa/${c.slug}`} className="text-[13px] font-semibold text-carbon hover:text-orange transition-colors">
+                              {c.name}
+                            </Link>
+                            <WebsiteLink url={c.website} />
+                          </div>
+                          {c.createdBy && <p className="text-[9px] text-slate mt-0.5 pl-[calc(1.5rem+0.5rem)]">{c.createdBy}</p>}
                         </td>
                         <td className="px-3 py-3">
                           <div className="text-[12px] text-graphite">{c.sector ?? "—"}</div>
@@ -428,7 +432,13 @@ export default function RadarPage() {
                     {exitedCompanies.map((c) => (
                       <tr key={c.id} className="hover:bg-fog/30 transition-colors">
                         <td className="px-5 py-3">
-                          <p className="text-[13px] font-semibold text-carbon">{c.name}</p>
+                          <div className="flex items-center gap-2">
+                            <CompanyLogo name={c.name} website={c.website} size="sm" />
+                            <Link href={`/empresa/${c.slug}`} className="text-[13px] font-semibold text-carbon hover:text-orange transition-colors">
+                              {c.name}
+                            </Link>
+                            <WebsiteLink url={c.website} />
+                          </div>
                         </td>
                         <td className="px-3 py-3">
                           <div className="text-[12px] text-graphite">{c.sector ?? "—"}</div>
