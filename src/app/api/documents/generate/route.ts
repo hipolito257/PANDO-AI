@@ -115,16 +115,83 @@ function extractPptxStructured(buffer: Buffer): string {
   } catch { return ""; }
 }
 
+// ── Normalize DOCX XML runs: flatten each paragraph into a single run ────────
+// Word routinely splits one visual sentence across multiple <w:r> runs —
+// not just from spell-check, but whenever formatting changes mid-paragraph
+// (e.g. a bold label "Overview. " followed by plain body text is TWO runs).
+// A literal find/replace across raw XML can only ever match text that is
+// contiguous in a single run, so any find string spanning a formatting
+// boundary silently fails to match — the actual root cause of DOCX generation
+// leaving the template unchanged. Fix: merge every paragraph's runs into one,
+// using the first run's formatting for the merged text. Paragraphs containing
+// images, hyperlinks, or fields are left untouched so nothing gets destroyed.
+function normalizeWordRuns(xml: string): string {
+  return xml.replace(/<w:p\b([^>]*)>([\s\S]*?)<\/w:p>/g, (full, pAttrs, inner) => {
+    if (/<w:drawing\b|<w:hyperlink\b|<w:pict\b|<w:object\b|<w:fldSimple\b|<w:fldChar\b/.test(inner)) {
+      return full;
+    }
+
+    const pPrMatch = inner.match(/^\s*<w:pPr\b[\s\S]*?<\/w:pPr>/);
+    const pPr = pPrMatch ? pPrMatch[0] : "";
+    const afterPPr = pPrMatch ? inner.slice(pPrMatch[0].length) : inner;
+
+    const runs = [...afterPPr.matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)];
+    if (runs.length === 0) return full;
+
+    let firstRPr = "";
+    let mergedText = "";
+    for (const r of runs) {
+      const runXml = r[0];
+      if (!firstRPr) {
+        const rPrMatch = runXml.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+        if (rPrMatch) firstRPr = rPrMatch[0];
+      }
+      const texts = [...runXml.matchAll(/<w:t(?:\s+[\w:]+="[^"]*")*\s*>([\s\S]*?)<\/w:t>/g)].map(m => m[1]);
+      mergedText += texts.join("");
+    }
+
+    if (!mergedText) return full;
+
+    const newRun = `<w:r>${firstRPr}<w:t xml:space="preserve">${mergedText}</w:t></w:r>`;
+    return `<w:p${pAttrs}>${pPr}${newRun}</w:p>`;
+  });
+}
+
+// ── Extract text from DOCX, structured per paragraph ──────────────────────────
+// Normalizes runs first so paragraph text is contiguous and exactly matches
+// what applyReplacementsToOffice will search against — required for reliable
+// find/replace (raw entities like &amp; are kept as-is, not decoded).
+function extractDocxStructured(buffer: Buffer): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const PizZip = require("pizzip");
+  try {
+    const zip = new PizZip(buffer);
+    const file = zip.files["word/document.xml"];
+    if (!file) return "";
+    const xml = normalizeWordRuns(file.asText());
+
+    const lines: string[] = [];
+    const paraRegex = /<w:p\b[\s\S]*?<\/w:p>/g;
+    let m: RegExpExecArray | null;
+    while ((m = paraRegex.exec(xml)) !== null) {
+      const paraText = [...m[0].matchAll(/<w:t(?:\s+[\w:]+="[^"]*")*\s*>([\s\S]*?)<\/w:t>/g)]
+        .map(x => x[1]).join("");
+      if (paraText.trim()) lines.push(paraText);
+    }
+    return lines.join("\n").slice(0, 40000);
+  } catch { return ""; }
+}
+
 // ── Extract text from Office docs (DOCX / PPTX / XLSX) ────────────────────────
 function extractOfficeText(buffer: Buffer, ext: string): string {
   if (ext === "pptx") return extractPptxStructured(buffer);
+  if (ext === "docx") return extractDocxStructured(buffer);
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const PizZip = require("pizzip");
   try {
     const zip = new PizZip(buffer);
     const xmlFiles = Object.keys(zip.files).filter(name => {
-      if (ext === "docx") return name === "word/document.xml";
       if (ext === "xlsx") return !!name.match(/^xl\/worksheets\/sheet\d+\.xml$/) || name === "xl/sharedStrings.xml";
       return false;
     });
@@ -163,13 +230,17 @@ function applyReplacementsToOffice(
     if (type === "docx") return !!name.match(/^word\/(document|header\d*|footer\d*).*\.xml$/);
     return false;
   });
+  let totalMatched = 0;
   for (const fname of xmlFiles) {
     try {
       let content = type === "pptx"
         ? normalizeXmlRuns(zip.files[fname].asText())
+        : type === "docx"
+        ? normalizeWordRuns(zip.files[fname].asText())
         : zip.files[fname].asText();
       for (const { find, replace } of replacements) {
-        if (find && find.length > 1) {
+        if (find && find.length > 1 && content.includes(find)) {
+          totalMatched++;
           // Escape replacement value so special chars don't break the XML
           content = content.split(find).join(escapeXml(replace));
         }
@@ -177,6 +248,7 @@ function applyReplacementsToOffice(
       zip.file(fname, content);
     } catch { /* skip */ }
   }
+  console.log(`[applyReplacementsToOffice] ${type}: ${totalMatched}/${replacements.length} replacements matched at least one file`);
   return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
