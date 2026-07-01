@@ -16,6 +16,17 @@ export const users = pgTable("User", {
   updatedAt: text("updatedAt").default(sql`now()`),
 });
 
+// ── Password Reset Tokens ────────────────────────────────────────────────────
+
+export const passwordResetTokens = pgTable("PasswordResetToken", {
+  id:         text("id").primaryKey(),
+  userId:     text("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash:  text("tokenHash").notNull().unique(),
+  expiresAt:  text("expiresAt").notNull(),
+  usedAt:     text("usedAt"),
+  createdAt:  text("createdAt").default(sql`now()`),
+});
+
 // ── User Settings ──────────────────────────────────────────────────────────────
 
 export const userSettings = pgTable("UserSettings", {
@@ -242,8 +253,13 @@ export const activityLog = pgTable("ActivityLog", {
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ one, many }) => ({
-  settings: one(userSettings, { fields: [users.id], references: [userSettings.userId] }),
-  activity: many(activityLog),
+  settings:     one(userSettings, { fields: [users.id], references: [userSettings.userId] }),
+  activity:     many(activityLog),
+  resetTokens:  many(passwordResetTokens),
+}));
+
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+  user: one(users, { fields: [passwordResetTokens.userId], references: [users.id] }),
 }));
 
 export const activityLogRelations = relations(activityLog, ({ one }) => ({

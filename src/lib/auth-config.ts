@@ -7,7 +7,11 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const isAuthPage = nextUrl.pathname.startsWith("/login");
+      const isAuthPage =
+        nextUrl.pathname.startsWith("/login") ||
+        nextUrl.pathname.startsWith("/signup") ||
+        nextUrl.pathname.startsWith("/forgot-password") ||
+        nextUrl.pathname.startsWith("/reset-password");
       const isApiAuth = nextUrl.pathname.startsWith("/api/auth");
 
       if (isApiAuth) return true;
@@ -17,8 +21,9 @@ export const authConfig: NextAuthConfig = {
       }
       return isLoggedIn;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) { token.id = user.id; token.role = user.role; }
+      if (trigger === "update" && session?.email) { token.email = session.email; }
       return token;
     },
     async session({ session, token }) {

@@ -1,13 +1,26 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+
+type Member = { id: string; name: string; email: string; role: string; createdAt: string | null };
 
 export default function SettingsPage() {
+  const { data: session, update: updateSession } = useSession();
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [newEmail, setNewEmail] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [accountMessage, setAccountMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [members, setMembers] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
@@ -19,7 +32,53 @@ export default function SettingsPage() {
       setLoading(false);
     }
     load();
+
+    async function loadMembers() {
+      const res = await fetch("/api/users");
+      if (res.ok) {
+        const data = await res.json();
+        setMembers(data.users);
+      }
+      setMembersLoading(false);
+    }
+    loadMembers();
   }, []);
+
+  async function handleAccountSave() {
+    setAccountMessage(null);
+    if (!currentPassword) {
+      setAccountMessage({ type: "error", text: "Enter your current password to confirm changes" });
+      return;
+    }
+    if (!newEmail.trim() && !newPassword.trim()) {
+      setAccountMessage({ type: "error", text: "Enter a new email and/or new password" });
+      return;
+    }
+
+    setSavingAccount(true);
+    const res = await fetch("/api/user/account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        currentPassword,
+        newEmail: newEmail.trim() || undefined,
+        newPassword: newPassword.trim() || undefined,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      setAccountMessage({ type: "success", text: "Account updated successfully" });
+      setCurrentPassword("");
+      setNewPassword("");
+      setNewEmail("");
+      await updateSession({ email: data.email });
+      setMembers(prev => prev.map(m => m.id === session?.user?.id ? { ...m, email: data.email } : m));
+    } else {
+      setAccountMessage({ type: "error", text: data.error ?? "Could not update account" });
+    }
+    setSavingAccount(false);
+  }
 
   async function handleSave() {
     if (!apiKey.trim()) {
@@ -63,6 +122,68 @@ export default function SettingsPage() {
         <div className="mb-10">
           <h1 className="text-[28px] font-semibold text-carbon mb-2">Settings</h1>
           <p className="text-[13px] text-slate">Manage your Anthropic API key to use AI features</p>
+        </div>
+
+        {/* Account section */}
+        <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+          <div>
+            <h2 className="text-[16px] font-semibold text-carbon">Account</h2>
+            <p className="text-[12px] text-slate mt-1">
+              Signed in as <span className="font-medium text-carbon">{session?.user?.email}</span>
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[12px] font-medium text-graphite mb-1.5">New email</label>
+              <input
+                type="email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                placeholder="Leave empty to keep current"
+                className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange"
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-graphite mb-1.5">New password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Leave empty to keep current"
+                className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[12px] font-medium text-graphite mb-1.5">Current password (required to confirm)</label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-orange"
+            />
+          </div>
+
+          {accountMessage && (
+            <div className={`rounded-[8px] p-3 text-[12px] border ${
+              accountMessage.type === "success"
+                ? "bg-green-50 text-green-700 border-green-200"
+                : "bg-red-50 text-red-700 border-red-200"
+            }`}>
+              {accountMessage.text}
+            </div>
+          )}
+
+          <button
+            onClick={handleAccountSave}
+            disabled={savingAccount}
+            className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {savingAccount ? "Saving…" : "Update Account"}
+          </button>
         </div>
 
         {/* API Key section */}
@@ -219,6 +340,37 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Members */}
+        <div className="mt-8 bg-white border border-chalk rounded-[12px] p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[14px] font-semibold text-carbon">Team Members</h3>
+            <span className="text-[11px] text-slate">{members.length} joined</span>
+          </div>
+
+          {membersLoading ? (
+            <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+          ) : (
+            <div className="divide-y divide-chalk">
+              {members.map(m => (
+                <div key={m.id} className="flex items-center justify-between py-3">
+                  <div>
+                    <div className="text-[13px] font-medium text-carbon">{m.name}</div>
+                    <div className="text-[12px] text-slate">{m.email}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] font-medium text-graphite bg-fog px-2 py-1 rounded-full capitalize">{m.role}</span>
+                    {m.createdAt && (
+                      <span className="text-[11px] text-slate">
+                        Joined {new Date(m.createdAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Pricing note */}
