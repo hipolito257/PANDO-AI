@@ -29,7 +29,7 @@ export async function callTranslateBatch(texts: string[], apiKey: string, direct
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         max_tokens: 8192,
         messages: [{
           role: "user",
@@ -55,7 +55,8 @@ ${JSON.stringify(chunk)}`,
     }
 
     const data = await res.json();
-    const aiText: string = data?.content?.[0]?.text ?? "";
+    const blocks: { type?: string; text?: string }[] = Array.isArray(data?.content) ? data.content : [];
+    const aiText = blocks.filter(b => b?.type === "text").map(b => b.text ?? "").join("");
     const jsonMatch = aiText.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error("Translation response did not contain a JSON array");
 
