@@ -9,9 +9,7 @@ export const authConfig: NextAuthConfig = {
       const isLoggedIn = !!auth?.user;
       const isAuthPage =
         nextUrl.pathname.startsWith("/login") ||
-        nextUrl.pathname.startsWith("/signup") ||
-        nextUrl.pathname.startsWith("/forgot-password") ||
-        nextUrl.pathname.startsWith("/reset-password");
+        nextUrl.pathname.startsWith("/signup");
       const isApiAuth = nextUrl.pathname.startsWith("/api/auth");
 
       if (isApiAuth) return true;

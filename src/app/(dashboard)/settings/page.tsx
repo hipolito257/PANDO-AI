@@ -3,9 +3,11 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 
 type Member = { id: string; name: string; email: string; role: string; createdAt: string | null };
+type PendingUser = { id: string; name: string; email: string; createdAt: string | null };
 
 export default function SettingsPage() {
   const { data: session, update: updateSession } = useSession();
+  const isAdmin = session?.user?.role === "admin";
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -21,6 +23,14 @@ export default function SettingsPage() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
+
+  const [pending, setPending] = useState<PendingUser[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingBusyId, setPendingBusyId] = useState<string | null>(null);
+
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [resetValue, setResetValue] = useState("");
+  const [resetMessage, setResetMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -43,6 +53,55 @@ export default function SettingsPage() {
     }
     loadMembers();
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) { setPendingLoading(false); return; }
+    async function loadPending() {
+      const res = await fetch("/api/admin/pending-users");
+      if (res.ok) {
+        const data = await res.json();
+        setPending(data.users);
+      }
+      setPendingLoading(false);
+    }
+    loadPending();
+  }, [isAdmin]);
+
+  async function handlePendingAction(id: string, action: "approve" | "decline") {
+    setPendingBusyId(id);
+    const res = await fetch(`/api/admin/pending-users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (res.ok) {
+      const approved = pending.find(p => p.id === id);
+      setPending(prev => prev.filter(p => p.id !== id));
+      if (action === "approve" && approved) {
+        setMembers(prev => [{ id: approved.id, name: approved.name, email: approved.email, role: "analyst", createdAt: approved.createdAt }, ...prev]);
+      }
+    }
+    setPendingBusyId(null);
+  }
+
+  async function handleResetPassword(id: string) {
+    if (resetValue.length < 8) {
+      setResetMessage({ type: "error", text: "Password must be at least 8 characters" });
+      return;
+    }
+    const res = await fetch(`/api/admin/users/${id}/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newPassword: resetValue }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setResetMessage({ type: "success", text: "Password updated — share it with them securely" });
+      setResetValue("");
+    } else {
+      setResetMessage({ type: "error", text: data.error ?? "Could not reset password" });
+    }
+  }
 
   async function handleAccountSave() {
     setAccountMessage(null);
@@ -185,6 +244,49 @@ export default function SettingsPage() {
             {savingAccount ? "Saving…" : "Update Account"}
           </button>
         </div>
+
+        {/* Pending Requests (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[16px] font-semibold text-carbon">Pending Requests</h2>
+              <span className="text-[11px] text-slate">{pending.length} waiting</span>
+            </div>
+
+            {pendingLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : pending.length === 0 ? (
+              <div className="text-[12px] text-slate">No pending join requests.</div>
+            ) : (
+              <div className="divide-y divide-chalk">
+                {pending.map(p => (
+                  <div key={p.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <div className="text-[13px] font-medium text-carbon">{p.name}</div>
+                      <div className="text-[12px] text-slate">{p.email}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handlePendingAction(p.id, "approve")}
+                        disabled={pendingBusyId === p.id}
+                        className="px-3 py-1.5 bg-orange text-white rounded-[8px] text-[12px] font-medium hover:opacity-85 disabled:opacity-40 transition-colors"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handlePendingAction(p.id, "decline")}
+                        disabled={pendingBusyId === p.id}
+                        className="px-3 py-1.5 border border-red-300 text-red-700 rounded-[8px] text-[12px] font-medium hover:bg-red-50 disabled:opacity-40 transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* API Key section */}
         <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-6">
@@ -354,19 +456,60 @@ export default function SettingsPage() {
           ) : (
             <div className="divide-y divide-chalk">
               {members.map(m => (
-                <div key={m.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="text-[13px] font-medium text-carbon">{m.name}</div>
-                    <div className="text-[12px] text-slate">{m.email}</div>
+                <div key={m.id} className="py-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[13px] font-medium text-carbon">{m.name}</div>
+                      <div className="text-[12px] text-slate">{m.email}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] font-medium text-graphite bg-fog px-2 py-1 rounded-full capitalize">{m.role}</span>
+                      {m.createdAt && (
+                        <span className="text-[11px] text-slate">
+                          Joined {new Date(m.createdAt).toLocaleDateString()}
+                        </span>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => {
+                            setResettingId(resettingId === m.id ? null : m.id);
+                            setResetValue("");
+                            setResetMessage(null);
+                          }}
+                          className="text-[11px] font-medium text-carbon hover:underline"
+                        >
+                          {resettingId === m.id ? "Cancel" : "Reset Password"}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-medium text-graphite bg-fog px-2 py-1 rounded-full capitalize">{m.role}</span>
-                    {m.createdAt && (
-                      <span className="text-[11px] text-slate">
-                        Joined {new Date(m.createdAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
+
+                  {resettingId === m.id && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={resetValue}
+                        onChange={e => setResetValue(e.target.value)}
+                        placeholder="New password (min 8 chars)"
+                        className="flex-1 px-3 py-2 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange"
+                      />
+                      <button
+                        onClick={() => handleResetPassword(m.id)}
+                        className="px-3 py-2 bg-orange text-white rounded-[8px] text-[12px] font-medium hover:opacity-85 transition-colors"
+                      >
+                        Set Password
+                      </button>
+                    </div>
+                  )}
+                  {resettingId === m.id && resetMessage && (
+                    <div className={`mt-2 rounded-[8px] p-2 text-[11px] border ${
+                      resetMessage.type === "success"
+                        ? "bg-green-50 text-green-700 border-green-200"
+                        : "bg-red-50 text-red-700 border-red-200"
+                    }`}>
+                      {resetMessage.text}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

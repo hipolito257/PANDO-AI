@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     email: trimmedEmail,
     password: hashed,
     role: "analyst",
+    status: "pending",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });

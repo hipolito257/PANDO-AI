@@ -1,18 +1,16 @@
 "use client";
 import { useState } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Logo } from "@/components/layout/Logo";
 
 export default function SignupPage() {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,16 +42,10 @@ export default function SignupPage() {
         setLoading(false);
         return;
       }
-
-      const signInRes = await signIn("credentials", { email, password, redirect: false });
-      if (signInRes?.error) {
-        router.push("/login");
-        return;
-      }
-      router.push("/");
-      router.refresh();
+      setSubmitted(true);
     } catch {
       setError("Connection error. Please try again.");
+    } finally {
       setLoading(false);
     }
   }
@@ -66,9 +58,19 @@ export default function SignupPage() {
         </div>
 
         <div className="bg-paper rounded-card shadow-float p-8">
-          <h1 className="text-[20px] font-semibold text-carbon tracking-tight mb-1">Create your account</h1>
-          <p className="text-[13px] text-slate mb-6">Only @pando.mx emails can join</p>
+          <h1 className="text-[20px] font-semibold text-carbon tracking-tight mb-1">
+            {submitted ? "Request sent" : "Create your account"}
+          </h1>
+          <p className="text-[13px] text-slate mb-6">
+            {submitted ? "An admin needs to approve you before you can sign in" : "Only @pando.mx emails can join"}
+          </p>
 
+          {submitted ? (
+            <div className="text-[13px] text-carbon bg-green-50 border border-green-200 rounded-[8px] px-3 py-3">
+              Your request to join has been sent. Once an admin approves it, you'll be able to sign in with the
+              password you just chose.
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-[12px] font-medium text-graphite mb-1.5">Name</label>
@@ -129,6 +131,7 @@ export default function SignupPage() {
               {loading ? "Creating account..." : "Create Account"}
             </button>
           </form>
+          )}
 
           <p className="text-center text-[12px] text-slate mt-6">
             Already have an account?{" "}

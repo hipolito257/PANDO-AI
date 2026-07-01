@@ -23,7 +23,7 @@ export default function LoginPage() {
         redirect: false,
       });
       if (res?.error) {
-        setError("Incorrect credentials. Please check your email and password.");
+        setError("Incorrect credentials, or your account is still pending admin approval.");
       } else {
         router.push("/");
         router.refresh();
@@ -61,12 +61,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-[12px] font-medium text-graphite">Password</label>
-                <Link href="/forgot-password" className="text-[11px] text-slate hover:text-carbon hover:underline">
-                  Forgot password?
-                </Link>
-              </div>
+              <label className="block text-[12px] font-medium text-graphite mb-1.5">Password</label>
               <input
                 type="password"
                 value={password}
