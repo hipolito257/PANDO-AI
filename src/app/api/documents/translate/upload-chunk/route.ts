@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
+import { encryptBuffer } from "@/lib/blobCrypto";
 
 const BLOB_STORE_ID = process.env.BLOBPUBLIC_STORE_ID ?? process.env.BLOB_STORE_ID ?? "";
 
-// Dedicated (private) chunk-upload endpoint for the translator, kept separate
-// from /api/templates/chunk because translated documents can be confidential
-// legal/financial files — everything here is stored with access: "private",
-// never publicly reachable by URL.
+// Dedicated chunk-upload endpoint for the translator, kept separate from
+// /api/templates/chunk because translated documents can be confidential
+// legal/financial files. The store here only supports public access (no
+// private Blob store is provisioned), so every chunk is AES-256-GCM encrypted
+// before it's written — a leaked URL only exposes ciphertext.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,8 +28,8 @@ export async function POST(req: NextRequest) {
   try {
     const blob = await put(
       `translate-uploads/${session.user.id}/${uploadId}/${chunkIdx}`,
-      buf,
-      { access: "private", addRandomSuffix: false, allowOverwrite: true, storeId: BLOB_STORE_ID },
+      encryptBuffer(buf),
+      { access: "public", addRandomSuffix: false, allowOverwrite: true, storeId: BLOB_STORE_ID },
     );
     return NextResponse.json({ chunkUrl: blob.url });
   } catch (err: any) {

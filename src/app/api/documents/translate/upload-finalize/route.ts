@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, del, get } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { auth } from "@/lib/auth";
+import { encryptBuffer, decryptBuffer } from "@/lib/blobCrypto";
 
 const BLOB_STORE_ID = process.env.BLOBPUBLIC_STORE_ID ?? process.env.BLOB_STORE_ID ?? "";
 
-// Assembles the private chunk blobs from /upload-chunk into one private
+// Assembles the encrypted chunk blobs from /upload-chunk into one encrypted
 // source-document blob, then deletes the temp chunks.
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -18,17 +19,17 @@ export async function POST(req: NextRequest) {
   try {
     const buffers = await Promise.all(
       chunkUrls.map(async (url) => {
-        const result = await get(url, { access: "private", storeId: BLOB_STORE_ID });
-        if (!result) throw new Error(`Could not fetch chunk: ${url}`);
-        return Buffer.from(await new Response(result.stream).arrayBuffer());
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Could not fetch chunk: ${url}`);
+        return decryptBuffer(Buffer.from(await res.arrayBuffer()));
       }),
     );
     const assembled = Buffer.concat(buffers);
 
     const finalBlob = await put(
       `translate-uploads/${session.user.id}/${crypto.randomUUID()}-${filename}`,
-      assembled,
-      { access: "private", addRandomSuffix: false, storeId: BLOB_STORE_ID },
+      encryptBuffer(assembled),
+      { access: "public", addRandomSuffix: false, storeId: BLOB_STORE_ID },
     );
 
     // Clean up chunk blobs (best-effort, don't block the response)

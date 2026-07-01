@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, get } from "@vercel/blob";
+import { put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userSettings } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { TranslateJob, callTranslateBatch } from "@/lib/documentTranslate";
+import { encryptBuffer, decryptBuffer } from "@/lib/blobCrypto";
 
 export const maxDuration = 120;
 
@@ -36,9 +37,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const jobResult = await get(jobUrl, { access: "private", storeId: BLOB_STORE_ID, useCache: false });
-    if (!jobResult) throw new Error("Translation job not found (it may have expired)");
-    const job = JSON.parse(await new Response(jobResult.stream).text()) as TranslateJob;
+    // Cache-bust: the job blob is overwritten on every batch, and public
+    // blobs can be CDN-cached, so a plain fetch could return a stale copy.
+    const jobRes = await fetch(`${jobUrl}?t=${Date.now()}`, { cache: "no-store" });
+    if (!jobRes.ok) throw new Error("Translation job not found (it may have expired)");
+    const job = JSON.parse(decryptBuffer(Buffer.from(await jobRes.arrayBuffer())).toString("utf-8")) as TranslateJob;
 
     if (job.total === 0) {
       return NextResponse.json({ done: true, translatedCount: 0, total: 0 });
@@ -57,11 +60,10 @@ export async function POST(req: NextRequest) {
       job.translated[startIdx + i] = translatedSlice[i];
     }
 
-    await put(`translate-jobs/${userId}/${jobId}.json`, JSON.stringify(job), {
-      access: "private",
+    await put(`translate-jobs/${userId}/${jobId}.enc`, encryptBuffer(Buffer.from(JSON.stringify(job))), {
+      access: "public",
       addRandomSuffix: false,
       allowOverwrite: true,
-      contentType: "application/json",
       storeId: BLOB_STORE_ID,
     });
 

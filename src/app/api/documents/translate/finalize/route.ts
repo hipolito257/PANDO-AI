@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { del, get } from "@vercel/blob";
+import { del } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import {
   TranslateJob, reconstructDocxXml, reconstructPptxXml, applyXlsxSegments,
 } from "@/lib/documentTranslate";
+import { decryptBuffer } from "@/lib/blobCrypto";
 
 export const maxDuration = 60;
 
@@ -26,17 +27,17 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const jobResult = await get(jobUrl, { access: "private", storeId: BLOB_STORE_ID, useCache: false });
-    if (!jobResult) throw new Error("Translation job not found (it may have expired)");
-    const job = JSON.parse(await new Response(jobResult.stream).text()) as TranslateJob;
+    const jobRes = await fetch(`${jobUrl}?t=${Date.now()}`, { cache: "no-store" });
+    if (!jobRes.ok) throw new Error("Translation job not found (it may have expired)");
+    const job = JSON.parse(decryptBuffer(Buffer.from(await jobRes.arrayBuffer())).toString("utf-8")) as TranslateJob;
 
     if (job.translated.some(t => t === null)) {
       return NextResponse.json({ error: "Translation is not finished yet" }, { status: 409 });
     }
 
-    const sourceResult = await get(job.sourceBlobUrl, { access: "private", storeId: BLOB_STORE_ID });
-    if (!sourceResult) throw new Error("Could not download the original uploaded file");
-    const buffer = Buffer.from(await new Response(sourceResult.stream).arrayBuffer());
+    const sourceRes = await fetch(job.sourceBlobUrl);
+    if (!sourceRes.ok) throw new Error("Could not download the original uploaded file");
+    const buffer = decryptBuffer(Buffer.from(await sourceRes.arrayBuffer()));
 
     let outBuffer: Buffer;
 
