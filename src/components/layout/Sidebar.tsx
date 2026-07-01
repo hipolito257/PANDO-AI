@@ -38,13 +38,13 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
     <aside
       data-sidebar
       className={cn(
-        "no-print flex flex-col shrink-0 bg-paper border-r-2 border-forest h-screen sticky top-0",
+        "no-print flex flex-col shrink-0 bg-forest h-screen sticky top-0",
         "transition-[width] duration-300 ease-in-out overflow-hidden",
         collapsed ? "w-[56px]" : "w-[180px]",
       )}
     >
       {/* Logo + collapse toggle */}
-      <div className="flex items-center h-[60px] px-2 border-b border-chalk shrink-0 gap-2 bg-orange">
+      <div className="flex items-center h-[60px] px-2 border-b border-white/10 shrink-0 gap-2">
         <div className={cn("flex-1 overflow-hidden transition-opacity duration-200", collapsed ? "opacity-0 w-0" : "opacity-100")}>
           <Logo size="sm" />
         </div>
@@ -77,17 +77,17 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
               className={cn(
                 "flex items-center rounded-[8px] text-[13px] font-medium transition-colors",
                 collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
-                active ? "bg-orange text-white" : "text-graphite hover:bg-fog hover:text-carbon",
+                active ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
               )}
             >
-              <span className="w-4 h-4 flex-none flex items-center justify-center opacity-70">
+              <span className="w-4 h-4 flex-none flex items-center justify-center opacity-90">
                 {ICON_MAP[item.href]}
               </span>
               {!collapsed && (
                 <>
                   <span className="flex-1 whitespace-nowrap">{item.label}</span>
                   {count > 0 && !active && (
-                    <span className="bg-orange text-white text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                    <span className="bg-white text-forest text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
                       {count > 99 ? "99+" : count}
                     </span>
                   )}
@@ -99,24 +99,24 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
       </nav>
 
       {/* Bottom */}
-      <div className="p-2 border-t border-chalk space-y-0.5">
+      <div className="p-2 border-t border-white/10 space-y-0.5">
         <Link
           href="/settings"
           title={collapsed ? "Settings" : undefined}
           className={cn(
             "flex items-center rounded-[8px] text-[13px] font-medium transition-colors w-full",
             collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
-            pathname === "/settings" ? "bg-orange text-white" : "text-graphite hover:bg-fog hover:text-carbon",
+            pathname === "/settings" ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
           )}
         >
-          <span className="w-4 h-4 flex-none flex items-center justify-center opacity-70"><IconGear /></span>
+          <span className="w-4 h-4 flex-none flex items-center justify-center opacity-90"><IconGear /></span>
           {!collapsed && <span>Settings</span>}
         </Link>
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           title={collapsed ? "Sign out" : undefined}
           className={cn(
-            "flex items-center rounded-[8px] text-[13px] text-slate hover:text-carbon hover:bg-fog transition-colors w-full",
+            "flex items-center rounded-[8px] text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors w-full",
             collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
           )}
         >
