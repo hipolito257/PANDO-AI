@@ -13,6 +13,7 @@ const NAV = [
   { href: "/comparables", label: "Comparables" },
   { href: "/exit",        label: "Exit"        },
   { href: "/documentos",  label: "Documents"   },
+  { href: "/translate",   label: "Translate"   },
   { href: "/conectores",  label: "Connectors"  },
 ];
 
@@ -23,6 +24,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   "/comparables": <IconComparables />,
   "/exit":        <IconExit />,
   "/documentos":  <IconDocumentos />,
+  "/translate":   <IconTranslate />,
   "/conectores":  <IconConectores />,
 };
 
@@ -181,6 +183,14 @@ function IconDocumentos() {
       <path d="M9 1v3h3" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
       <line x1="4" y1="7" x2="10" y2="7" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
       <line x1="4" y1="9.5" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function IconTranslate() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M1 3h6M4 1.5v1.5M2.5 3c0 2.5 1.8 4 3.5 4.5M5.5 3c-.3 2-1.7 4.5-4.5 5.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M8.5 13l2.3-6h.4l2.3 6M9.2 11h3.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
