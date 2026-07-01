@@ -93,7 +93,7 @@ export function CrunchbaseImport({
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        Buscar en Crunchbase
+        Search Crunchbase
       </button>
 
       {/* Drawer */}
@@ -107,10 +107,10 @@ export function CrunchbaseImport({
               <div>
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 rounded bg-[#0369a1] flex items-center justify-center text-white text-[9px] font-bold">CB</div>
-                  <h2 className="text-[15px] font-semibold text-carbon font-poly">Buscar en Crunchbase</h2>
+                  <h2 className="text-[15px] font-semibold text-carbon font-poly">Search Crunchbase</h2>
                 </div>
                 <p className="text-[11px] text-slate mt-0.5">
-                  Busca empresas y agrégalas al radar con un clic. Requiere API key configurada en Conectores.
+                  Search companies and add them to the radar in one click. Requires an API key configured in Connectors.
                 </p>
               </div>
               <button onClick={() => setOpen(false)}
@@ -131,7 +131,7 @@ export function CrunchbaseImport({
                   type="text"
                   value={query}
                   onChange={e => onQueryChange(e.target.value)}
-                  placeholder='Busca por nombre, sector o ciudad. Ej: "fintech mexico", "Konfío", "SaaS Colombia"'
+                  placeholder='Search by name, sector, or city. E.g. "fintech mexico", "Konfío", "SaaS Colombia"'
                   autoFocus
                   className="w-full pl-9 pr-4 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon"
                 />
@@ -144,7 +144,7 @@ export function CrunchbaseImport({
               {error && (
                 <p className="mt-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[6px] px-3 py-2 leading-snug">
                   {error.includes("not configured")
-                    ? "⚠️ API key de Crunchbase no configurada. Ve a Conectores → Crunchbase → pega tu API key."
+                    ? "⚠️ Crunchbase API key not configured. Go to Connectors → Crunchbase → paste your API key."
                     : error}
                 </p>
               )}
@@ -160,8 +160,8 @@ export function CrunchbaseImport({
                     </svg>
                   </div>
                   <div className="text-center">
-                    <p className="text-[13px] font-medium text-carbon">Escribe para buscar</p>
-                    <p className="text-[11px] text-slate mt-1">Busca empresas en Crunchbase para agregarlas<br/>al radar de PANDO</p>
+                    <p className="text-[13px] font-medium text-carbon">Type to search</p>
+                    <p className="text-[11px] text-slate mt-1">Search companies on Crunchbase to add them<br/>to PANDO&apos;s radar</p>
                   </div>
                   <div className="flex flex-wrap gap-2 justify-center mt-2">
                     {["fintech mexico","SaaS latam","logistics colombia","healthtech mexico"].map(s => (
@@ -203,7 +203,7 @@ export function CrunchbaseImport({
                           <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate">
                             <span>{r.city ? `${r.city}, ` : ""}{r.country}</span>
                             {r.totalFunding && <span>Funding: <strong className="text-carbon">{fmtM(r.totalFunding)}</strong></span>}
-                            {r.employees && <span>{r.employees.toLocaleString()} empleados</span>}
+                            {r.employees && <span>{r.employees.toLocaleString()} employees</span>}
                             {r.website && (
                               <a href={r.website} target="_blank" rel="noopener noreferrer"
                                 className="hover:text-orange transition-colors truncate max-w-[140px]">
@@ -218,7 +218,7 @@ export function CrunchbaseImport({
                           {isImported ? (
                             <span className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                              En radar
+                              In radar
                             </span>
                           ) : (
                             <button
@@ -235,7 +235,7 @@ export function CrunchbaseImport({
                                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                                 </svg>
                               )}
-                              {isImporting ? "Importando..." : "Agregar al radar"}
+                              {isImporting ? "Importing..." : "Add to radar"}
                             </button>
                           )}
                         </div>
@@ -247,18 +247,18 @@ export function CrunchbaseImport({
 
               {!searching && query && results.length === 0 && !error && (
                 <div className="flex flex-col items-center justify-center h-48 text-slate gap-2">
-                  <p className="text-[13px] font-medium">Sin resultados para "{query}"</p>
-                  <p className="text-[11px]">Intenta con otro término o verifica tu API key</p>
+                  <p className="text-[13px] font-medium">No results for "{query}"</p>
+                  <p className="text-[11px]">Try another term or check your API key</p>
                 </div>
               )}
             </div>
 
             {/* Footer */}
             <div className="px-6 py-3 border-t border-chalk flex items-center justify-between text-[10px] text-slate flex-none">
-              <span>Powered by Crunchbase Basic API · {results.length > 0 ? `${results.length} resultados` : "sin resultados"}</span>
+              <span>Powered by Crunchbase Basic API · {results.length > 0 ? `${results.length} results` : "no results"}</span>
               <a href="https://crunchbase.com/settings/api-key" target="_blank" rel="noopener noreferrer"
                 className="hover:text-carbon transition-colors">
-                Obtener API key gratuita →
+                Get free API key →
               </a>
             </div>
           </div>

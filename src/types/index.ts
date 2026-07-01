@@ -37,15 +37,15 @@ export type KPI = {
 // ── Signal label map ────────────────────────────────────────────────────────
 
 export const SIGNAL_LABELS: Record<SignalType, string> = {
-  funding_due: "Ronda de Financiamiento",
-  exec_change: "Cambio Ejecutivo",
-  competitor_acquired: "Competidor Adquirido",
-  hiring_surge: "Aceleración de Contratación",
-  revenue_inflection: "Inflexión de Revenue",
-  regulatory_change: "Cambio Regulatorio",
-  exit_rumor: "Rumor de Salida",
-  exit_signal: "⚠️ Señal de Salida — Confirmar",
-  strategic_buyer_interest: "Interés Comprador Estratégico",
+  funding_due: "Funding Round",
+  exec_change: "Executive Change",
+  competitor_acquired: "Competitor Acquired",
+  hiring_surge: "Hiring Surge",
+  revenue_inflection: "Revenue Inflection",
+  regulatory_change: "Regulatory Change",
+  exit_rumor: "Exit Rumor",
+  exit_signal: "⚠️ Exit Signal — Confirm",
+  strategic_buyer_interest: "Strategic Buyer Interest",
 };
 
 export const SIGNAL_COLORS: Record<SignalType, string> = {

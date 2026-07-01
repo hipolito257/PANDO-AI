@@ -15,8 +15,8 @@ type Mandate = {
 const SECTOR_OPTIONS = ["Software", "SaaS", "Fintech", "Proptech", "Consumer", "Retail", "Logistics", "Healthcare", "Mobility", "Edtech", "Agritech", "Other"];
 const COUNTRY_OPTIONS = ["México", "Colombia", "Chile", "Perú", "Brasil", "Argentina"];
 const STAGE_OPTIONS = [
-  { value: "seed", label: "Seed" }, { value: "series-a", label: "Serie A" },
-  { value: "series-b", label: "Serie B" }, { value: "growth", label: "Growth" }, { value: "mature", label: "Maduro" },
+  { value: "seed", label: "Seed" }, { value: "series-a", label: "Series A" },
+  { value: "series-b", label: "Series B" }, { value: "growth", label: "Growth" }, { value: "mature", label: "Mature" },
 ];
 
 export default function MandatosPage() {
@@ -81,31 +81,31 @@ export default function MandatosPage() {
   return (
     <div>
       <Topbar
-        title="Mandatos"
-        subtitle={`${mandates.filter((m) => m.isActive).length} activos`}
-        actions={<Button variant="fill" size="sm" onClick={openNew}>+ Nuevo mandato</Button>}
+        title="Mandates"
+        subtitle={`${mandates.filter((m) => m.isActive).length} active`}
+        actions={<Button variant="fill" size="sm" onClick={openNew}>+ New mandate</Button>}
       />
 
       <div className="p-6 space-y-4">
         {/* Form panel */}
         {showForm && (
           <Card className="border-2 border-carbon">
-            <SectionHeader title={editId ? "Editar mandato" : "Nuevo mandato"} className="mb-4" />
+            <SectionHeader title={editId ? "Edit mandate" : "New mandate"} className="mb-4" />
             <form onSubmit={save} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] text-slate mb-1 font-medium">Nombre del mandato *</label>
-                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required className={inputClass} placeholder="Ej. Tech & SaaS México" />
+                  <label className="block text-[11px] text-slate mb-1 font-medium">Mandate name *</label>
+                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required className={inputClass} placeholder="E.g. Tech & SaaS Mexico" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate mb-1 font-medium">Descripción</label>
-                  <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputClass} placeholder="Resumen del mandato" />
+                  <label className="block text-[11px] text-slate mb-1 font-medium">Description</label>
+                  <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputClass} placeholder="Mandate summary" />
                 </div>
               </div>
 
               {/* Sectors */}
               <div>
-                <label className="block text-[11px] text-slate mb-2 font-medium">Sectores objetivo</label>
+                <label className="block text-[11px] text-slate mb-2 font-medium">Target sectors</label>
                 <div className="flex flex-wrap gap-1.5">
                   {SECTOR_OPTIONS.map((s) => (
                     <button key={s} type="button" onClick={() => setForm({ ...form, sectors: toggleArr(form.sectors, s) })}
@@ -118,7 +118,7 @@ export default function MandatosPage() {
 
               {/* Countries */}
               <div>
-                <label className="block text-[11px] text-slate mb-2 font-medium">Geografías</label>
+                <label className="block text-[11px] text-slate mb-2 font-medium">Geographies</label>
                 <div className="flex flex-wrap gap-1.5">
                   {COUNTRY_OPTIONS.map((c) => (
                     <button key={c} type="button" onClick={() => setForm({ ...form, countries: toggleArr(form.countries, c) })}
@@ -131,7 +131,7 @@ export default function MandatosPage() {
 
               {/* Stages */}
               <div>
-                <label className="block text-[11px] text-slate mb-2 font-medium">Etapas</label>
+                <label className="block text-[11px] text-slate mb-2 font-medium">Stages</label>
                 <div className="flex flex-wrap gap-1.5">
                   {STAGE_OPTIONS.map((s) => (
                     <button key={s.value} type="button" onClick={() => setForm({ ...form, stages: toggleArr(form.stages, s.value) })}
@@ -145,27 +145,27 @@ export default function MandatosPage() {
               {/* Revenue range */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] text-slate mb-1 font-medium">Revenue mínimo (USD miles)</label>
-                  <input type="number" value={form.minRevenue} onChange={(e) => setForm({ ...form, minRevenue: e.target.value })} className={inputClass} placeholder="Ej. 1000 = $1M" />
+                  <label className="block text-[11px] text-slate mb-1 font-medium">Minimum revenue (USD thousands)</label>
+                  <input type="number" value={form.minRevenue} onChange={(e) => setForm({ ...form, minRevenue: e.target.value })} className={inputClass} placeholder="E.g. 1000 = $1M" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate mb-1 font-medium">Revenue máximo (USD miles)</label>
-                  <input type="number" value={form.maxRevenue} onChange={(e) => setForm({ ...form, maxRevenue: e.target.value })} className={inputClass} placeholder="Ej. 50000 = $50M" />
+                  <label className="block text-[11px] text-slate mb-1 font-medium">Maximum revenue (USD thousands)</label>
+                  <input type="number" value={form.maxRevenue} onChange={(e) => setForm({ ...form, maxRevenue: e.target.value })} className={inputClass} placeholder="E.g. 50000 = $50M" />
                 </div>
               </div>
 
               {/* Thesis */}
               <div>
-                <label className="block text-[11px] text-slate mb-1 font-medium">Tesis de inversión</label>
+                <label className="block text-[11px] text-slate mb-1 font-medium">Investment thesis</label>
                 <textarea value={form.thesis} onChange={(e) => setForm({ ...form, thesis: e.target.value })} rows={3}
-                  className={inputClass + " resize-none"} placeholder="Describe qué buscas en este mandato, ventajas competitivas, mercado objetivo..." />
+                  className={inputClass + " resize-none"} placeholder="Describe what you're looking for in this mandate, competitive advantages, target market..." />
               </div>
 
               <div className="flex items-center gap-3 pt-1">
                 <Button type="submit" variant="fill" loading={saving}>
-                  {editId ? "Guardar cambios" : "Crear mandato"}
+                  {editId ? "Save changes" : "Create mandate"}
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+                <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
               </div>
             </form>
           </Card>
@@ -173,7 +173,7 @@ export default function MandatosPage() {
 
         {/* Mandate cards */}
         {loading ? (
-          <div className="text-center py-12 text-slate text-[13px]">Cargando...</div>
+          <div className="text-center py-12 text-slate text-[13px]">Loading...</div>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {mandates.map((m) => {
@@ -188,15 +188,15 @@ export default function MandatosPage() {
                       <div className="flex items-center gap-2 mb-0.5">
                         <h3 className="text-[14px] font-semibold text-carbon tracking-tight">{m.name}</h3>
                         {m.isActive ? (
-                          <Badge variant="green">Activo</Badge>
+                          <Badge variant="green">Active</Badge>
                         ) : (
-                          <Badge variant="default">Inactivo</Badge>
+                          <Badge variant="default">Inactive</Badge>
                         )}
                       </div>
                       {m.description && <p className="text-[12px] text-slate">{m.description}</p>}
                     </div>
                     <button onClick={() => openEdit(m)} className="text-[11px] text-slate hover:text-carbon font-medium transition-colors px-2 py-1 rounded hover:bg-fog">
-                      Editar
+                      Edit
                     </button>
                   </div>
 
@@ -204,11 +204,11 @@ export default function MandatosPage() {
                   <div className="flex items-center gap-4 mb-4 text-[12px]">
                     <div className="text-center">
                       <div className="text-[20px] font-semibold text-carbon font-poly">{m._count.matches}</div>
-                      <div className="text-slate">candidatas</div>
+                      <div className="text-slate">candidates</div>
                     </div>
                     <div className="text-center">
                       <div className="text-[20px] font-semibold text-carbon font-poly">{m.matches.length}</div>
-                      <div className="text-slate">fuerte match</div>
+                      <div className="text-slate">strong match</div>
                     </div>
                   </div>
 
@@ -242,9 +242,9 @@ export default function MandatosPage() {
 
                   {/* Audit */}
                   <div className="mt-3 pt-3 border-t border-chalk flex items-center justify-between text-[10px] text-slate">
-                    <span>Creado por <span className="font-medium text-graphite">{m.createdBy ?? "Sistema PANDO"}</span></span>
+                    <span>Created by <span className="font-medium text-graphite">{m.createdBy ?? "PANDO System"}</span></span>
                     {m.updatedBy && m.updatedBy !== m.createdBy && (
-                      <span>Editado por <span className="font-medium text-graphite">{m.updatedBy}</span></span>
+                      <span>Edited by <span className="font-medium text-graphite">{m.updatedBy}</span></span>
                     )}
                   </div>
                 </Card>

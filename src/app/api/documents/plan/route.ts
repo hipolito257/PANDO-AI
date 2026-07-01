@@ -25,7 +25,7 @@ function fmt(n: unknown, suffix = ""): string {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   try {
     const formData = await req.formData();
@@ -37,12 +37,12 @@ export async function POST(req: NextRequest) {
 
     const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, session.user.id)).limit(1);
     const apiKey = settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "API key no configurada" }, { status: 400 });
+    if (!apiKey) return NextResponse.json({ error: "API key not configured" }, { status: 400 });
 
     // Load company + peers
-    let companyCard = "No se seleccionó empresa.";
-    let peersCard   = "Sin peers configurados.";
-    let companyName = "La Empresa";
+    let companyCard = "No company was selected.";
+    let peersCard   = "No peers configured.";
+    let companyName = "The Company";
 
     if (companyId) {
       const [co] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
@@ -50,10 +50,10 @@ export async function POST(req: NextRequest) {
         companyName = co.name;
         const [snap] = await db.select().from(financialSnapshots).where(eq(financialSnapshots.companyId, companyId)).orderBy(desc(financialSnapshots.year)).limit(1);
         companyCard = `
-Empresa: ${co.name} | Sector: ${co.sector ?? "N/D"} | País: ${co.country ?? "N/D"} | Stage: ${co.stage ?? "N/D"}
-Revenue: ${fmt(co.revenueUsd ?? snap?.revenueUsd)} | Crecimiento: ${co.revenueGrowth != null ? `${(co.revenueGrowth * 100).toFixed(0)}%` : "N/D"} YoY
-EBITDA: ${fmt(co.ebitdaUsd ?? snap?.ebitdaUsd)} | Margen: ${co.ebitdaMargin != null ? `${(co.ebitdaMargin * 100).toFixed(0)}%` : "N/D"}
-Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripción: ${co.description ?? "N/D"}`.trim();
+Company: ${co.name} | Sector: ${co.sector ?? "N/D"} | Country: ${co.country ?? "N/D"} | Stage: ${co.stage ?? "N/D"}
+Revenue: ${fmt(co.revenueUsd ?? snap?.revenueUsd)} | Growth: ${co.revenueGrowth != null ? `${(co.revenueGrowth * 100).toFixed(0)}%` : "N/D"} YoY
+EBITDA: ${fmt(co.ebitdaUsd ?? snap?.ebitdaUsd)} | Margin: ${co.ebitdaMargin != null ? `${(co.ebitdaMargin * 100).toFixed(0)}%` : "N/D"}
+Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Description: ${co.description ?? "N/D"}`.trim();
 
         const [cs] = await db.select().from(compSets).where(eq(compSets.companyId, companyId)).limit(1);
         if (cs?.tickers) {
@@ -63,13 +63,13 @@ Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripc
             const peers = await db.select().from(publicComps).where(inArray(publicComps.ticker, tickers));
             const evRev = peers.map(p => p.evRevenue).filter((n): n is number => n != null);
             const evEbt = peers.map(p => p.evEbitda).filter((n): n is number => n != null);
-            peersCard = `Peers: ${peers.map(p => p.ticker).join(", ")} | EV/Rev mediana: ${median(evRev)?.toFixed(1) ?? "N/D"}x | EV/EBITDA mediana: ${median(evEbt)?.toFixed(1) ?? "N/D"}x`;
+            peersCard = `Peers: ${peers.map(p => p.ticker).join(", ")} | EV/Rev median: ${median(evRev)?.toFixed(1) ?? "N/D"}x | EV/EBITDA median: ${median(evEbt)?.toFixed(1) ?? "N/D"}x`;
           }
         }
       }
     }
 
-    const today = new Date().toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+    const today = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
     // Download blob files and build multimodal content parts
     const msgContent: Anthropic.MessageParam["content"] = [];
@@ -88,10 +88,10 @@ Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripc
     }
 
     const userText = [
-      userPrompt ? `INSTRUCCIONES DEL USUARIO:\n${userPrompt}` : null,
-      blobUrls.length ? `ARCHIVOS DE RESPALDO ADJUNTOS: ${blobUrls.map(b => b.name).join(", ")}` : null,
-      feedback   ? `FEEDBACK SOBRE EL PLAN ANTERIOR:\n${feedback}` : null,
-      "Genera el plan de presentación.",
+      userPrompt ? `USER INSTRUCTIONS:\n${userPrompt}` : null,
+      blobUrls.length ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")}` : null,
+      feedback   ? `FEEDBACK ON THE PREVIOUS PLAN:\n${feedback}` : null,
+      "Generate the presentation plan.",
     ].filter(Boolean).join("\n\n");
 
     msgContent.push({ type: "text", text: userText });
@@ -100,52 +100,52 @@ Empleados: ${co.employees ?? "N/D"} | Fondeo: ${fmt(co.totalFunding)} | Descripc
     const resp = await claude.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
-      system: `Eres un analista senior de PANDO, un fondo de private equity. Tu tarea es planear una presentación de inversión (NO construirla todavía — solo el plan).
+      system: `You are a senior analyst at PANDO, a private equity fund. Your task is to plan an investment presentation (NOT build it yet — just the plan).
 
-DATOS DE LA EMPRESA:
+COMPANY DATA:
 ${companyCard}
 
 PEERS:
 ${peersCard}
 
-FECHA: ${today}
+DATE: ${today}
 
-INSTRUCCIONES:
-- Decide la estructura completa de la presentación basándote en los datos disponibles.
-- La presentación SIEMPRE empieza con portada (cover) y termina con contraportada (back_cover).
-- Entre portada y contraportada: secciones (divider) y slides de datos.
-- Sé específico: para cada slide indica el título, el mensaje clave (takeaway), y qué tipo de gráfica o tabla usarías.
-- Usa datos reales. Si no tienes un dato, elige un ángulo diferente.
-- Típico: 10-16 slides totales incluyendo portada, contraportada y dividers.
+INSTRUCTIONS:
+- Decide the full structure of the presentation based on the available data.
+- The presentation ALWAYS starts with a cover slide and ends with a back cover.
+- Between cover and back cover: sections (divider) and data slides.
+- Be specific: for each slide, indicate the title, the key message (takeaway), and what type of chart or table you would use.
+- Use real data. If you don't have a data point, pick a different angle.
+- Typical: 10-16 total slides including cover, back cover, and dividers.
 
-TIPOS DE ELEMENTOS (para indicar en el plan):
-- bar chart: comparación de 2+ series por categoría
-- line chart: tendencia en el tiempo
-- line_multi: múltiples series en el tiempo
-- donut: partes de un todo (market share, mix)
-- hbar_float: rangos o waterfall (ej. valuation)
-- scatter: posicionamiento XY (ej. growth vs margen)
-- quadrant: matriz 2x2
-- table: datos tabulares (comparables, financials)
-- textboxes: texto/estadísticas clave (para overview o thesis)
+ELEMENT TYPES (to indicate in the plan):
+- bar chart: comparing 2+ series by category
+- line chart: trend over time
+- line_multi: multiple series over time
+- donut: parts of a whole (market share, mix)
+- hbar_float: ranges or waterfall (e.g. valuation)
+- scatter: XY positioning (e.g. growth vs margin)
+- quadrant: 2x2 matrix
+- table: tabular data (comparables, financials)
+- textboxes: text/key statistics (for overview or thesis)
 
-FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto extra, sin markdown):
+RESPONSE FORMAT — return ONLY this JSON (no extra text, no markdown):
 {
-  "deck_title": "Nombre Empresa — Investment Overview",
+  "deck_title": "Company Name — Investment Overview",
   "deck_subtitle": "Private & Confidential | ${today}",
   "company": "${companyName}",
   "slides": [
-    { "index": 0, "type": "cover", "title": "Nombre Empresa", "subtitle": "Investment Overview | ${today}" },
-    { "index": 1, "type": "divider", "section": "LA EMPRESA" },
-    { "index": 2, "type": "slide", "section": "LA EMPRESA", "title": "OVERVIEW DE LA EMPRESA", "takeaway": "Mensaje clave específico con datos reales", "chart": "textboxes: métricas clave (Revenue, EBITDA, empleados, founded)" },
-    { "index": 3, "type": "slide", "section": "LA EMPRESA", "title": "POSICIONAMIENTO DE MARCA", "takeaway": "...", "chart": "bar: percepción vs experiencia + table: NPS vs peers" },
-    { "index": 4, "type": "divider", "section": "EL MERCADO" },
-    { "index": 5, "type": "slide", "section": "EL MERCADO", "title": "TAMAÑO Y CRECIMIENTO DEL MERCADO", "takeaway": "...", "chart": "line: evolución TAM 2020-2025" },
+    { "index": 0, "type": "cover", "title": "Company Name", "subtitle": "Investment Overview | ${today}" },
+    { "index": 1, "type": "divider", "section": "THE COMPANY" },
+    { "index": 2, "type": "slide", "section": "THE COMPANY", "title": "COMPANY OVERVIEW", "takeaway": "Specific key message with real data", "chart": "textboxes: key metrics (Revenue, EBITDA, employees, founded)" },
+    { "index": 3, "type": "slide", "section": "THE COMPANY", "title": "BRAND POSITIONING", "takeaway": "...", "chart": "bar: perception vs experience + table: NPS vs peers" },
+    { "index": 4, "type": "divider", "section": "THE MARKET" },
+    { "index": 5, "type": "slide", "section": "THE MARKET", "title": "MARKET SIZE AND GROWTH", "takeaway": "...", "chart": "line: TAM evolution 2020-2025" },
     { "index": 6, "type": "divider", "section": "FINANCIALS" },
-    { "index": 7, "type": "slide", "section": "FINANCIALS", "title": "EVOLUCIÓN FINANCIERA", "takeaway": "...", "chart": "line_multi: revenue y EBITDA 2021-2025" },
-    { "index": 8, "type": "divider", "section": "INVERSIÓN" },
-    { "index": 9, "type": "slide", "section": "INVERSIÓN", "title": "TESIS DE INVERSIÓN", "takeaway": "...", "chart": "textboxes: 4 pilares de inversión" },
-    { "index": 10, "type": "slide", "section": "INVERSIÓN", "title": "VALUACIÓN", "takeaway": "...", "chart": "hbar_float: rangos de valuación por metodología" },
+    { "index": 7, "type": "slide", "section": "FINANCIALS", "title": "FINANCIAL EVOLUTION", "takeaway": "...", "chart": "line_multi: revenue and EBITDA 2021-2025" },
+    { "index": 8, "type": "divider", "section": "INVESTMENT" },
+    { "index": 9, "type": "slide", "section": "INVESTMENT", "title": "INVESTMENT THESIS", "takeaway": "...", "chart": "textboxes: 4 investment pillars" },
+    { "index": 10, "type": "slide", "section": "INVESTMENT", "title": "VALUATION", "takeaway": "...", "chart": "hbar_float: valuation ranges by methodology" },
     { "index": 11, "type": "back_cover" }
   ]
 }`,
@@ -157,7 +157,7 @@ FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto extra, sin ma
     // Extract JSON — strip markdown fences if present
     const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
     const jsonStr = fenced ? fenced[1] : (raw.match(/\{[\s\S]*\}/) ?? [null])[0];
-    if (!jsonStr) return NextResponse.json({ error: "Claude no devolvió un plan válido", raw: raw.slice(0, 300) }, { status: 500 });
+    if (!jsonStr) return NextResponse.json({ error: "Claude did not return a valid plan", raw: raw.slice(0, 300) }, { status: 500 });
 
     // Repair common Claude JSON issues using jsonrepair
     const pre = jsonStr
@@ -171,7 +171,7 @@ FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto extra, sin ma
       plan = JSON.parse(repaired);
     } catch (parseErr) {
       return NextResponse.json({
-        error: `Error de formato en el plan: ${(parseErr as Error).message}`,
+        error: `Format error in plan: ${(parseErr as Error).message}`,
         raw: jsonStr.slice(0, 400),
       }, { status: 500 });
     }
@@ -179,6 +179,6 @@ FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto extra, sin ma
 
   } catch (err) {
     console.error("[plan]", err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Error inesperado" }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Unexpected error" }, { status: 500 });
   }
 }

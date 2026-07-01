@@ -43,9 +43,9 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
         const err = await res.json().catch(() => ({}));
         if ((err as any).error === "no_key") {
           setNoKey(true);
-          setMessages(prev => prev.slice(0, -1).concat({ role: "assistant", content: "⚠️ Necesitas configurar tu API key de Anthropic en **Configuración** para usar el chat." }));
+          setMessages(prev => prev.slice(0, -1).concat({ role: "assistant", content: "⚠️ You need to configure your Anthropic API key in **Settings** to use the chat." }));
         } else {
-          setMessages(prev => prev.slice(0, -1).concat({ role: "assistant", content: "Error al conectar con la IA. Intenta de nuevo." }));
+          setMessages(prev => prev.slice(0, -1).concat({ role: "assistant", content: "Error connecting to the AI. Please try again." }));
         }
         return;
       }
@@ -67,7 +67,7 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
         });
       }
     } catch {
-      setMessages(prev => prev.slice(0, -1).concat({ role: "assistant", content: "Error de conexión. Verifica que el servidor esté corriendo." }));
+      setMessages(prev => prev.slice(0, -1).concat({ role: "assistant", content: "Connection error. Verify the server is running." }));
     } finally {
       setStreaming(false);
     }
@@ -124,13 +124,13 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
             <div className="w-8 h-8 rounded-full bg-carbon flex items-center justify-center text-white text-[14px]">✦</div>
             <div>
               <div className="text-[14px] font-semibold text-carbon">PANDO AI</div>
-              <div className="text-[10px] text-slate">Haiku · Contexto del radar completo</div>
+              <div className="text-[10px] text-slate">Haiku · Full radar context</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {messages.length > 0 && (
               <button onClick={clearChat} className="text-[11px] text-slate hover:text-carbon px-2 py-1 rounded hover:bg-fog transition-colors">
-                Limpiar
+                Clear
               </button>
             )}
             <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-[8px] hover:bg-fog text-slate hover:text-carbon transition-colors">
@@ -151,16 +151,16 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
               <div className="text-4xl mb-3">✦</div>
               <div className="text-[14px] font-semibold text-carbon mb-2">PANDO AI</div>
               <div className="text-[12px] text-slate mb-6 leading-relaxed">
-                Pregúntame cualquier cosa sobre las empresas del radar, métricas, comparaciones o análisis.
+                Ask me anything about the companies on the radar, metrics, comparisons, or analysis.
               </div>
               {/* Suggested prompts */}
               <div className="space-y-2 text-left">
                 {[
-                  "¿Cuáles son las empresas con mayor crecimiento?",
-                  "¿Qué empresa tiene mejor margen EBITDA?",
-                  "Compara Auronix y Simetrik",
-                  "¿Cuántas empresas de Software tengo en el radar?",
-                  "¿Cuál es la empresa con mayor score?",
+                  "Which companies have the highest growth?",
+                  "Which company has the best EBITDA margin?",
+                  "Compare Auronix and Simetrik",
+                  "How many Software companies do I have on the radar?",
+                  "Which company has the highest score?",
                 ].map(q => (
                   <button key={q} onClick={() => sendMessage(q)}
                     className="w-full text-left text-[12px] text-graphite bg-fog border border-chalk rounded-[8px] px-3 py-2 hover:border-carbon hover:bg-chalk/40 transition-colors">
@@ -189,7 +189,7 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
                         <span key={i} className="w-1.5 h-1.5 bg-slate rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                       ))}
                     </span>
-                    Pensando...
+                    Thinking...
                   </span>
                 ) : (
                   <MarkdownText text={msg.content} />
@@ -197,7 +197,7 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
               </div>
               {msg.role === "user" && (
                 <div className="w-6 h-6 rounded-full bg-graphite flex items-center justify-center text-white text-[9px] font-bold shrink-0 mt-0.5">
-                  TÚ
+                  YOU
                 </div>
               )}
             </div>
@@ -206,10 +206,10 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
           {/* API key warning */}
           {noKey && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-[10px] p-4 text-center">
-              <div className="text-[12px] text-yellow-800 font-medium mb-2">API key no configurada</div>
+              <div className="text-[12px] text-yellow-800 font-medium mb-2">API key not configured</div>
               <a href="/settings" onClick={onClose}
                 className="text-[11px] font-semibold text-yellow-700 underline hover:text-yellow-900">
-                Ir a Configuración →
+                Go to Settings →
               </a>
             </div>
           )}
@@ -226,7 +226,7 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={streaming}
-              placeholder="Escribe tu pregunta..."
+              placeholder="Type your question..."
               className="flex-1 bg-fog border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon placeholder:text-slate/50 focus:outline-none focus:border-carbon transition-colors disabled:opacity-50"
             />
             <button
@@ -245,7 +245,7 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
               )}
             </button>
           </div>
-          <div className="text-[10px] text-slate/50 text-center mt-2">Enter para enviar · Esc para cerrar</div>
+          <div className="text-[10px] text-slate/50 text-center mt-2">Enter to send · Esc to close</div>
         </div>
       </div>
     </>

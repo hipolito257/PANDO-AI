@@ -30,7 +30,7 @@ function fmtX(n: unknown): string {
   return isNaN(v) ? "N/D" : `${v.toFixed(1)}x`;
 }
 function today(): string {
-  return new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" });
+  return new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
 function median(arr: number[]): number | null {
@@ -80,7 +80,7 @@ function extractPptxStructured(buffer: Buffer): string {
     const lines: string[] = [];
     for (let si = 0; si < slideFiles.length; si++) {
       const slideXml = normalizeXmlRuns(zip.files[slideFiles[si]].asText());
-      const slideLines: string[] = [`=== DIAPOSITIVA ${si + 1} ===`];
+      const slideLines: string[] = [`=== SLIDE ${si + 1} ===`];
 
       // Extract each shape's text
       const shapeRegex = /<p:sp\b[\s\S]*?<\/p:sp>/g;
@@ -273,18 +273,18 @@ async function generateXlsxNewContent(
   const medEbit = median(peers.map(p => Number(p.evEbitda)).filter(n => !isNaN(n) && n > 0));
 
   const companyCard = company ? `
-Empresa: ${company.name} | Sector: ${company.sector ?? "N/D"} | País: ${company.country}
-Revenue: ${fmtB(company.revenueUsd)} | Crecimiento: ${fmtPct(company.revenueGrowth)}
-EBITDA: ${fmtB(company.ebitdaUsd)} | Margen: ${fmtPct(company.ebitdaMargin)}
-Empleados: ${company.employees ?? "N/D"} | Etapa: ${company.stage ?? "N/D"}
-Fondeo total: ${fmtB(company.totalFunding)} | Descripción: ${company.description ?? "N/D"}
+Company: ${company.name} | Sector: ${company.sector ?? "N/D"} | Country: ${company.country}
+Revenue: ${fmtB(company.revenueUsd)} | Growth: ${fmtPct(company.revenueGrowth)}
+EBITDA: ${fmtB(company.ebitdaUsd)} | Margin: ${fmtPct(company.ebitdaMargin)}
+Employees: ${company.employees ?? "N/D"} | Stage: ${company.stage ?? "N/D"}
+Total funding: ${fmtB(company.totalFunding)} | Description: ${company.description ?? "N/D"}
 EV/Revenue peers: ${medRev ? fmtX(medRev) : "N/D"} | EV/EBITDA peers: ${medEbit ? fmtX(medEbit) : "N/D"}
-Fecha: ${today()}
+Date: ${today()}
 `.trim() : null;
 
   const contentBlocks: any[] = [];
   if (contextFiles.length > 0) {
-    contentBlocks.push({ type: "text", text: `Documentos de referencia (${contextFiles.length}):` });
+    contentBlocks.push({ type: "text", text: `Reference documents (${contextFiles.length}):` });
     for (const f of contextFiles) {
       const block = buildContextBlock(f);
       if (block) contentBlocks.push(block);
@@ -293,32 +293,32 @@ Fecha: ${today()}
 
   contentBlocks.push({
     type: "text",
-    text: `Eres un analista financiero de PANDO, un fondo de private equity.
+    text: `You are a financial analyst at PANDO, a private equity fund.
 
-TU TAREA: Genera un Excel COMPLETAMENTE NUEVO con datos originales.
-- NO copies la estructura de ninguna plantilla existente.
-- TÚ decides qué hojas crear, qué columnas usar, qué datos incluir.
-- Usa los datos de la empresa y documentos de referencia para el contenido.
-- El Excel debe ser útil para análisis de inversión.
+YOUR TASK: Generate a COMPLETELY NEW Excel with original data.
+- Do NOT copy the structure of any existing template.
+- YOU decide which sheets to create, which columns to use, which data to include.
+- Use the company data and reference documents for the content.
+- The Excel should be useful for investment analysis.
 
-${companyCard ? `DATOS DE LA EMPRESA:\n${companyCard}` : ""}
-${userPrompt ? `\nINSTRUCCIONES DEL USUARIO:\n${userPrompt}` : ""}
+${companyCard ? `COMPANY DATA:\n${companyCard}` : ""}
+${userPrompt ? `\nUSER INSTRUCTIONS:\n${userPrompt}` : ""}
 
-FORMATO DE RESPUESTA — devuelve ÚNICAMENTE este JSON (sin texto adicional, sin markdown):
+RESPONSE FORMAT — return ONLY this JSON (no extra text, no markdown):
 {
   "sheets": [
     {
-      "name": "Nombre hoja",
+      "name": "Sheet name",
       "headers": ["Col1", "Col2", "Col3"],
       "rows": [
-        ["valor1", "valor2", "valor3"],
-        ["valor4", "valor5", "valor6"]
+        ["value1", "value2", "value3"],
+        ["value4", "value5", "value6"]
       ]
     }
   ]
 }
 
-Genera entre 1 y 4 hojas con datos reales y completos. No uses placeholders.`
+Generate between 1 and 4 sheets with real, complete data. Do not use placeholders.`
   });
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -341,7 +341,7 @@ Genera entre 1 y 4 hojas con datos reales y completos. No uses placeholders.`
   const aiText: string = data?.content?.[0]?.text ?? "";
 
   const jsonMatch = aiText.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Claude no devolvió JSON válido para el Excel");
+  if (!jsonMatch) throw new Error("Claude did not return valid JSON for the Excel");
 
   const plan: { sheets: { name: string; headers: string[]; rows: (string|number)[][] }[] } = JSON.parse(jsonMatch[0]);
 
@@ -409,17 +409,17 @@ async function generateWithAI(
   const medEbit = median(peers.map(p => Number(p.evEbitda)).filter(n => !isNaN(n) && n > 0));
 
   const companyCard = company ? `
-Empresa: ${company.name}
-Sector: ${company.sector ?? "N/D"} | País: ${company.country} | Ciudad: ${company.city ?? "N/D"}
-Descripción: ${company.description ?? "N/D"}
-Revenue: ${fmtB(company.revenueUsd)} | Crecimiento YoY: ${fmtPct(company.revenueGrowth)}
-EBITDA: ${fmtB(company.ebitdaUsd)} | Margen EBITDA: ${fmtPct(company.ebitdaMargin)}
-Empleados: ${company.employees ?? "N/D"} | Etapa: ${company.stage ?? "N/D"} | Score PANDO: ${company.score?.toFixed(1) ?? "N/D"}
-Fondeo total: ${fmtB(company.totalFunding)} | Última ronda: ${fmtB(company.lastFundingAmt)} | Stage fondeo: ${company.fundingStage ?? "N/D"}
-Peers públicos: ${peers.map(p => p.ticker).join(", ") || "N/D"}
-EV/Revenue mediana (peers): ${medRev ? fmtX(medRev) : "N/D"}
-EV/EBITDA mediana (peers): ${medEbit ? fmtX(medEbit) : "N/D"}
-Fecha: ${today()}
+Company: ${company.name}
+Sector: ${company.sector ?? "N/D"} | Country: ${company.country} | City: ${company.city ?? "N/D"}
+Description: ${company.description ?? "N/D"}
+Revenue: ${fmtB(company.revenueUsd)} | YoY Growth: ${fmtPct(company.revenueGrowth)}
+EBITDA: ${fmtB(company.ebitdaUsd)} | EBITDA Margin: ${fmtPct(company.ebitdaMargin)}
+Employees: ${company.employees ?? "N/D"} | Stage: ${company.stage ?? "N/D"} | PANDO Score: ${company.score?.toFixed(1) ?? "N/D"}
+Total funding: ${fmtB(company.totalFunding)} | Last round: ${fmtB(company.lastFundingAmt)} | Funding stage: ${company.fundingStage ?? "N/D"}
+Public peers: ${peers.map(p => p.ticker).join(", ") || "N/D"}
+EV/Revenue median (peers): ${medRev ? fmtX(medRev) : "N/D"}
+EV/EBITDA median (peers): ${medEbit ? fmtX(medEbit) : "N/D"}
+Date: ${today()}
 `.trim() : null;
 
   const templateText = extractOfficeText(templateBuffer, templateType);
@@ -431,7 +431,7 @@ Fecha: ${today()}
   if (contextFiles.length > 0) {
     contentBlocks.push({
       type: "text",
-      text: `A continuación hay ${contextFiles.length} documento(s) de respaldo. Léelos con atención para extraer datos relevantes:`
+      text: `Below are ${contextFiles.length} supporting document(s). Read them carefully to extract relevant data:`
     });
     for (const f of contextFiles) {
       const block = buildContextBlock(f);
@@ -441,11 +441,11 @@ Fecha: ${today()}
 
   // Main instruction
   const companySection = companyCard
-    ? `DATOS DE LA EMPRESA (base de datos PANDO):\n${companyCard}\n\n${contextFiles.length > 0 ? "IMPORTANTE: Los documentos de respaldo de arriba contienen información adicional. Prioriza esos datos si son más detallados o actuales que los de la base de datos." : ""}`
+    ? `COMPANY DATA (PANDO database):\n${companyCard}\n\n${contextFiles.length > 0 ? "IMPORTANT: The supporting documents above contain additional information. Prioritize that data if it is more detailed or current than the database's." : ""}`
     : "";
 
   const userInstructions = userPrompt
-    ? `INSTRUCCIONES ESPECÍFICAS DEL USUARIO:\n${userPrompt}\n\nSigue estas instrucciones como guía principal para personalizar el documento.`
+    ? `SPECIFIC USER INSTRUCTIONS:\n${userPrompt}\n\nFollow these instructions as the main guide for customizing the document.`
     : "";
 
   const hasCompanyData = !!companySection;
@@ -453,26 +453,26 @@ Fecha: ${today()}
 
   contentBlocks.push({
     type: "text",
-    text: `Eres un experto en análisis de documentos y generación de contenido profesional. Tu tarea es modificar un documento existente según las instrucciones y datos proporcionados.
+    text: `You are an expert in document analysis and professional content generation. Your task is to modify an existing document according to the instructions and data provided.
 
-${hasCompanyData ? `DATOS DE LA EMPRESA TARGET:\n${companySection}` : ""}
+${hasCompanyData ? `TARGET COMPANY DATA:\n${companySection}` : ""}
 ${hasInstructions ? `${userInstructions}` : ""}
-${!hasCompanyData && !hasInstructions ? "No se proporcionaron datos de empresa ni instrucciones específicas. Adapta el documento de forma genérica: reemplaza nombres de empresa con \"[Empresa]\" y datos financieros con \"N/D\", manteniendo la estructura." : ""}
+${!hasCompanyData && !hasInstructions ? "No company data or specific instructions were provided. Adapt the document generically: replace company names with \"[Company]\" and financial data with \"N/D\", keeping the structure." : ""}
 
-CONTENIDO ACTUAL DEL DOCUMENTO (sección por sección):
-${templateText || "(documento sin texto extraíble)"}
+CURRENT DOCUMENT CONTENT (section by section):
+${templateText || "(document with no extractable text)"}
 
-REGLAS DE MODIFICACIÓN:
-1. Genera un reemplazo por cada elemento que deba cambiar, usando el texto EXACTO del documento en "find".
-2. ${hasCompanyData ? "Reemplaza todo lo específico de la empresa original con datos de la empresa target: nombre(s), métricas, historia, personas, inversores, geografía." : "Aplica los cambios indicados en las instrucciones al texto del documento."}
-3. Para texto narrativo, mantén el mismo tono y extensión del original.
-4. Mantén SIN CAMBIOS: títulos de sección genéricos, labels de columnas, encabezados estructurales.
-5. CRÍTICO: El campo "find" debe ser texto EXACTO como aparece en el documento (incluyendo "&amp;" si aparece "&amp;").
+MODIFICATION RULES:
+1. Generate one replacement per element that needs to change, using the EXACT text from the document in "find".
+2. ${hasCompanyData ? "Replace everything specific to the original company with target company data: name(s), metrics, history, people, investors, geography." : "Apply the changes indicated in the instructions to the document text."}
+3. For narrative text, keep the same tone and length as the original.
+4. Keep UNCHANGED: generic section titles, column labels, structural headers.
+5. CRITICAL: The "find" field must be the EXACT text as it appears in the document (including "&amp;" if "&amp;" appears).
 
-Responde ÚNICAMENTE con JSON array (sin texto, sin markdown):
-[{"find": "texto exacto del documento", "replace": "nuevo contenido"}, ...]
+Respond ONLY with a JSON array (no text, no markdown):
+[{"find": "exact text from the document", "replace": "new content"}, ...]
 
-Si el documento tiene contenido real, genera entre 5 y 60 pares. Responde [] solo si el documento está en blanco o nada debe cambiar.`
+If the document has real content, generate between 5 and 60 pairs. Respond [] only if the document is blank or nothing needs to change.`
   });
 
   try {
@@ -521,7 +521,7 @@ Si el documento tiene contenido real, genera entre 5 y 60 pares. Responde [] sol
     return { buffer, replacements };
   } catch (e: any) {
     console.error("AI generate error:", e.message);
-    throw new Error(`Error al generar con IA: ${e.message}`);
+    throw new Error(`Error generating with AI: ${e.message}`);
   }
 }
 
@@ -542,14 +542,14 @@ export async function POST(req: NextRequest) {
   const contextFileEntries = formData.getAll("files") as File[];
 
   if (!templateId) {
-    return NextResponse.json({ error: "templateId requerido" }, { status: 400 });
+    return NextResponse.json({ error: "templateId required" }, { status: 400 });
   }
 
   // Load template
   const template = await db.query.documentTemplates.findFirst({
     where: (t, { eq }) => eq(t.id, templateId),
   });
-  if (!template) return NextResponse.json({ error: "Plantilla no encontrada" }, { status: 404 });
+  if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });
 
   // Load company (optional)
   let company: CompanyRow | null = null;
@@ -558,7 +558,7 @@ export async function POST(req: NextRequest) {
     company = await db.query.companies.findFirst({
       where: (c, { eq }) => eq(c.id, companyId),
     }) ?? null;
-    if (!company) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+    if (!company) return NextResponse.json({ error: "Company not found" }, { status: 404 });
 
     const compSet = await db.query.compSets.findFirst({
       where: (cs, { eq }) => eq(cs.companyId, companyId),
@@ -576,18 +576,18 @@ export async function POST(req: NextRequest) {
   if (template.filePath.startsWith("data:")) {
     // Base64 data URL stored in DB
     const base64 = template.filePath.split(",")[1];
-    if (!base64) return NextResponse.json({ error: "Archivo de plantilla inválido" }, { status: 404 });
+    if (!base64) return NextResponse.json({ error: "Invalid template file" }, { status: 404 });
     templateBuffer = Buffer.from(base64, "base64");
   } else if (template.filePath.startsWith("http")) {
     const blobRes = await fetch(template.filePath);
-    if (!blobRes.ok) return NextResponse.json({ error: "No se pudo leer la plantilla" }, { status: 404 });
+    if (!blobRes.ok) return NextResponse.json({ error: "Could not read the template" }, { status: 404 });
     templateBuffer = Buffer.from(await blobRes.arrayBuffer());
   } else {
     // Legacy: local filesystem (dev)
     const filename = template.filePath.replace("local:", "");
     const localPath = path.join(UPLOADS_DIR, filename);
     if (!fs.existsSync(localPath)) {
-      return NextResponse.json({ error: "Archivo de plantilla no encontrado" }, { status: 404 });
+      return NextResponse.json({ error: "Template file not found" }, { status: 404 });
     }
     templateBuffer = fs.readFileSync(localPath);
   }
@@ -628,7 +628,7 @@ export async function POST(req: NextRequest) {
         ev_revenue: peers.length ? fmtX(median(peers.map(p => Number(p.evRevenue)).filter(n => !isNaN(n) && n > 0))) : "N/D",
         ev_ebitda: peers.length ? fmtX(median(peers.map(p => Number(p.evEbitda)).filter(n => !isNaN(n) && n > 0))) : "N/D",
         peers: peers.map(p => p.ticker).join(", ") || "N/D",
-        fecha: today(), año: new Date().getFullYear().toString(),
+        fecha: today(), "año": new Date().getFullYear().toString(),
       };
       usedReplacements = Object.entries(values).map(([k, v]) => ({ find: `{{${k}}}`, replace: v }));
       if (ext === "xlsx") {
@@ -640,8 +640,8 @@ export async function POST(req: NextRequest) {
       // AI path
       if (!userApiKey) {
         return NextResponse.json({
-          error: "API key no configurada",
-          message: "Necesitas configurar tu API key de Anthropic en Configuración para usar esta función.",
+          error: "API key not configured",
+          message: "You need to configure your Anthropic API key in Settings to use this feature.",
           code: "NO_API_KEY"
         }, { status: 400 });
       }
@@ -659,7 +659,7 @@ export async function POST(req: NextRequest) {
     }
   } catch (e: any) {
     console.error("Document generation error:", e);
-    return NextResponse.json({ error: "Error al generar documento", detail: e.message }, { status: 500 });
+    return NextResponse.json({ error: "Error generating document", detail: e.message }, { status: 500 });
   }
 
   const safeName = (company?.name ?? "documento").replace(/[^a-zA-Z0-9_\-]/g, "_");

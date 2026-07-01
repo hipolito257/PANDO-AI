@@ -157,9 +157,9 @@ function parseSections(planSlides: PlanSlide[]): Section[] {
     if (slide.type === "cover" || slide.type === "back_cover") continue;
     if (slide.type === "divider") {
       if (current) sections.push(current);
-      current = { name: slide.section || slide.title || "Sección", divider: slide, slides: [] };
+      current = { name: slide.section || slide.title || "Section", divider: slide, slides: [] };
     } else {
-      if (!current) current = { name: "Contenido", divider: null, slides: [] };
+      if (!current) current = { name: "Content", divider: null, slides: [] };
       current.slides.push(slide);
     }
   }
@@ -171,7 +171,7 @@ function parseSections(planSlides: PlanSlide[]): Section[] {
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return new Response(JSON.stringify({ error: "No autenticado" }), { status: 401 });
+    return new Response(JSON.stringify({ error: "Not authenticated" }), { status: 401 });
   }
 
   // Parse everything before starting the stream
@@ -196,25 +196,25 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        send({ type: "progress", message: "Cargando datos…", current: 0, total: 0 });
+        send({ type: "progress", message: "Loading data…", current: 0, total: 0 });
 
         // ── Load template ────────────────────────────────────────────────────
         if (!templateId) {
-          send({ type: "error", message: "templateId requerido" }); controller.close(); return;
+          send({ type: "error", message: "templateId required" }); controller.close(); return;
         }
         const [template] = await db.select().from(documentTemplates)
           .where(eq(documentTemplates.id, templateId)).limit(1);
         if (!template) {
-          send({ type: "error", message: "Plantilla no encontrada" }); controller.close(); return;
+          send({ type: "error", message: "Template not found" }); controller.close(); return;
         }
         if (template.type !== "pptx") {
-          send({ type: "error", message: "Solo plantillas PPTX" }); controller.close(); return;
+          send({ type: "error", message: "PPTX templates only" }); controller.close(); return;
         }
 
         // ── Load company + peers ─────────────────────────────────────────────
-        let companyData = "No se seleccionó empresa.";
-        let peersData   = "No hay comparables disponibles.";
-        let companyName = "presentacion";
+        let companyData = "No company was selected.";
+        let peersData   = "No comparables available.";
+        let companyName = "presentation";
 
         if (companyId) {
           const [co] = await db.select().from(companies)
@@ -254,13 +254,13 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
 
         // ── Validate approved plan ──────────────────────────────────────────
         if (!approvedPlanRaw) {
-          send({ type: "error", message: "Se requiere un plan aprobado. Usa primero el botón de planear presentación." });
+          send({ type: "error", message: "An approved plan is required. Use the plan presentation button first." });
           controller.close(); return;
         }
         let approvedPlan: { company?: string; deck_title?: string; slides: PlanSlide[] };
         try { approvedPlan = JSON.parse(approvedPlanRaw); }
         catch {
-          send({ type: "error", message: "Plan aprobado con formato inválido." });
+          send({ type: "error", message: "Approved plan has invalid format." });
           controller.close(); return;
         }
 
@@ -290,12 +290,12 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
           .where(eq(userSettings.userId, session.user.id)).limit(1);
         const apiKey = settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
         if (!apiKey) {
-          send({ type: "error", message: "Configura tu API key de Anthropic en Configuración." });
+          send({ type: "error", message: "Configure your Anthropic API key in Settings." });
           controller.close(); return;
         }
 
         const claude = new Anthropic({ apiKey });
-        const today = new Date().toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+        const today = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
         const deckTitle = approvedPlan.deck_title || companyName;
         const deckCompany = approvedPlan.company || companyName;
 
@@ -308,7 +308,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
         const totalSteps = sections.length + 1; // sections + pptx build
         send({
           type: "progress",
-          message: `Plan listo — ${planSlides.length} slides en ${sections.length} sección${sections.length !== 1 ? "es" : ""}`,
+          message: `Plan ready — ${planSlides.length} slides in ${sections.length} section${sections.length !== 1 ? "s" : ""}`,
           current: 0,
           total: totalSteps,
         });
@@ -316,7 +316,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
         // ── Generate all sections in parallel ───────────────────────────────
         send({
           type: "progress",
-          message: `Generando ${sections.length} sección${sections.length !== 1 ? "es" : ""} en paralelo…`,
+          message: `Generating ${sections.length} section${sections.length !== 1 ? "s" : ""} in parallel…`,
           current: 0,
           total: totalSteps,
         });
@@ -332,7 +332,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
             // Empty sections — add divider directly, no Claude call needed
             if (section.slides.length === 0 && section.divider) {
               completedSections++;
-              send({ type: "progress", message: `${completedSections}/${sections.length} secciones listas…`, current: completedSections, total: totalSteps });
+              send({ type: "progress", message: `${completedSections}/${sections.length} sections ready…`, current: completedSections, total: totalSteps });
               return [{
                 layout: "divider",
                 title: section.divider.title || section.name,
@@ -345,21 +345,21 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
             ).join("\n");
 
             const sectionUserText = [
-              `PRESENTACIÓN: "${deckTitle}" | EMPRESA: ${deckCompany} | FECHA: ${today}`,
+              `PRESENTATION: "${deckTitle}" | COMPANY: ${deckCompany} | DATE: ${today}`,
               "",
               section.divider
-                ? `SECCIÓN ${i + 1}/${sections.length}: ${section.name}`
-                : "CONTENIDO DE LA PRESENTACIÓN",
+                ? `SECTION ${i + 1}/${sections.length}: ${section.name}`
+                : "PRESENTATION CONTENT",
               "",
-              `SLIDES A GENERAR (${section.slides.length} slides de contenido):`,
+              `SLIDES TO GENERATE (${section.slides.length} content slides):`,
               slidesOutline,
               "",
-              userPrompt ? `INSTRUCCIONES ADICIONALES: ${userPrompt}` : null,
-              blobUrls.length ? `ARCHIVOS DE RESPALDO ADJUNTOS: ${blobUrls.map(b => b.name).join(", ")}` : null,
+              userPrompt ? `ADDITIONAL INSTRUCTIONS: ${userPrompt}` : null,
+              blobUrls.length ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")}` : null,
               "",
               section.divider
-                ? `Genera el JSON de slides para ESTA SECCIÓN ÚNICAMENTE. Comienza con un slide "divider" para "${section.name}" con un takeaway que introduzca la sección; luego los ${section.slides.length} slides de contenido.`
-                : `Genera el JSON para los ${section.slides.length} slides de contenido.`,
+                ? `Generate the slide JSON for THIS SECTION ONLY. Start with a "divider" slide for "${section.name}" with a takeaway that introduces the section; then the ${section.slides.length} content slides.`
+                : `Generate the JSON for the ${section.slides.length} content slides.`,
             ].filter((l): l is string => l != null).join("\n");
 
             // Retry up to 2 times on transient Claude errors
@@ -383,18 +383,18 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
             }
 
             const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\})/);
-            if (!jsonMatch) throw new Error(`Sección "${section.name}" no devolvió JSON válido`);
+            if (!jsonMatch) throw new Error(`Section "${section.name}" did not return valid JSON`);
 
             const parsed = JSON.parse(repairJson(jsonMatch[1]));
             const slides: object[] = Array.isArray(parsed.slides) ? parsed.slides : [];
 
             completedSections++;
-            send({ type: "progress", message: `${completedSections}/${sections.length} secciones listas…`, current: completedSections, total: totalSteps });
+            send({ type: "progress", message: `${completedSections}/${sections.length} sections ready…`, current: completedSections, total: totalSteps });
             return slides;
           })
           );
         } catch (sectionErr) {
-          const msg = (sectionErr as Error).message ?? "Error generando secciones";
+          const msg = (sectionErr as Error).message ?? "Error generating sections";
           if (msg === "cancelled") { send({ type: "cancelled" }); }
           else { send({ type: "error", message: msg }); }
           controller.close(); return;
@@ -414,7 +414,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
         };
         const backCoverJson = {
           layout:   "back_cover",
-          title:    backCoverSlide?.title    || "Preguntas",
+          title:    backCoverSlide?.title    || "Questions",
           subtitle: backCoverSlide?.subtitle || "",
         };
 
@@ -423,7 +423,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
 
         send({
           type: "progress",
-          message: `Construyendo presentación (${slideCount} slides)…`,
+          message: `Building presentation (${slideCount} slides)…`,
           current: totalSteps,
           total: totalSteps,
         });
@@ -438,7 +438,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
             body: JSON.stringify({ template_url: template.filePath, slide_plan: fullSlidePlan }),
           });
         } catch (fetchErr) {
-          send({ type: "error", message: `No se pudo conectar al servicio PPTX (${endpoint}): ${(fetchErr as Error).message}` });
+          send({ type: "error", message: `Could not connect to the PPTX service (${endpoint}): ${(fetchErr as Error).message}` });
           controller.close(); return;
         }
 
@@ -446,13 +446,13 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
         let buildJson: { data?: string; slide_count?: number; error?: string; detail?: string } = {};
         try { buildJson = JSON.parse(rawBody); }
         catch {
-          send({ type: "error", message: `Respuesta inválida del servicio PPTX (HTTP ${buildResp.status}): ${rawBody.slice(0, 200)}` });
+          send({ type: "error", message: `Invalid response from the PPTX service (HTTP ${buildResp.status}): ${rawBody.slice(0, 200)}` });
           controller.close(); return;
         }
 
         const pptxError = buildJson.error ?? buildJson.detail;
         if (!buildResp.ok || pptxError) {
-          send({ type: "error", message: pptxError ?? `Error en pptx-service (HTTP ${buildResp.status})` });
+          send({ type: "error", message: pptxError ?? `Error in pptx-service (HTTP ${buildResp.status})` });
           controller.close(); return;
         }
 
@@ -470,7 +470,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
 
       } catch (err) {
         try {
-          send({ type: "error", message: (err instanceof Error ? err.message : "Error inesperado") });
+          send({ type: "error", message: (err instanceof Error ? err.message : "Unexpected error") });
           controller.close();
         } catch { /* already closed */ }
       }

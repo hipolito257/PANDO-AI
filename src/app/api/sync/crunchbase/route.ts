@@ -19,11 +19,11 @@ const EMP_MAP: Record<string, number> = {
 // Country name normalizer
 function normalizeCountry(loc: string): string {
   const l = loc.toLowerCase();
-  if (l.includes("mexico") || l.includes("méxico")) return "México";
+  if (l.includes("mexico") || l.includes("méxico")) return "Mexico";
   if (l.includes("colombia"))  return "Colombia";
   if (l.includes("chile"))     return "Chile";
-  if (l.includes("peru") || l.includes("perú")) return "Perú";
-  if (l.includes("brazil") || l.includes("brasil")) return "Brasil";
+  if (l.includes("peru") || l.includes("perú")) return "Peru";
+  if (l.includes("brazil") || l.includes("brasil")) return "Brazil";
   if (l.includes("argentina")) return "Argentina";
   return loc.split(",").pop()?.trim() ?? loc;
 }
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   const apiKey = await getCBKey();
   if (!apiKey) {
     return NextResponse.json(
-      { error: "Crunchbase API key not configured. Agrégala en Conectores → Crunchbase." },
+      { error: "Crunchbase API key not configured. Add it in Connectors → Crunchbase." },
       { status: 400 }
     );
   }
@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
     id, name, slug,
     description:    description ?? null,
     website:        website     ?? null,
-    country:        country     ?? "México",
+    country:        country     ?? "Mexico",
     city:           city        ?? null,
     sector:         sector      ?? null,
     fundingStage:   fundingStage?? null,

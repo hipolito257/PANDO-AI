@@ -279,7 +279,7 @@ function ComparablesPage() {
     <div className="flex flex-col h-screen overflow-hidden">
       <Topbar
         title="Comparables"
-        subtitle="Múltiplos públicos aplicados a tus empresas privadas"
+        subtitle="Public multiples applied to your private companies"
         actions={
           <div className="flex items-center gap-2">
             {tickers.length > 0 && (
@@ -314,7 +314,7 @@ function ComparablesPage() {
               </svg>
               <input
                 type="text"
-                placeholder="Buscar empresa..."
+                placeholder="Search company..."
                 value={companySearch}
                 onChange={e => setCompanySearch(e.target.value)}
                 className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-fog border border-chalk rounded-[7px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon"
@@ -358,7 +358,7 @@ function ComparablesPage() {
                   {renderGroup("Radar", "bg-orange", radar)}
                   {renderGroup("Pipeline", "bg-blue-500", pipeline)}
                   {filtered.length === 0 && (
-                    <p className="text-[11px] text-slate text-center py-6 px-3">Sin resultados para "{companySearch}"</p>
+                    <p className="text-[11px] text-slate text-center py-6 px-3">No results for "{companySearch}"</p>
                   )}
                 </>
               );
@@ -370,7 +370,7 @@ function ComparablesPage() {
         {/* Toggle button — floats at the panel boundary */}
         <button
           onClick={() => setListOpen(v => !v)}
-          title={listOpen ? "Ocultar lista" : "Mostrar lista"}
+          title={listOpen ? "Hide list" : "Show list"}
           className="absolute top-4 z-20 w-5 h-8 bg-paper border border-chalk flex items-center justify-center text-slate hover:text-carbon hover:bg-fog transition-colors shadow-sm"
           style={{
             left: listOpen ? 212 : 0,
@@ -393,8 +393,8 @@ function ComparablesPage() {
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <IconBarChart size={44} className="text-chalk mx-auto mb-3" />
-                <p className="text-[15px] font-semibold text-carbon">Selecciona una empresa del radar</p>
-                <p className="text-[12px] text-slate mt-1">Elige una empresa para ver su análisis de comparables públicos</p>
+                <p className="text-[15px] font-semibold text-carbon">Select a company from the radar</p>
+                <p className="text-[12px] text-slate mt-1">Choose a company to view its public comparables analysis</p>
               </div>
             </div>
           ) : (
@@ -406,7 +406,7 @@ function ComparablesPage() {
                   <div className="flex-1 min-w-[180px]">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-[16px] font-semibold text-carbon font-poly">{selectedCompany.name}</h2>
-                      <span className="text-[10px] bg-orange/10 text-orange border border-orange/20 px-2 py-0.5 rounded-full font-medium">PRIVADA</span>
+                      <span className="text-[10px] bg-orange/10 text-orange border border-orange/20 px-2 py-0.5 rounded-full font-medium">PRIVATE</span>
                       {selectedCompany.sector && <span className="text-[10px] bg-fog border border-chalk text-slate px-2 py-0.5 rounded-full">{selectedCompany.sector}</span>}
                       <WebsiteLink url={selectedCompany.website} />
                     </div>
@@ -416,8 +416,8 @@ function ComparablesPage() {
                     {[
                       { l: "Revenue",    v: fmtB(selectedCompany.revenueUsd) },
                       { l: "EBITDA",     v: fmtB(selectedCompany.ebitdaUsd) },
-                      { l: "Crec.",      v: fmtGrowth(selectedCompany.revenueGrowth) },
-                      { l: "Mg.EBITDA",  v: fmtPct(selectedCompany.ebitdaMargin) },
+                      { l: "Growth",     v: fmtGrowth(selectedCompany.revenueGrowth) },
+                      { l: "EBITDA Mg.", v: fmtPct(selectedCompany.ebitdaMargin) },
                     ].map(({ l, v }) => (
                       <div key={l} className="text-center">
                         <p className="text-[15px] font-bold text-carbon font-poly">{v}</p>
@@ -431,8 +431,8 @@ function ComparablesPage() {
               {/* Peer bar */}
               <div className="bg-paper rounded-[10px] border border-chalk p-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] text-slate uppercase tracking-wide font-semibold shrink-0">Peers públicos:</span>
-                  {tickers.length === 0 && <span className="text-[11px] text-slate italic">Sin peers configurados — agrégalos con los botones</span>}
+                  <span className="text-[10px] text-slate uppercase tracking-wide font-semibold shrink-0">Public peers:</span>
+                  {tickers.length === 0 && <span className="text-[11px] text-slate italic">No peers configured — add them with the buttons</span>}
                   {tickers.map(t => (
                     <span key={t} className="inline-flex items-center gap-1 bg-fog border border-chalk px-2 py-0.5 rounded-full text-[11px] font-mono font-bold text-carbon">
                       {t}
@@ -443,18 +443,18 @@ function ComparablesPage() {
                     <button onClick={() => setShowAI(true)}
                       className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium bg-carbon/5 border border-chalk rounded-[6px] hover:border-carbon transition-colors">
                       <IconSparkle size={11} />
-                      IA Sugerir
+                      AI Suggest
                     </button>
                     <button onClick={() => setShowSearch(true)}
                       className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-carbon text-white rounded-[6px] hover:opacity-85 transition-opacity">
-                      + Buscar ticker
+                      + Search ticker
                     </button>
                   </div>
                 </div>
                 {!hasData && tickers.length > 0 && (
                   <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-[6px] px-2.5 py-1 inline-flex items-center gap-1.5">
                     <IconAlertTriangle size={11} className="shrink-0" />
-                    Sin datos de mercado — presiona "Actualizar datos" para jalar Yahoo Finance
+                    No market data — press "Refresh data" to pull from Yahoo Finance
                   </p>
                 )}
               </div>
@@ -463,19 +463,19 @@ function ComparablesPage() {
               {tickers.length === 0 && !loadingSet && (
                 <div className="bg-paper rounded-[12px] border border-chalk p-10 text-center">
                   <IconSearch size={40} className="text-chalk mx-auto mb-3" />
-                  <p className="text-[14px] font-semibold text-carbon">Sin peers configurados</p>
+                  <p className="text-[14px] font-semibold text-carbon">No peers configured</p>
                   <p className="text-[12px] text-slate mt-1 mb-4">
-                    Agrega empresas públicas comparables para generar el análisis de valuación
+                    Add comparable public companies to generate the valuation analysis
                   </p>
                   <div className="flex gap-2 justify-center">
                     <button onClick={() => setShowAI(true)}
                       className="flex items-center gap-1.5 px-4 py-2 text-[12px] font-medium bg-carbon text-white rounded-btn hover:opacity-85">
                       <IconSparkle size={12} />
-                      Sugerir con IA
+                      Suggest with AI
                     </button>
                     <button onClick={() => setShowSearch(true)}
                       className="px-4 py-2 text-[12px] font-medium bg-fog border border-chalk text-graphite rounded-btn hover:border-carbon">
-                      Buscar manualmente
+                      Search manually
                     </button>
                   </div>
                 </div>
@@ -486,9 +486,9 @@ function ComparablesPage() {
                 <>
                   <div className="flex gap-1 bg-paper border border-chalk rounded-[10px] p-1 w-fit">
                     {([
-                      { key: "datos"    as const, Icon: IconBarChart,   label: "Datos" },
-                      { key: "graficas" as const, Icon: IconLineChart,  label: "Gráficas" },
-                      { key: "valuacion"as const, Icon: IconDiamond,    label: "Valuación" },
+                      { key: "datos"    as const, Icon: IconBarChart,   label: "Data" },
+                      { key: "graficas" as const, Icon: IconLineChart,  label: "Charts" },
+                      { key: "valuacion"as const, Icon: IconDiamond,    label: "Valuation" },
                     ]).map(({ key, Icon, label }) => (
                       <button key={key} onClick={() => setActiveTab(key)}
                         className={`px-4 py-1.5 text-[12px] font-medium rounded-[7px] transition-all flex items-center gap-1.5
@@ -550,8 +550,8 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
   return (
     <div className="bg-paper rounded-[10px] border border-chalk overflow-hidden">
       <div className="px-4 py-3 border-b border-chalk">
-        <p className="text-[13px] font-semibold text-carbon">Overview de comparables</p>
-        <p className="text-[11px] text-slate">Modelo de negocio y perfil de cada empresa del set</p>
+        <p className="text-[13px] font-semibold text-carbon">Comps overview</p>
+        <p className="text-[11px] text-slate">Business model and profile of each company in the set</p>
       </div>
 
       {/* Target private company */}
@@ -561,16 +561,16 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-[13px] font-semibold text-carbon">{company.name}</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange/15 text-orange border border-orange/25">TARGET PRIVADA</span>
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange/15 text-orange border border-orange/25">PRIVATE TARGET</span>
               {company.sector && <span className="text-[9px] text-slate bg-fog border border-chalk px-1.5 py-0.5 rounded-full">{company.sector}</span>}
               {company.country && <span className="text-[9px] text-slate">{company.country}</span>}
             </div>
             {company.description
               ? <p className="text-[11px] text-graphite leading-relaxed">{company.description}</p>
-              : <p className="text-[11px] text-slate italic">Sin descripción — agrégala en el Radar</p>}
+              : <p className="text-[11px] text-slate italic">No description — add it in Radar</p>}
             <div className="flex gap-4 mt-2">
               {company.revenueUsd != null && <span className="text-[10px] text-slate">Revenue: <span className="font-semibold text-carbon">{fmtB(company.revenueUsd)}</span></span>}
-              {company.stage && <span className="text-[10px] text-slate">Etapa: <span className="font-semibold text-carbon">{company.stage}</span></span>}
+              {company.stage && <span className="text-[10px] text-slate">Stage: <span className="font-semibold text-carbon">{company.stage}</span></span>}
             </div>
           </div>
         </div>
@@ -623,20 +623,20 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
                       {isTruncatable && (
                         <button onClick={() => toggle(c.ticker)}
                           className="mt-1 text-[10px] text-orange hover:text-orange/70 font-medium transition-colors">
-                          {isExp ? "Ver menos ▲" : "Ver más ▼"}
+                          {isExp ? "See less ▲" : "See more ▼"}
                         </button>
                       )}
                     </div>
                   ) : (
                     <p className="text-[11px] text-slate italic">
-                      Sin descripción — agrega esta empresa desde "✨ IA Sugerir" para obtener una descripción contextual, o presiona "Actualizar datos"
+                      No description — add this company from "✨ AI Suggest" to get a contextual description, or press "Refresh data"
                     </p>
                   )}
 
                   {/* Similarity badge (AI only) */}
                   {ai?.similarity && (
                     <span className={`mt-1.5 inline-block text-[9px] font-medium px-2 py-0.5 rounded-full border ${simColor}`}>
-                      Similitud: {ai.similarity}
+                      Similarity: {ai.similarity}
                     </span>
                   )}
 
@@ -646,7 +646,7 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
                       {c.marketCapUsd != null && <span className="text-[10px] text-slate">Mkt Cap: <span className="font-semibold text-carbon">{fmtB(c.marketCapUsd)}</span></span>}
                       {c.revenueUsd   != null && <span className="text-[10px] text-slate">Revenue: <span className="font-semibold text-carbon">{fmtB(c.revenueUsd)}</span></span>}
                       {c.evRevenue    != null && <span className="text-[10px] text-slate">EV/Rev: <span className="font-semibold text-carbon">{c.evRevenue.toFixed(1)}x</span></span>}
-                      {c.grossMargin  != null && <span className="text-[10px] text-slate">Mg. Bruto: <span className="font-semibold text-carbon">{fmtPct(c.grossMargin)}</span></span>}
+                      {c.grossMargin  != null && <span className="text-[10px] text-slate">Gross Mg.: <span className="font-semibold text-carbon">{fmtPct(c.grossMargin)}</span></span>}
                     </div>
                   )}
                 </div>
@@ -659,7 +659,7 @@ function CompsOverview({ comps, company, compSet }: { comps: PublicComp[]; compa
       {!hasDescriptions && comps.length > 0 && (
         <div className="px-4 py-3 bg-amber-50 border-t border-amber-100">
           <p className="text-[10px] text-amber-700">
-            ⚠️ Sin descripciones cargadas — presiona <strong>"Actualizar datos"</strong> en la barra superior para traer los perfiles de negocio desde Yahoo Finance.
+            ⚠️ No descriptions loaded — press <strong>"Refresh data"</strong> in the top bar to pull business profiles from Yahoo Finance.
           </p>
         </div>
       )}
@@ -941,14 +941,14 @@ function MetricsTable({
     setExporting(true);
     try {
       const colLabels = exportCols.map(c => c.label);
-      const headers = ["Company", "Ticker", "Tipo", ...colLabels];
+      const headers = ["Company", "Ticker", "Type", ...colLabels];
       const rows = [
-        { cells: [company.name, "—", "PRIVADA (Target)", ...exportCols.map(c => rawPrivateVal(c.key))], type: "private" as const },
+        { cells: [company.name, "—", "PRIVATE (Target)", ...exportCols.map(c => rawPrivateVal(c.key))], type: "private" as const },
         ...comps.map(comp => ({
-          cells: [comp.name, comp.ticker, `Público (${comp.exchange ?? ""})`, ...exportCols.map(c => rawCompVal(comp, c.key))],
+          cells: [comp.name, comp.ticker, `Public (${comp.exchange ?? ""})`, ...exportCols.map(c => rawCompVal(comp, c.key))],
           type: "public" as const,
         })),
-        ...(hasData ? [{ cells: ["Set Median", "—", "Mediana", ...exportCols.map(c => rawMedianVal(c.key))], type: "median" as const }] : []),
+        ...(hasData ? [{ cells: ["Set Median", "—", "Median", ...exportCols.map(c => rawMedianVal(c.key))], type: "median" as const }] : []),
       ];
       const res = await fetch("/api/comparables/export", {
         method: "POST",
@@ -979,11 +979,11 @@ function MetricsTable({
     <div className="bg-paper rounded-[10px] border border-chalk overflow-hidden">
       <div className="px-4 py-3 border-b border-chalk flex items-center justify-between">
         <div>
-          <p className="text-[13px] font-semibold text-carbon">Tabla de múltiplos</p>
+          <p className="text-[13px] font-semibold text-carbon">Multiples table</p>
           <p className="text-[11px] text-slate">{comps.length} public peers · Yahoo Finance data</p>
         </div>
         <div className="flex items-center gap-2">
-          {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">Sin datos — actualizar</span>}
+          {!hasData && <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-[6px]">No data — refresh</span>}
           <button onClick={() => setShowExportModal(true)} disabled={exporting}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-chalk rounded-[7px] hover:border-emerald-500 hover:text-emerald-700 bg-white transition-colors disabled:opacity-50">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -1002,13 +1002,13 @@ function MetricsTable({
                 <rect x="1" y="7" width="4" height="4" rx="1" stroke="currentColor" strokeWidth="1.3"/>
                 <rect x="7" y="7" width="4" height="4" rx="1" stroke="currentColor" strokeWidth="1.3"/>
               </svg>
-              Columnas ({visibleCols.size})
+              Columns ({visibleCols.size})
             </button>
             {showColPicker && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowColPicker(false)} />
                 <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-chalk rounded-[10px] shadow-xl p-3 w-[280px]">
-                  <p className="text-[10px] font-semibold text-slate uppercase tracking-wide mb-2">Selecciona columnas</p>
+                  <p className="text-[10px] font-semibold text-slate uppercase tracking-wide mb-2">Select columns</p>
                   {groups.map(group => (
                     <div key={group} className="mb-2.5">
                       <p className="text-[9px] font-bold text-slate/60 uppercase tracking-wider mb-1">{group}</p>
@@ -1079,7 +1079,7 @@ function MetricsTable({
                       <div
                         onClick={() => startPrivateEdit(c.key)}
                         className={companyField && onEditCompany ? "cursor-text inline-flex items-center gap-0.5 justify-end" : ""}
-                        title={companyField && onEditCompany ? "Clic para editar" : undefined}
+                        title={companyField && onEditCompany ? "Click to edit" : undefined}
                       >
                         {privateVal(c.key)}
                         {isEditedPrivate && <span className="text-orange text-[7px] leading-none ml-0.5">●</span>}
@@ -1133,7 +1133,7 @@ function MetricsTable({
                         <div
                           onClick={() => startEdit(comp, c.key)}
                           className={field && onEditComp ? "cursor-text inline-flex items-center gap-0.5 justify-end" : ""}
-                          title={field && onEditComp ? "Clic para editar" : undefined}
+                          title={field && onEditComp ? "Click to edit" : undefined}
                         >
                           {compVal(comp, c.key)}
                           {isEdited && <span className="text-orange text-[7px] leading-none ml-0.5">●</span>}
@@ -1160,8 +1160,8 @@ function MetricsTable({
         </table>
       </div>
       <div className="px-4 py-2 border-t border-chalk bg-fog/20 flex items-center justify-between">
-        <p className="text-[9px] text-slate">R40 = Rule of 40 (Revenue Growth % + EBITDA Margin %). Buena salud operacional si &gt;40. Datos: Yahoo Finance.</p>
-        {onEditComp && <p className="text-[9px] text-slate/50">Clic en cualquier celda de comparable para editar · <span className="text-orange">●</span> = editado manualmente</p>}
+        <p className="text-[9px] text-slate">R40 = Rule of 40 (Revenue Growth % + EBITDA Margin %). Good operational health if &gt;40. Data: Yahoo Finance.</p>
+        {onEditComp && <p className="text-[9px] text-slate/50">Click any comparable cell to edit · <span className="text-orange">●</span> = manually edited</p>}
       </div>
 
       {/* Export Modal */}
@@ -1200,8 +1200,8 @@ function ExportModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-chalk sticky top-0 bg-white rounded-t-[16px]">
           <div>
-            <p className="text-[15px] font-semibold text-carbon">Exportar a Excel</p>
-            <p className="text-[11px] text-slate mt-0.5">Elige qué columnas incluir</p>
+            <p className="text-[15px] font-semibold text-carbon">Export to Excel</p>
+            <p className="text-[11px] text-slate mt-0.5">Choose which columns to include</p>
           </div>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-fog text-slate hover:text-carbon transition-colors">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -1209,7 +1209,7 @@ function ExportModal({
         </div>
 
         <div className="px-5 py-4">
-          <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Datos a incluir</p>
+          <p className="text-[11px] font-semibold text-slate uppercase tracking-wide mb-2.5">Data to include</p>
           <div className="grid grid-cols-2 gap-2">
             {groups.map(g => {
               const gcols = allCols.filter(c => c.group === g);
@@ -1232,15 +1232,15 @@ function ExportModal({
         {/* Footer */}
         <div className="flex gap-2.5 px-5 py-4 border-t border-chalk sticky bottom-0 bg-white">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 text-[12px] font-medium border border-chalk rounded-[9px] text-slate hover:text-carbon hover:border-carbon/40 transition-colors">
-            Cancelar
+            Cancel
           </button>
           <button onClick={onExport} disabled={exporting || selectedGroups.size === 0}
             className="flex-1 px-4 py-2.5 text-[12px] font-semibold bg-carbon text-white rounded-[9px] hover:bg-graphite transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
             {exporting
-              ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>Generando…</>
+              ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>Generating…</>
               : <>
                   <svg width="13" height="13" viewBox="0 0 12 12" fill="none"><line x1="6" y1="1" x2="6" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><polyline points="3,5.5 6,8.5 9,5.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M1 9.5v1a.5.5 0 00.5.5h9a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                  Descargar Excel
+                  Download Excel
                 </>}
           </button>
         </div>
@@ -1279,8 +1279,8 @@ function ChartsPanel({
     return (
       <div className="bg-paper rounded-[10px] border border-chalk p-10 text-center">
         <IconLineChart size={32} className="text-chalk mx-auto mb-3" />
-        <p className="text-[13px] font-medium text-carbon">Sin datos de mercado</p>
-        <p className="text-[12px] text-slate mt-1">Presiona "Actualizar datos" para jalar los múltiplos de Yahoo Finance</p>
+        <p className="text-[13px] font-medium text-carbon">No market data</p>
+        <p className="text-[12px] text-slate mt-1">Press "Refresh data" to pull multiples from Yahoo Finance</p>
       </div>
     );
   }
@@ -1448,12 +1448,12 @@ function ChartsPanel({
       {scatterData.length >= 2 && (
         <div className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3">
-            <p className="text-[13px] font-semibold text-carbon">Crecimiento vs. EV/Revenue</p>
+            <p className="text-[13px] font-semibold text-carbon">Growth vs. EV/Revenue</p>
             <p className="text-[11px] text-slate">
-              La línea de tendencia muestra el múltiplo que el mercado "paga" por cada nivel de crecimiento.
+              The trend line shows the multiple the market "pays" for each level of growth.
               {impliedMultiple != null && privateGrowthPct != null && (
                 <span className="ml-1 text-orange font-semibold">
-                  Con {privateGrowthPct.toFixed(0)}% de crecimiento, la regresión implica ~{impliedMultiple.toFixed(1)}x EV/Rev para {company.name}.
+                  At {privateGrowthPct.toFixed(0)}% growth, the regression implies ~{impliedMultiple.toFixed(1)}x EV/Rev for {company.name}.
                 </span>
               )}
             </p>
@@ -1493,8 +1493,8 @@ function ChartsPanel({
       {/* Bar: Revenue comparison */}
       <div className="bg-paper rounded-[10px] border border-chalk p-5">
         <div className="mb-3">
-          <p className="text-[13px] font-semibold text-carbon">Comparación de Revenue</p>
-          <p className="text-[11px] text-slate">Tamaño relativo de {company.name} vs. los comparables públicos</p>
+          <p className="text-[13px] font-semibold text-carbon">Revenue Comparison</p>
+          <p className="text-[11px] text-slate">Relative size of {company.name} vs. public comparables</p>
         </div>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={barData} margin={{ top: 15, right: 20, bottom: 10, left: 20 }}>
@@ -1516,10 +1516,10 @@ function ChartsPanel({
       <div className="bg-paper rounded-[10px] border border-chalk p-5">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <p className="text-[13px] font-semibold text-carbon">Performance bursátil — 12 meses</p>
-            <p className="text-[11px] text-slate">Precios indexados a 100 (inicio del período). Muestra el sentimiento del mercado en este sector.</p>
+            <p className="text-[13px] font-semibold text-carbon">Stock Performance — 12 Months</p>
+            <p className="text-[11px] text-slate">Prices indexed to 100 (start of period). Shows market sentiment in this sector.</p>
           </div>
-          {loadingHist && <span className="text-[10px] text-slate animate-pulse bg-fog border border-chalk px-2 py-1 rounded-[6px]">Cargando...</span>}
+          {loadingHist && <span className="text-[10px] text-slate animate-pulse bg-fog border border-chalk px-2 py-1 rounded-[6px]">Loading...</span>}
         </div>
         {Object.keys(historyData).length > 0 ? (
           <ResponsiveContainer width="100%" height={240}>
@@ -1539,8 +1539,8 @@ function ChartsPanel({
         ) : (
           <div className="h-[140px] flex items-center justify-center bg-fog/30 rounded-[8px]">
             {loadingHist
-              ? <p className="text-[12px] text-slate animate-pulse">Cargando datos de Yahoo Finance...</p>
-              : <p className="text-[12px] text-slate">Sin datos históricos disponibles</p>}
+              ? <p className="text-[12px] text-slate animate-pulse">Loading data from Yahoo Finance...</p>
+              : <p className="text-[12px] text-slate">No historical data available</p>}
           </div>
         )}
       </div>
@@ -1549,9 +1549,9 @@ function ChartsPanel({
       {qMetrics.length >= 1 && (
         <div className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-4">
-            <p className="text-[13px] font-semibold text-carbon">Posicionamiento por cuartil</p>
+            <p className="text-[13px] font-semibold text-carbon">Quartile Positioning</p>
             <p className="text-[11px] text-slate">
-              Distribución de cada métrica en el set. Caja = IQR (P25–P75), línea = mediana.
+              Distribution of each metric in the set. Box = IQR (P25–P75), line = median.
               {qMetrics.some(m => m.targetVal != null) && (
                 <span className="text-orange font-semibold ml-1">◆ = {company.name}</span>
               )}
@@ -1611,7 +1611,7 @@ function ChartsPanel({
                   <div className="w-[56px] shrink-0 text-right">
                     {m.targetVal != null
                       ? <span className="text-[11px] font-bold text-orange">{m.fmt(m.targetVal)}</span>
-                      : <span className="text-[10px] text-slate/30 italic">privada</span>}
+                      : <span className="text-[10px] text-slate/30 italic">private</span>}
                   </div>
                 </div>
               );
@@ -1622,7 +1622,7 @@ function ChartsPanel({
               <span className="inline-block w-5 h-2.5 bg-carbon/12 rounded border border-carbon/10" />IQR (P25–P75)
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block w-[2px] h-3 bg-carbon/50 rounded" />Mediana
+              <span className="inline-block w-[2px] h-3 bg-carbon/50 rounded" />Median
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-2 h-2 bg-carbon/30 rounded-full border border-white" />Comparable
@@ -1640,12 +1640,12 @@ function ChartsPanel({
       {bubbleData.length >= 2 && (
         <div className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3">
-            <p className="text-[13px] font-semibold text-carbon">Crecimiento vs. Margen Bruto (burbuja = market cap)</p>
+            <p className="text-[13px] font-semibold text-carbon">Growth vs. Gross Margin (bubble = market cap)</p>
             <p className="text-[11px] text-slate">
-              Cuadrante ideal: arriba a la derecha (alto margen + alto crecimiento). Tamaño = capitalización de mercado.
+              Ideal quadrant: top-right (high margin + high growth). Size = market capitalization.
               {privateGrowthPct != null && (
                 <span className="ml-1 text-orange font-semibold">
-                  Línea naranja = {company.name} ({privateGrowthPct.toFixed(0)}% crecimiento).
+                  Orange line = {company.name} ({privateGrowthPct.toFixed(0)}% growth).
                 </span>
               )}
             </p>
@@ -1687,9 +1687,9 @@ function ChartsPanel({
         <div className="bg-paper rounded-[10px] border border-chalk p-5">
           <div className="mb-3 flex items-start justify-between gap-4">
             <div>
-              <p className="text-[13px] font-semibold text-carbon">Ranking de comparables</p>
+              <p className="text-[13px] font-semibold text-carbon">Comparables Ranking</p>
               <p className="text-[11px] text-slate">
-                Ordenado de mayor a menor. <span className="text-orange font-medium">Naranja = {company.name}</span>
+                Sorted from highest to lowest. <span className="text-orange font-medium">Orange = {company.name}</span>
               </p>
             </div>
             <select
@@ -1755,9 +1755,9 @@ function ValuationPanel({ comps, company }: { comps: PublicComp[]; company: Comp
     return (
       <div className="bg-paper rounded-[10px] border border-chalk p-8 text-center">
         <IconDiamond size={32} className="text-chalk mx-auto mb-3" />
-        <p className="text-[13px] font-medium text-carbon">Sin datos suficientes para valuación</p>
+        <p className="text-[13px] font-medium text-carbon">Not enough data for valuation</p>
         <p className="text-[12px] text-slate mt-1">
-          Actualiza los datos de mercado y asegúrate de que {company.name} tiene Revenue / EBITDA configurados
+          Refresh market data and make sure {company.name} has Revenue / EBITDA configured
         </p>
       </div>
     );
@@ -1774,7 +1774,7 @@ function ValuationPanel({ comps, company }: { comps: PublicComp[]; company: Comp
       <div className="bg-paper rounded-[10px] border border-chalk p-5">
         <div className="mb-5">
           <p className="text-[15px] font-semibold text-carbon font-poly">Football field — {company.name}</p>
-          <p className="text-[11px] text-slate mt-0.5">Enterprise Value estimado aplicando múltiplos del set de comparables</p>
+          <p className="text-[11px] text-slate mt-0.5">Enterprise Value estimated applying multiples from the comparables set</p>
         </div>
         <div className="space-y-7">
           {methods.map(m => {
@@ -1820,26 +1820,26 @@ function ValuationPanel({ comps, company }: { comps: PublicComp[]; company: Comp
           </div>
         ))}
         <div className="bg-carbon rounded-[10px] p-4 text-center">
-          <p className="text-[10px] text-white/60 mb-1">Rango consolidado</p>
+          <p className="text-[10px] text-white/60 mb-1">Consolidated range</p>
           <p className="text-[22px] font-bold text-white font-poly">
             {fmtB(Math.min(...methods.map(m => m.low)))} – {fmtB(Math.max(...methods.map(m => m.high)))}
           </p>
-          <p className="text-[10px] text-white/50 mt-1">{comps.filter(c=>c.lastRefreshed).length} peers con datos</p>
+          <p className="text-[10px] text-white/50 mt-1">{comps.filter(c=>c.lastRefreshed).length} peers with data</p>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-[10px] p-4 text-center">
-          <p className="text-[10px] text-amber-700 mb-1">Con descuento liquidez (~25%)</p>
+          <p className="text-[10px] text-amber-700 mb-1">With liquidity discount (~25%)</p>
           <p className="text-[22px] font-bold text-amber-800 font-poly">
             {fmtB(discLow)} – {fmtB(discHigh)}
           </p>
-          <p className="text-[10px] text-amber-600 mt-1">Ajuste típico privadas</p>
+          <p className="text-[10px] text-amber-600 mt-1">Typical private company adjustment</p>
         </div>
       </div>
 
       <div className="bg-fog rounded-[10px] border border-chalk p-3">
         <p className="text-[10px] text-slate leading-relaxed">
-          ⚠️ <strong>Estimación de referencia.</strong> Basada en múltiplos de mercado de comparables públicos.
-          No constituye una valuación formal. Las empresas privadas típicamente tienen un descuento de liquidez del 20–35%
-          vs. públicas. Una valuación formal requiere DCF, transacciones precedentes y due diligence financiero.
+          ⚠️ <strong>Reference estimate.</strong> Based on market multiples from public comparables.
+          This does not constitute a formal valuation. Private companies typically carry a 20–35% liquidity discount
+          vs. public companies. A formal valuation requires DCF, precedent transactions, and financial due diligence.
         </p>
       </div>
     </div>
@@ -1886,19 +1886,19 @@ function PeerSearchDrawer({
       <div className="relative ml-auto w-[460px] h-full bg-paper shadow-2xl flex flex-col">
         <div className="p-4 border-b border-chalk flex items-center justify-between">
           <div>
-            <h3 className="text-[14px] font-semibold text-carbon">Buscar empresa pública</h3>
-            <p className="text-[11px] text-slate">Busca por nombre o ticker (ej. "Twilio" o "TWLO")</p>
+            <h3 className="text-[14px] font-semibold text-carbon">Search public company</h3>
+            <p className="text-[11px] text-slate">Search by name or ticker (e.g. "Twilio" or "TWLO")</p>
           </div>
           <button onClick={onClose} className="text-slate hover:text-carbon text-[20px] leading-none w-7 h-7 flex items-center justify-center">×</button>
         </div>
         <div className="p-4 border-b border-chalk">
           <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Ej: Twilio, Block, Nubank, StoneCo..."
+            placeholder="E.g.: Twilio, Block, Nubank, StoneCo..."
             className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] focus:outline-none focus:border-carbon" />
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {searching && (
-            <p className="text-[12px] text-slate text-center py-6 animate-pulse">Buscando en Yahoo Finance...</p>
+            <p className="text-[12px] text-slate text-center py-6 animate-pulse">Searching Yahoo Finance...</p>
           )}
           {!searching && results.map(r => (
             <div key={r.ticker} className="flex items-center gap-3 p-3 bg-fog rounded-[8px] border border-chalk hover:border-carbon/30 transition-colors">
@@ -1912,16 +1912,16 @@ function PeerSearchDrawer({
                   ${added.has(r.ticker)
                     ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
                     : "bg-carbon text-white hover:opacity-85"}`}>
-                {added.has(r.ticker) ? "Agregado ✓" : "+ Agregar"}
+                {added.has(r.ticker) ? "Added ✓" : "+ Add"}
               </button>
             </div>
           ))}
           {!searching && q.trim() && results.length === 0 && (
-            <p className="text-[12px] text-slate text-center py-6">Sin resultados para "{q}"</p>
+            <p className="text-[12px] text-slate text-center py-6">No results for "{q}"</p>
           )}
           {!q.trim() && (
             <div className="text-center py-8">
-              <p className="text-[11px] text-slate">Sugerencias de búsqueda:</p>
+              <p className="text-[11px] text-slate">Search suggestions:</p>
               <div className="flex flex-wrap gap-2 justify-center mt-2">
                 {["Twilio","Nubank","Block","StoneCo","Bill.com","Monday"].map(s => (
                   <button key={s} onClick={() => setQ(s)}
@@ -1934,7 +1934,7 @@ function PeerSearchDrawer({
           )}
         </div>
         <div className="p-3 border-t border-chalk bg-fog/30">
-          <p className="text-[9px] text-slate">Búsqueda en tiempo real vía Yahoo Finance · Solo acciones (equities)</p>
+          <p className="text-[9px] text-slate">Real-time search via Yahoo Finance · Equities only</p>
         </div>
       </div>
     </div>
@@ -1991,28 +1991,28 @@ function AISuggestPanel({
           <div>
             <h3 className="text-[14px] font-semibold text-carbon flex items-center gap-1.5">
                 <IconSparkle size={13} className="text-orange" />
-                Sugerencias de IA
+                AI Suggestions
               </h3>
-            <p className="text-[11px] text-slate">Claude analiza tu empresa y sugiere peers públicos comparables</p>
+            <p className="text-[11px] text-slate">Claude analyzes your company and suggests comparable public peers</p>
           </div>
           <button onClick={onClose} className="text-slate hover:text-carbon text-[20px] leading-none w-7 h-7 flex items-center justify-center">×</button>
         </div>
 
         {/* Prompt input */}
         <div className="p-4 border-b border-chalk bg-fog/30 space-y-2">
-          <label className="block text-[11px] font-medium text-graphite">Instrucciones para la IA <span className="font-normal text-slate">(Opcional)</span></label>
+          <label className="block text-[11px] font-medium text-graphite">Instructions for the AI <span className="font-normal text-slate">(Optional)</span></label>
           <textarea
             value={userPrompt}
             onChange={e => setUserPrompt(e.target.value)}
             rows={3}
-            placeholder={"Ej: Busca solo empresas de SaaS B2B con revenue entre $100M-$500M que coticen en NYSE o NASDAQ.\n\nO: Prioriza empresas latinoamericanas o de mercados emergentes similares."}
+            placeholder={"E.g.: Only look for B2B SaaS companies with revenue between $100M-$500M listed on NYSE or NASDAQ.\n\nOr: Prioritize Latin American companies or similar emerging market companies."}
             className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[11px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-carbon resize-none bg-white leading-relaxed"
           />
           <button onClick={doFetch} disabled={loading}
             className="w-full flex items-center justify-center gap-2 py-2 bg-carbon text-white text-[12px] font-medium rounded-[8px] hover:opacity-85 disabled:opacity-50 transition-opacity">
             {loading
-              ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/></svg>Analizando con IA...</>
-              : <><IconSparkle size={13} />{fetched ? "Sugerir de nuevo" : "Sugerir comparables"}</>}
+              ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/></svg>Analyzing with AI...</>
+              : <><IconSparkle size={13} />{fetched ? "Suggest again" : "Suggest comparables"}</>}
           </button>
         </div>
 
@@ -2020,14 +2020,14 @@ function AISuggestPanel({
           {!fetched && !loading && (
             <div className="text-center py-10">
               <IconSearch size={40} className="text-chalk mx-auto mb-3" />
-              <p className="text-[13px] font-medium text-carbon">Listo para analizar</p>
-              <p className="text-[11px] text-slate mt-1">Opcionalmente escribe instrucciones arriba<br />y presiona "Sugerir comparables"</p>
+              <p className="text-[13px] font-medium text-carbon">Ready to analyze</p>
+              <p className="text-[11px] text-slate mt-1">Optionally write instructions above<br />and press "Suggest comparables"</p>
             </div>
           )}
 
           {loading && (
             <>
-              <p className="text-[12px] text-slate text-center py-3 animate-pulse">Analizando con IA...</p>
+              <p className="text-[12px] text-slate text-center py-3 animate-pulse">Analyzing with AI...</p>
               {[1,2,3,4,5,6,7].map(i => (
                 <div key={i} className="h-16 bg-fog rounded-[8px] border border-chalk animate-pulse" />
               ))}
@@ -2036,15 +2036,15 @@ function AISuggestPanel({
 
           {noKeyMsg && (
             <div className="bg-amber-50 border border-amber-200 rounded-[10px] p-4 mt-2">
-              <p className="text-[13px] font-semibold text-amber-800">API key no configurada</p>
+              <p className="text-[13px] font-semibold text-amber-800">API key not configured</p>
               <p className="text-[11px] text-amber-700 mt-1">{noKeyMsg}</p>
-              <a href="/settings" className="mt-2 inline-block text-[11px] font-semibold text-amber-700 underline">Ir a Configuración →</a>
+              <a href="/settings" className="mt-2 inline-block text-[11px] font-semibold text-amber-700 underline">Go to Settings →</a>
             </div>
           )}
 
           {error && !noKeyMsg && (
             <div className="bg-red-50 border border-red-200 rounded-[8px] p-3">
-              <p className="text-[12px] text-red-700 font-medium">Error al generar sugerencias</p>
+              <p className="text-[12px] text-red-700 font-medium">Error generating suggestions</p>
               <p className="text-[11px] text-red-600 mt-0.5">{error}</p>
             </div>
           )}
@@ -2084,7 +2084,7 @@ function AISuggestPanel({
                     )}
                     {s.similarity && (
                       <span className={`inline-block text-[9px] font-medium px-2 py-0.5 rounded-full border ${simColor}`}>
-                        Similitud: {s.similarity}
+                        Similarity: {s.similarity}
                       </span>
                     )}
                   </div>
@@ -2095,7 +2095,7 @@ function AISuggestPanel({
         </div>
 
         <div className="p-3 border-t border-chalk bg-fog/30">
-          <p className="text-[9px] text-slate">Sugerencias generadas por Claude (Anthropic). Verifica cada empresa antes de incluirla.</p>
+          <p className="text-[9px] text-slate">Suggestions generated by Claude (Anthropic). Verify each company before including it.</p>
         </div>
       </div>
     </div>

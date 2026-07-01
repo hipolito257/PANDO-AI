@@ -130,7 +130,7 @@ RULES:
 
   const apiKey = userApiKey ?? process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "No Anthropic API key configured. Add one in Configuración or set ANTHROPIC_API_KEY." }, { status: 400 });
+    return NextResponse.json({ error: "No Anthropic API key configured. Add one in Settings or set ANTHROPIC_API_KEY." }, { status: 400 });
   }
 
   const client = new Anthropic({ apiKey });
@@ -226,7 +226,7 @@ RULES:
         companyId: compId,
         type:      sig.type ?? "revenue_inflection",
         title:     (sig.title ?? "").slice(0, 120),
-        detail:    `Detectado en documento "${filename}": ${sig.detail ?? ""}`,
+        detail:    `Detected in document "${filename}": ${sig.detail ?? ""}`,
         severity:  sig.type === "risk_flag" ? "high" : sig.type === "funding_due" || sig.type === "strategic_buyer_interest" ? "high" : "medium",
         isRead:    false,
         date:      new Date().toISOString(),

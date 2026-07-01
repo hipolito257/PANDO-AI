@@ -86,19 +86,19 @@ export async function POST(req: NextRequest) {
     description  = (body.description ?? "").trim() || null;
     ext          = (body.type ?? "").toLowerCase();
 
-    if (!blobUrl)  return NextResponse.json({ error: "blobUrl requerido" }, { status: 400 });
-    if (!name)     return NextResponse.json({ error: "name requerido" }, { status: 400 });
+    if (!blobUrl)  return NextResponse.json({ error: "blobUrl required" }, { status: 400 });
+    if (!name)     return NextResponse.json({ error: "name required" }, { status: 400 });
     if (!["pptx", "docx", "xlsx"].includes(ext)) {
-      return NextResponse.json({ error: "Tipo de archivo no válido" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid file type" }, { status: 400 });
     }
 
     // Fetch blob to extract placeholders
     try {
       const blobRes = await fetch(blobUrl);
-      if (!blobRes.ok) throw new Error("No se pudo descargar el blob");
+      if (!blobRes.ok) throw new Error("Could not download the blob");
       buffer = Buffer.from(await blobRes.arrayBuffer());
     } catch (e: any) {
-      return NextResponse.json({ error: `Error leyendo archivo: ${e.message}` }, { status: 400 });
+      return NextResponse.json({ error: `Error reading file: ${e.message}` }, { status: 400 });
     }
 
   } else {
@@ -108,12 +108,12 @@ export async function POST(req: NextRequest) {
     name              = ((formData.get("name") as string | null) ?? "").trim();
     description       = ((formData.get("description") as string | null) ?? "").trim() || null;
 
-    if (!file) return NextResponse.json({ error: "file requerido" }, { status: 400 });
-    if (!name) return NextResponse.json({ error: "name requerido" }, { status: 400 });
+    if (!file) return NextResponse.json({ error: "file required" }, { status: 400 });
+    if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
     ext = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (!["pptx", "docx", "xlsx"].includes(ext)) {
-      return NextResponse.json({ error: "Solo PPTX, DOCX o XLSX." }, { status: 400 });
+      return NextResponse.json({ error: "PPTX, DOCX, or XLSX only." }, { status: 400 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
   const placeholders = extractPlaceholders(buffer!, ext);
   const id = randomUUID();
   const userId   = session.user.id;
-  const userName = session.user.name ?? session.user.email ?? "Usuario";
+  const userName = session.user.name ?? session.user.email ?? "User";
 
   await db.insert(documentTemplates).values({
     id,

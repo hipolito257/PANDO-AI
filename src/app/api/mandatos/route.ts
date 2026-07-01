@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const userId   = session.user.id;
-  const userName = session.user.name ?? session.user.email ?? "Usuario";
+  const userName = session.user.name ?? session.user.email ?? "User";
   const id = randomUUID();
 
   await db.insert(mandates).values({
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     name:        body.name,
     description: body.description || null,
     sectors:     JSON.stringify(body.sectors ?? []),
-    countries:   JSON.stringify(body.countries ?? ["México"]),
+    countries:   JSON.stringify(body.countries ?? ["Mexico"]),
     stages:      JSON.stringify(body.stages ?? []),
     minRevenue:  body.minRevenue ? Number(body.minRevenue) : null,
     maxRevenue:  body.maxRevenue ? Number(body.maxRevenue) : null,
@@ -67,7 +67,7 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const userId   = session.user.id;
-  const userName = session.user.name ?? session.user.email ?? "Usuario";
+  const userName = session.user.name ?? session.user.email ?? "User";
 
   const updateData: Record<string, unknown> = { ...data, updatedBy: userName };
   if (data.sectors)   updateData.sectors   = JSON.stringify(data.sectors);

@@ -204,13 +204,13 @@ export async function POST(req: NextRequest) {
       const msg: string = e.message ?? "unknown";
       // Classify error for the user
       const friendly = msg.startsWith("NO_DATA")
-        ? "sin datos en Yahoo Finance"
+        ? "no data on Yahoo Finance"
         : msg === "RATE_LIMIT"
-        ? "rate limit — intenta de nuevo"
+        ? "rate limit — try again"
         : msg === "AUTH_FAILED"
-        ? "error de autenticación"
+        ? "authentication error"
         : msg.startsWith("HTTP_404")
-        ? "ticker no encontrado"
+        ? "ticker not found"
         : msg;
       report.push({ ticker, ok: false, error: friendly });
     }

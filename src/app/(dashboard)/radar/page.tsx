@@ -22,10 +22,10 @@ const SECTORS = ["Fintech", "Software", "SaaS", "Logistics", "Healthcare", "Cons
 const COUNTRIES = ["México", "Colombia", "Chile", "Perú", "Brasil"];
 const STAGES = [
   { value: "seed", label: "Seed" },
-  { value: "series-a", label: "Serie A" },
-  { value: "series-b", label: "Serie B" },
+  { value: "series-a", label: "Series A" },
+  { value: "series-b", label: "Series B" },
   { value: "growth", label: "Growth" },
-  { value: "mature", label: "Maduro" },
+  { value: "mature", label: "Mature" },
 ];
 
 type Company = {
@@ -118,8 +118,8 @@ export default function RadarPage() {
   // Archivar: quitar del radar o pipeline
   async function archiveCompany(id: string, context: "radar" | "pipeline") {
     const msg = context === "pipeline"
-      ? "¿Archivar esta empresa? Saldrá del pipeline."
-      : "¿Quitar esta empresa del radar?";
+      ? "Archive this company? It will leave the pipeline."
+      : "Remove this company from the radar?";
     if (!confirm(msg)) return;
     await fetch(`/api/companies/${id}`, { method: "DELETE" }).catch(() =>
       fetch(`/api/companies`, { method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -135,13 +135,13 @@ export default function RadarPage() {
     <div>
       <Topbar
         title="Radar"
-        subtitle={`${companies.length} en radar · ${pipelineCompanies.length} en pipeline activo`}
+        subtitle={`${companies.length} in radar · ${pipelineCompanies.length} in active pipeline`}
         actions={
           <div className="flex items-center gap-2">
             <CrunchbaseImport onImported={load} />
             <Button variant="fill" size="sm" onClick={() => setShowAdd(true)}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><line x1="5" y1="1" x2="5" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-              Agregar empresa
+              Add company
             </Button>
           </div>
         }
@@ -154,7 +154,7 @@ export default function RadarPage() {
           {([
             { key: "radar"    as const, Icon: IconRadarTab, label: `Radar (${companies.length})` },
             { key: "pipeline" as const, Icon: IconPipeline,  label: `Pipeline${pipelineCompanies.length > 0 ? ` (${pipelineCompanies.length})` : ""}` },
-            { key: "salidas"  as const, Icon: IconFlag,       label: `Salidas${exitedCompanies.length > 0 ? ` (${exitedCompanies.length})` : ""}` },
+            { key: "salidas"  as const, Icon: IconFlag,       label: `Exits${exitedCompanies.length > 0 ? ` (${exitedCompanies.length})` : ""}` },
             { key: "scan"     as const, Icon: IconDocument,  label: "Scan" },
           ]).map(({ key, Icon, label }) => (
             <button key={key} onClick={() => setActiveTab(key)}
@@ -173,27 +173,27 @@ export default function RadarPage() {
         {/* Filters */}
         <Card padding="sm">
           <div className="flex flex-wrap items-center gap-2">
-            <input type="text" placeholder="Buscar empresa..." value={q} onChange={(e) => setQ(e.target.value)}
+            <input type="text" placeholder="Search company..." value={q} onChange={(e) => setQ(e.target.value)}
               className="px-3 py-1.5 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon w-48" />
             <select value={mandateId} onChange={(e) => setMandateId(e.target.value)} className={selectClass}>
-              <option value="">Todos los mandatos</option>
+              <option value="">All mandates</option>
               {mandates.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             <select value={sector} onChange={(e) => setSector(e.target.value)} className={selectClass}>
-              <option value="">Todos los sectores</option>
+              <option value="">All sectors</option>
               {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             <select value={country} onChange={(e) => setCountry(e.target.value)} className={selectClass}>
-              <option value="">Todos los países</option>
+              <option value="">All countries</option>
               {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <select value={stage} onChange={(e) => setStage(e.target.value)} className={selectClass}>
-              <option value="">Todas las etapas</option>
+              <option value="">All stages</option>
               {STAGES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
             {(q || sector || country || stage || mandateId) && (
               <Button variant="ghost" size="sm" onClick={() => { setQ(""); setSector(""); setCountry(""); setStage(""); setMandateId(""); }}>
-                Limpiar filtros
+                Clear filters
               </Button>
             )}
           </div>
@@ -210,28 +210,28 @@ export default function RadarPage() {
         {/* Main radar table */}
         <Card padding="none">
           {loading ? (
-            <div className="flex items-center justify-center h-40 text-slate text-[13px]">Cargando...</div>
+            <div className="flex items-center justify-center h-40 text-slate text-[13px]">Loading...</div>
           ) : companies.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-slate">
-              <p className="text-[14px] font-medium">Sin resultados</p>
-              <p className="text-[12px]">Ajusta los filtros o agrega una empresa</p>
+              <p className="text-[14px] font-medium">No results</p>
+              <p className="text-[12px]">Adjust filters or add a company</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="text-[10px] text-slate uppercase tracking-wide border-b border-chalk bg-fog/50">
-                    <th className="px-5 py-3 text-left font-medium">Empresa</th>
-                    <th className="px-3 py-3 text-left font-medium">Sector / País</th>
+                    <th className="px-5 py-3 text-left font-medium">Company</th>
+                    <th className="px-3 py-3 text-left font-medium">Sector / Country</th>
                     <th className="px-3 py-3 text-right font-medium">Revenue</th>
-                    <th className="px-3 py-3 text-right font-medium">Crec.</th>
+                    <th className="px-3 py-3 text-right font-medium">Growth</th>
                     <th className="px-3 py-3 text-right font-medium">EBITDA%</th>
-                    <th className="px-3 py-3 text-right font-medium">Empleados</th>
-                    <th className="px-3 py-3 text-left font-medium">Estado</th>
+                    <th className="px-3 py-3 text-right font-medium">Employees</th>
+                    <th className="px-3 py-3 text-left font-medium">Status</th>
                     <th className="px-3 py-3 text-right font-medium">Score</th>
-                    <th className="px-3 py-3 text-left font-medium">Top señal</th>
+                    <th className="px-3 py-3 text-left font-medium">Top signal</th>
                     <th className="px-3 py-3 text-center font-medium">Trend</th>
-                    <th className="px-3 py-3 text-center font-medium">Acción</th>
+                    <th className="px-3 py-3 text-center font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-chalk">
@@ -246,9 +246,9 @@ export default function RadarPage() {
                               {c.name}
                             </Link>
                             <WebsiteLink url={c.website} />
-                            {c.createdBy && <span className="text-[9px] text-slate ml-1">por {c.createdBy}</span>}
+                            {c.createdBy && <span className="text-[9px] text-slate ml-1">by {c.createdBy}</span>}
                             <button onClick={() => setEditCompany(c as any)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-slate hover:text-carbon" title="Editar empresa">
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-slate hover:text-carbon" title="Edit company">
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -281,7 +281,7 @@ export default function RadarPage() {
                           ) : "—"}
                         </td>
                         <td className="px-3 py-3 text-[12px] text-graphite text-right">
-                          {c.employees ? c.employees.toLocaleString("es-MX") : "—"}
+                          {c.employees ? c.employees.toLocaleString("en-US") : "—"}
                         </td>
                         <td className="px-3 py-3"><StatusBadge status={c.status} /></td>
                         <td className="px-3 py-3 text-right"><ScoreBadge score={c.score} /></td>
@@ -295,14 +295,14 @@ export default function RadarPage() {
                           <div className="flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => moveToPipeline(c.id)}
-                              title="Mover a Pipeline"
+                              title="Move to Pipeline"
                               className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-orange text-white rounded-[6px] hover:bg-orange/90 transition-colors whitespace-nowrap"
                             >
                               Pipeline →
                             </button>
                             <button
                               onClick={() => archiveCompany(c.id, "radar")}
-                              title="Quitar del radar"
+                              title="Remove from radar"
                               className="p-1 text-slate hover:text-red-500 transition-colors"
                             >
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -327,16 +327,16 @@ export default function RadarPage() {
           <Card padding="none">
             <div className="px-5 py-3 border-b border-chalk bg-fog/30 flex items-center justify-between">
               <div>
-                <p className="text-[13px] font-semibold text-carbon">Pipeline activo</p>
-                <p className="text-[11px] text-slate">Empresas en evaluación activa · Promovidas desde el Radar por el equipo</p>
+                <p className="text-[13px] font-semibold text-carbon">Active Pipeline</p>
+                <p className="text-[11px] text-slate">Companies under active evaluation · Promoted from Radar by the team</p>
               </div>
             </div>
             {pipelineCompanies.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-slate">
                 <IconTarget size={40} className="text-chalk mb-3" />
-                <p className="text-[14px] font-medium text-carbon">Pipeline vacío</p>
+                <p className="text-[14px] font-medium text-carbon">Empty pipeline</p>
                 <p className="text-[12px] mt-1 text-center max-w-[280px]">
-                  Cuando una empresa del Radar te interese, dale clic en <strong className="text-carbon">Pipeline →</strong> para moverla aquí
+                  When a company from Radar interests you, click <strong className="text-carbon">Pipeline →</strong> to move it here
                 </p>
               </div>
             ) : (
@@ -344,12 +344,12 @@ export default function RadarPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="text-[10px] text-slate uppercase tracking-wide border-b border-chalk bg-fog/50">
-                      <th className="px-5 py-3 text-left font-medium">Empresa</th>
-                      <th className="px-3 py-3 text-left font-medium">Sector / País</th>
-                      <th className="px-3 py-3 text-left font-medium">Descripción</th>
-                      <th className="px-3 py-3 text-left font-medium">Etapa / Fondeo</th>
+                      <th className="px-5 py-3 text-left font-medium">Company</th>
+                      <th className="px-3 py-3 text-left font-medium">Sector / Country</th>
+                      <th className="px-3 py-3 text-left font-medium">Description</th>
+                      <th className="px-3 py-3 text-left font-medium">Stage / Funding</th>
                       <th className="px-3 py-3 text-right font-medium">Score</th>
-                      <th className="px-3 py-3 text-center font-medium">Acciones</th>
+                      <th className="px-3 py-3 text-center font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-chalk">
@@ -388,11 +388,11 @@ export default function RadarPage() {
                             <button onClick={() => setExitModal(c)}
                               className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-emerald-600 text-white rounded-[6px] hover:bg-emerald-700 transition-colors whitespace-nowrap">
                               <IconFlag size={10} />
-                              Salida
+                              Exit
                             </button>
                             <button onClick={() => archiveCompany(c.id, "pipeline")}
                               className="px-2.5 py-1 text-[11px] font-medium border border-chalk text-slate rounded-[6px] hover:border-red-300 hover:text-red-500 transition-colors">
-                              Archivar
+                              Archive
                             </button>
                           </div>
                         </td>
@@ -409,23 +409,23 @@ export default function RadarPage() {
         {activeTab === "salidas" && (
           <Card padding="none">
             <div className="px-5 py-3 border-b border-chalk bg-fog/30">
-              <p className="text-[13px] font-semibold text-carbon">Salidas detectadas</p>
-              <p className="text-[11px] text-slate">Empresas que salieron a bolsa, fueron adquiridas o cerraron · Detectadas automáticamente por noticias</p>
+              <p className="text-[13px] font-semibold text-carbon">Exits detected</p>
+              <p className="text-[11px] text-slate">Companies that went public, were acquired, or shut down · Detected automatically from news</p>
             </div>
             {exitedCompanies.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-slate">
                 <IconFlag size={36} className="text-chalk mb-3" />
-                <p className="text-[14px] font-medium text-carbon">Sin salidas detectadas aún</p>
-                <p className="text-[12px] mt-1">Aparecerán aquí cuando el sistema detecte un IPO, adquisición o cierre</p>
+                <p className="text-[14px] font-medium text-carbon">No exits detected yet</p>
+                <p className="text-[12px] mt-1">They'll appear here when the system detects an IPO, acquisition, or shutdown</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="text-[10px] text-slate uppercase tracking-wide border-b border-chalk bg-fog/50">
-                      <th className="px-5 py-3 text-left font-medium">Empresa</th>
-                      <th className="px-3 py-3 text-left font-medium">Sector / País</th>
-                      <th className="px-3 py-3 text-left font-medium">Tipo de salida</th>
+                      <th className="px-5 py-3 text-left font-medium">Company</th>
+                      <th className="px-3 py-3 text-left font-medium">Sector / Country</th>
+                      <th className="px-3 py-3 text-left font-medium">Exit type</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-chalk">
@@ -466,18 +466,18 @@ export default function RadarPage() {
                   <IconFlag size={18} className="text-emerald-700" />
                 </div>
                 <div>
-                  <p className="text-[14px] font-semibold text-carbon">Confirmar salida</p>
+                  <p className="text-[14px] font-semibold text-carbon">Confirm exit</p>
                   <p className="text-[11px] text-slate">{exitModal.name}</p>
                 </div>
               </div>
               <p className="text-[12px] text-graphite mb-4 leading-relaxed">
-                Selecciona el tipo de salida. Esta acción moverá la empresa a la sección de <strong>Salidas</strong> y no aparecerá más en el Pipeline.
+                Select the exit type. This will move the company to the <strong>Exits</strong> section and it will no longer appear in the Pipeline.
               </p>
               <div className="space-y-2 mb-5">
                 {[
-                  { type: "public"   as const, Icon: IconTrendingUp, iconCls: "text-emerald-600", label: "IPO / Salida a bolsa",   desc: "La empresa cotiza en mercado público" },
-                  { type: "acquired" as const, Icon: IconMerge,       iconCls: "text-blue-600",   label: "Adquisición / M&A",       desc: "La empresa fue adquirida por un tercero" },
-                  { type: "closed"   as const, Icon: IconXCircle,     iconCls: "text-red-500",    label: "Cierre de operaciones",   desc: "La empresa cerró o entró en quiebra" },
+                  { type: "public"   as const, Icon: IconTrendingUp, iconCls: "text-emerald-600", label: "IPO / Public listing",   desc: "The company is listed on a public market" },
+                  { type: "acquired" as const, Icon: IconMerge,       iconCls: "text-blue-600",   label: "Acquisition / M&A",       desc: "The company was acquired by a third party" },
+                  { type: "closed"   as const, Icon: IconXCircle,     iconCls: "text-red-500",    label: "Shutdown",   desc: "The company closed or went bankrupt" },
                 ].map(({ type, Icon, iconCls, label, desc }) => (
                   <button key={type} onClick={() => moveToExit(exitModal.id, type)}
                     className="w-full text-left px-4 py-3 border border-chalk rounded-[9px] hover:border-carbon hover:bg-fog transition-colors flex items-center gap-3">
@@ -491,7 +491,7 @@ export default function RadarPage() {
               </div>
               <button onClick={() => setExitModal(null)}
                 className="w-full px-4 py-2 text-[12px] text-slate border border-chalk rounded-[8px] hover:bg-fog transition-colors">
-                Cancelar
+                Cancel
               </button>
             </div>
           </div>
@@ -523,8 +523,8 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
   const [dragOver, setDragOver] = useState(false);
 
   function handleFile(f: File) {
-    if (f.type !== "application/pdf") { setError("Solo se aceptan archivos PDF."); return; }
-    if (f.size > 20 * 1024 * 1024) { setError("El archivo es muy grande (máx. 20MB). Prueba con un fragmento del documento."); return; }
+    if (f.type !== "application/pdf") { setError("Only PDF files are accepted."); return; }
+    if (f.size > 20 * 1024 * 1024) { setError("File is too large (max. 20MB). Try a smaller section of the document."); return; }
     setFile(f);
     setError("");
     setResult(null);
@@ -535,7 +535,7 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
     setScanning(true);
     setError("");
     setResult(null);
-    setProgress("Leyendo el PDF...");
+    setProgress("Reading PDF...");
 
     try {
       // Read PDF as base64 in the browser
@@ -544,22 +544,22 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
 
-      setProgress("Enviando a Claude para análisis...");
+      setProgress("Sending to Claude for analysis...");
       const res = await fetch("/api/radar/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pdfBase64: base64, userPrompt: prompt || null, filename: file.name }),
       });
 
-      setProgress("Procesando resultados...");
+      setProgress("Processing results...");
       const data = await res.json();
 
-      if (!res.ok) { setError(data.error ?? "Error al procesar el documento."); setScanning(false); setProgress(""); return; }
+      if (!res.ok) { setError(data.error ?? "Error processing the document."); setScanning(false); setProgress(""); return; }
 
       setResult(data);
       if (data.companiesAdded > 0) onCompaniesAdded();
     } catch (e: any) {
-      setError(e.message ?? "Error inesperado.");
+      setError(e.message ?? "Unexpected error.");
     }
     setScanning(false);
     setProgress("");
@@ -582,9 +582,9 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
     <div className="space-y-4">
       {/* Upload card */}
       <Card>
-        <p className="text-[13px] font-semibold text-carbon mb-1">Escanear documento con IA</p>
+        <p className="text-[13px] font-semibold text-carbon mb-1">Scan document with AI</p>
         <p className="text-[11px] text-slate mb-4">
-          Sube un PDF — newsletters de VCs, reportes de industria, pitch decks, deal flow — y Claude extraerá empresas y señales relevantes para el Radar.
+          Upload a PDF — VC newsletters, industry reports, pitch decks, deal flow — and Claude will extract relevant companies and signals for Radar.
         </p>
 
         {/* Drop zone */}
@@ -603,13 +603,13 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
             <div>
               <div className="flex justify-center mb-2"><IconDocument size={32} className="text-emerald-500" /></div>
               <p className="text-[13px] font-semibold text-carbon">{file.name}</p>
-              <p className="text-[11px] text-slate mt-0.5">{(file.size / 1024 / 1024).toFixed(1)} MB · haz clic para cambiar</p>
+              <p className="text-[11px] text-slate mt-0.5">{(file.size / 1024 / 1024).toFixed(1)} MB · click to change</p>
             </div>
           ) : (
             <div>
               <div className="flex justify-center mb-2"><IconDocument size={32} className="text-slate" /></div>
-              <p className="text-[13px] font-medium text-carbon">Arrastra un PDF aquí o haz clic para seleccionar</p>
-              <p className="text-[11px] text-slate mt-1">Hasta 20MB · newsletters, reportes, pitch decks, deal flow</p>
+              <p className="text-[13px] font-medium text-carbon">Drag a PDF here or click to select</p>
+              <p className="text-[11px] text-slate mt-1">Up to 20MB · newsletters, reports, pitch decks, deal flow</p>
             </div>
           )}
         </div>
@@ -617,13 +617,13 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
         {/* Optional prompt */}
         <div className="mt-4">
           <label className="block text-[11px] font-medium text-slate mb-1.5">
-            Instrucciones adicionales para este documento <span className="text-slate font-normal">(opcional)</span>
+            Additional instructions for this document <span className="text-slate font-normal">(optional)</span>
           </label>
           <textarea
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
             rows={2}
-            placeholder="Ej: Enfócate en empresas de Fintech B2B con más de $5M en funding. Ignora empresas de consumo."
+            placeholder="E.g.: Focus on B2B Fintech companies with more than $5M in funding. Ignore consumer companies."
             className="w-full px-3 py-2 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon resize-none"
           />
         </div>
@@ -639,14 +639,14 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
             {scanning ? (
               <>
                 <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
-                {progress || "Analizando..."}
+                {progress || "Analyzing..."}
               </>
             ) : (
               <>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
                 </svg>
-                Escanear con IA
+                Scan with AI
               </>
             )}
           </button>
@@ -667,14 +667,14 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
               <div>
                 <p className="text-[13px] font-semibold text-carbon">{result.filename}</p>
                 <p className="text-[10px] text-slate mt-0.5">
-                  {result.companiesAdded} empresa{result.companiesAdded !== 1 ? "s" : ""} agregada{result.companiesAdded !== 1 ? "s" : ""} al Radar
-                  {result.signalsAdded > 0 ? ` · ${result.signalsAdded} señal${result.signalsAdded !== 1 ? "es" : ""} detectada${result.signalsAdded !== 1 ? "s" : ""}` : ""}
+                  {result.companiesAdded} compan{result.companiesAdded !== 1 ? "ies" : "y"} added to Radar
+                  {result.signalsAdded > 0 ? ` · ${result.signalsAdded} signal${result.signalsAdded !== 1 ? "s" : ""} detected` : ""}
                 </p>
               </div>
             </div>
 
             <div className="mb-4">
-              <p className="text-[11px] font-semibold text-graphite uppercase tracking-wide mb-2">Resumen ejecutivo</p>
+              <p className="text-[11px] font-semibold text-graphite uppercase tracking-wide mb-2">Executive summary</p>
               <p className="text-[12px] text-graphite leading-relaxed">{result.summary}</p>
             </div>
 
@@ -698,9 +698,9 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
             <Card padding="none">
               <div className="px-5 py-3 border-b border-chalk bg-fog/30">
                 <p className="text-[13px] font-semibold text-carbon">
-                  Empresas encontradas — {result.companiesAdded} agregadas al Radar
+                  Companies found — {result.companiesAdded} added to Radar
                 </p>
-                <p className="text-[11px] text-slate">Score de fit calculado contra los mandatos activos del fondo</p>
+                <p className="text-[11px] text-slate">Fit score calculated against the fund's active mandates</p>
               </div>
               <div className="divide-y divide-chalk">
                 {result.companies.map((co, i) => (
@@ -732,8 +732,8 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
           {result.signals.length > 0 && (
             <Card padding="none">
               <div className="px-5 py-3 border-b border-chalk bg-fog/30">
-                <p className="text-[13px] font-semibold text-carbon">Señales detectadas para empresas del Radar</p>
-                <p className="text-[11px] text-slate">Información relevante sobre empresas que ya monitoreas</p>
+                <p className="text-[13px] font-semibold text-carbon">Signals detected for Radar companies</p>
+                <p className="text-[11px] text-slate">Relevant information about companies you're already monitoring</p>
               </div>
               <div className="divide-y divide-chalk">
                 {result.signals.map((sig, i) => (
@@ -757,8 +757,8 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
             <Card>
               <div className="text-center py-6">
                 <IconSearch size={36} className="text-chalk mx-auto mb-3" />
-                <p className="text-[13px] font-medium text-carbon">No se encontraron empresas o señales relevantes</p>
-                <p className="text-[12px] text-slate mt-1">Prueba ajustando el prompt o sube un documento diferente</p>
+                <p className="text-[13px] font-medium text-carbon">No relevant companies or signals found</p>
+                <p className="text-[12px] text-slate mt-1">Try adjusting the prompt or upload a different document</p>
               </div>
             </Card>
           )}

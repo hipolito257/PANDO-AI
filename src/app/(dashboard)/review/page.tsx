@@ -17,7 +17,7 @@ export default async function ReviewListPage() {
 
   return (
     <div>
-      <Topbar title="Internal Review" subtitle="2-pagers generados por IA" />
+      <Topbar title="Internal Review" subtitle="AI-generated 2-pagers" />
       <div className="p-6">
         <div className="grid grid-cols-3 gap-4">
           {pipeline.map((c) => (
@@ -30,8 +30,8 @@ export default async function ReviewListPage() {
                     <div className="text-[10px] text-slate">{c.sector} · {c.country}</div>
                   </div>
                 </div>
-                <div className="text-[11px] text-graphite line-clamp-2 mb-2">{c.description ?? "Sin descripción."}</div>
-                <div className="text-[10px] text-slate">Generar 2-pager →</div>
+                <div className="text-[11px] text-graphite line-clamp-2 mb-2">{c.description ?? "No description."}</div>
+                <div className="text-[10px] text-slate">Generate 2-pager →</div>
               </Card>
             </Link>
           ))}

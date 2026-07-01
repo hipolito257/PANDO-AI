@@ -14,9 +14,9 @@ import type { SignalType } from "@/types";
 export const revalidate = 0;
 
 const EXIT_LABEL: Record<string, { label: string; color: string; iconCls: string }> = {
-  public:   { label: "IPO / Bolsa",       color: "text-emerald-700 bg-emerald-50 border-emerald-200", iconCls: "text-emerald-600" },
-  acquired: { label: "Adquirida",         color: "text-blue-700 bg-blue-50 border-blue-200",         iconCls: "text-blue-600" },
-  closed:   { label: "Cerró operaciones", color: "text-red-700 bg-red-50 border-red-200",             iconCls: "text-red-500" },
+  public:   { label: "IPO",               color: "text-emerald-700 bg-emerald-50 border-emerald-200", iconCls: "text-emerald-600" },
+  acquired: { label: "Acquired",           color: "text-blue-700 bg-blue-50 border-blue-200",         iconCls: "text-blue-600" },
+  closed:   { label: "Ceased Operations",  color: "text-red-700 bg-red-50 border-red-200",             iconCls: "text-red-500" },
 };
 
 const EXIT_ICON = {
@@ -74,18 +74,18 @@ export default async function ExitPage() {
     <div>
       <MarkReadOnMount types={["exit_signal"]} />
       <Topbar
-        title="Salidas"
-        subtitle={`${totalExits} salida${totalExits !== 1 ? "s" : ""} confirmada${totalExits !== 1 ? "s" : ""} · ${exitAlerts.length} señal${exitAlerts.length !== 1 ? "es" : ""} pendiente${exitAlerts.length !== 1 ? "s" : ""} de confirmación`}
+        title="Exits"
+        subtitle={`${totalExits} confirmed exit${totalExits !== 1 ? "s" : ""} · ${exitAlerts.length} signal${exitAlerts.length !== 1 ? "s" : ""} pending confirmation`}
       />
       <div className="p-6 space-y-5">
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3">
           {[
-            { label: "Total salidas",   value: totalExits,   sub: "confirmadas",           color: "text-carbon" },
-            { label: "IPOs",            value: ipos,         sub: "salidas a bolsa",        color: "text-emerald-700" },
-            { label: "Adquisiciones",   value: acquisitions, sub: "M&A cerrados",           color: "text-blue-700" },
-            { label: "Cierres",         value: closures,     sub: "operaciones cerradas",   color: "text-red-600" },
+            { label: "Total exits",     value: totalExits,   sub: "confirmed",              color: "text-carbon" },
+            { label: "IPOs",            value: ipos,         sub: "public listings",         color: "text-emerald-700" },
+            { label: "Acquisitions",    value: acquisitions, sub: "M&A closed",              color: "text-blue-700" },
+            { label: "Closures",        value: closures,     sub: "closed operations",       color: "text-red-600" },
           ].map(stat => (
             <Card key={stat.label} padding="sm">
               <div className={`text-[26px] font-bold font-poly ${stat.color}`}>{stat.value}</div>
@@ -99,8 +99,8 @@ export default async function ExitPage() {
         {exitAlerts.length > 0 && (
           <Card>
             <SectionHeader
-              title="Señales de salida pendientes de confirmación"
-              subtitle="El cron detectó posibles eventos de salida. Revisar y confirmar manualmente desde el Pipeline."
+              title="Exit signals pending confirmation"
+              subtitle="The cron job detected potential exit events. Review and confirm manually from the Pipeline."
               className="mb-3"
             />
             <div className="space-y-2">
@@ -120,7 +120,7 @@ export default async function ExitPage() {
                     </div>
                     <Link href="/radar"
                       className="shrink-0 px-3 py-1.5 text-[11px] font-medium bg-amber-600 text-white rounded-[7px] hover:bg-amber-700 transition-colors">
-                      Ir al Pipeline →
+                      Go to Pipeline →
                     </Link>
                   </div>
                 );
@@ -134,15 +134,15 @@ export default async function ExitPage() {
           <Card>
             <div className="flex flex-col items-center justify-center h-48 text-slate">
               <IconFlag size={44} className="text-chalk mb-3" />
-              <p className="text-[15px] font-semibold text-carbon">Sin salidas registradas aún</p>
+              <p className="text-[15px] font-semibold text-carbon">No exits recorded yet</p>
               <p className="text-[12px] mt-2 text-center max-w-[300px]">
-                Cuando una empresa del Pipeline complete un exit (IPO, adquisición o cierre), aparecerá aquí con todos los detalles.
+                When a company in the Pipeline completes an exit (IPO, acquisition, or closure), it will appear here with full details.
               </p>
             </div>
           </Card>
         ) : (
           <div className="space-y-3">
-            <h2 className="text-[12px] font-semibold text-graphite uppercase tracking-wide px-1">Salidas confirmadas</h2>
+            <h2 className="text-[12px] font-semibold text-graphite uppercase tracking-wide px-1">Confirmed exits</h2>
             {exitedCompanies.map(c => {
               const exitInfo = EXIT_LABEL[c.status] ?? EXIT_LABEL.closed;
               const multiple = getMultiple(c.sector);
@@ -176,7 +176,7 @@ export default async function ExitPage() {
                             <WebsiteLink url={c.website} />
                             {exitDate && (
                               <span className="text-[10px] text-slate">
-                                Detectado: {fmtDate(exitDate)}
+                                Detected: {fmtDate(exitDate)}
                               </span>
                             )}
                           </div>
@@ -192,7 +192,7 @@ export default async function ExitPage() {
                           {estEV && (
                             <div>
                               <div className="text-[15px] font-bold text-carbon font-poly">{fmtM(estEV)}</div>
-                              <div className="text-[9px] text-slate">EV est. ({multiple}x)</div>
+                              <div className="text-[9px] text-slate">Est. EV ({multiple}x)</div>
                             </div>
                           )}
                           {c.totalFunding && (
@@ -231,16 +231,16 @@ export default async function ExitPage() {
         {/* Strategic buyers reference — clearly labeled as market reference */}
         <Card>
           <SectionHeader
-            title="Compradores estratégicos de referencia en LATAM"
-            subtitle="Fondos y estratégicos activos en adquisiciones de tech LATAM · Referencia de mercado"
+            title="Reference strategic buyers in LATAM"
+            subtitle="Funds and strategics active in LATAM tech acquisitions · Market reference"
             className="mb-3"
           />
           <div className="grid grid-cols-2 gap-2">
             {[
-              { name: "Vista Equity Partners",  type: "PE",          focus: "Software B2B escalable",          region: "Global",       matchScore: 92 },
+              { name: "Vista Equity Partners",  type: "PE",          focus: "Scalable B2B software",          region: "Global",       matchScore: 92 },
               { name: "Softbank LATAM Fund",    type: "VC/Growth",   focus: "Tech LATAM growth stage",         region: "LATAM",        matchScore: 88 },
-              { name: "General Atlantic",       type: "PE",          focus: "Growth equity tech global",       region: "Global",       matchScore: 85 },
-              { name: "Advent International",   type: "PE",          focus: "Tech & servicios financieros",    region: "LATAM/Global", matchScore: 81 },
+              { name: "General Atlantic",       type: "PE",          focus: "Global growth equity tech",       region: "Global",       matchScore: 85 },
+              { name: "Advent International",   type: "PE",          focus: "Tech & financial services",       region: "LATAM/Global", matchScore: 81 },
               { name: "Patria Investments",     type: "PE",          focus: "Multi-sector LATAM",             region: "LATAM",        matchScore: 79 },
               { name: "Warburg Pincus",         type: "PE",          focus: "Growth tech, fintech",            region: "Global",       matchScore: 76 },
             ].map(buyer => (
@@ -262,7 +262,7 @@ export default async function ExitPage() {
             ))}
           </div>
           <p className="text-[10px] text-slate mt-3 italic">
-            Los scores de match son estimados internos basados en tesis publicadas de cada fondo. No representan interés confirmado.
+            Match scores are internal estimates based on each fund's published thesis. They do not represent confirmed interest.
           </p>
         </Card>
 

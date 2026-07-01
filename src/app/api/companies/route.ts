@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
 
   const userId   = session.user.id;
-  const userName = session.user.name ?? session.user.email ?? "Usuario";
+  const userName = session.user.name ?? session.user.email ?? "User";
   const id       = uid();
   const slug     = `${slugify(name)}-${Date.now().toString(36)}`;
 
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     id, name, slug,
     sector:         rest.sector        ?? null,
     subsector:      rest.subsector     ?? null,
-    country:        rest.country       ?? "México",
+    country:        rest.country       ?? "Mexico",
     city:           rest.city          ?? null,
     stage:          rest.stage         ?? null,
     website:        rest.website       ?? null,
@@ -107,7 +107,7 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const userId   = session.user.id;
-  const userName = session.user.name ?? session.user.email ?? "Usuario";
+  const userName = session.user.name ?? session.user.email ?? "User";
 
   const update: Record<string, unknown> = {};
   const numFields = ["revenueUsd","revenueGrowth","ebitdaUsd","ebitdaMargin","employees","employeeGrowth","totalFunding","lastFundingAmt","score"];

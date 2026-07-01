@@ -29,13 +29,13 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (!company) notFound();
 
   const topMandate = company.mandateMatches[0];
-  const radarAxes = ["Mercado", "Producto", "Equipo", "Finanzas", "Estrategia", "Riesgo"];
+  const radarAxes = ["Market", "Product", "Team", "Finances", "Strategy", "Risk"];
   const radarVals = [85, 78, 90, 72, 80, 65];
   const revTrend = company.financialHistory
     .filter((s) => s.quarter === 0)
     .map((s) => (s.revenueUsd ?? 0) / 1000);
 
-  const RECOMMENDATION = company.score >= 85 ? "PROCEDER" : company.score >= 70 ? "INVESTIGAR MÁS" : "MONITOREAR";
+  const RECOMMENDATION = company.score >= 85 ? "PROCEED" : company.score >= 70 ? "INVESTIGATE FURTHER" : "MONITOR";
   const REC_COLOR = company.score >= 85 ? "#059669" : company.score >= 70 ? "#d97706" : "#828282";
 
   return (
@@ -58,7 +58,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               </div>
               <div className="text-right">
                 <div className="text-[36px] font-bold text-white font-poly leading-none">{company.score}</div>
-                <div className="text-[10px] text-white/50 uppercase tracking-wide">score PANDO</div>
+                <div className="text-[10px] text-white/50 uppercase tracking-wide">PANDO score</div>
                 <div className="mt-2 px-3 py-1 rounded-full text-[11px] font-bold inline-block" style={{ background: REC_COLOR, color: "white" }}>
                   {RECOMMENDATION}
                 </div>
@@ -69,13 +69,13 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           <div className="px-8 py-6 space-y-6">
             {/* Summary */}
             <div>
-              <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-2">Resumen ejecutivo</h2>
+              <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-2">Executive summary</h2>
               <p className="text-[13px] text-graphite leading-relaxed">
-                {company.description ?? "Sin descripción disponible."}
-                {" "}Con un revenue de <strong>{fmtM(company.revenueUsd)}</strong> y crecimiento de{" "}
-                <strong>{fmtPct(company.revenueGrowth)}</strong> YoY, la empresa presenta{" "}
-                {company.score >= 80 ? "una oportunidad atractiva" : "métricas a revisar"} dentro del mandato{" "}
-                <em>{(topMandate as any)?.mandate?.name ?? "activo"}</em> con match de{" "}
+                {company.description ?? "No description available."}
+                {" "}With revenue of <strong>{fmtM(company.revenueUsd)}</strong> and growth of{" "}
+                <strong>{fmtPct(company.revenueGrowth)}</strong> YoY, the company presents{" "}
+                {company.score >= 80 ? "an attractive opportunity" : "metrics that warrant review"} within the{" "}
+                <em>{(topMandate as any)?.mandate?.name ?? "active"}</em> mandate, with a match of{" "}
                 <strong>{topMandate?.score ?? "—"}/100</strong>.
               </p>
             </div>
@@ -83,17 +83,17 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {/* Metrics + Charts */}
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-3">Métricas clave</h2>
+                <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-3">Key metrics</h2>
                 <div className="space-y-2">
                   {[
                     { l: "Revenue (TTM)",          v: fmtM(company.revenueUsd) },
-                    { l: "Crecimiento YoY",         v: fmtPct(company.revenueGrowth) },
+                    { l: "YoY growth",              v: fmtPct(company.revenueGrowth) },
                     { l: "EBITDA",                  v: fmtM(company.ebitdaUsd) },
-                    { l: "Margen EBITDA",           v: company.ebitdaMargin != null ? `${company.ebitdaMargin.toFixed(1)}%` : "—" },
-                    { l: "Empleados",               v: company.employees?.toLocaleString("es-MX") ?? "—" },
-                    { l: "Crecimiento headcount",   v: fmtPct(company.employeeGrowth) },
+                    { l: "EBITDA margin",           v: company.ebitdaMargin != null ? `${company.ebitdaMargin.toFixed(1)}%` : "—" },
+                    { l: "Employees",               v: company.employees?.toLocaleString("en-US") ?? "—" },
+                    { l: "Headcount growth",        v: fmtPct(company.employeeGrowth) },
                     { l: "Total funding",           v: fmtM(company.totalFunding) },
-                    { l: "Última ronda",            v: `${fmtM(company.lastFundingAmt)} (${company.fundingStage ?? "—"})` },
+                    { l: "Last round",              v: `${fmtM(company.lastFundingAmt)} (${company.fundingStage ?? "—"})` },
                   ].map(({ l, v }) => (
                     <div key={l} className="flex justify-between text-[12px] border-b border-chalk py-1.5 last:border-0">
                       <span className="text-slate">{l}</span>
@@ -105,12 +105,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               <div className="space-y-4">
                 {revTrend.length >= 2 && (
                   <div>
-                    <div className="text-[11px] text-slate mb-1">Tendencia de revenue ($M)</div>
+                    <div className="text-[11px] text-slate mb-1">Revenue trend ($M)</div>
                     <Spark values={revTrend} width={300} height={60} color="#ff682c" />
                   </div>
                 )}
                 <div>
-                  <div className="text-[11px] text-slate mb-1">Evaluación multidimensional</div>
+                  <div className="text-[11px] text-slate mb-1">Multidimensional assessment</div>
                   <RadarChart axes={radarAxes} values={radarVals} size={130} />
                 </div>
               </div>
@@ -123,7 +123,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                   <h2 className="text-[13px] font-semibold text-carbon">Match: {(topMandate as any).mandate?.name}</h2>
                   <div className="flex items-center gap-2">
                     <Badge variant={topMandate.tier === "strong" ? "green" : "yellow"}>
-                      {topMandate.tier === "strong" ? "Fuerte" : "Candidato"}
+                      {topMandate.tier === "strong" ? "Strong" : "Candidate"}
                     </Badge>
                     <span className="text-[14px] font-bold text-carbon">{topMandate.score}/100</span>
                   </div>
@@ -134,9 +134,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
             {/* Signals */}
             <div>
-              <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-3">Señales detectadas</h2>
+              <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-3">Detected signals</h2>
               {company.signals.length === 0 ? (
-                <p className="text-[12px] text-slate">Sin señales registradas.</p>
+                <p className="text-[12px] text-slate">No signals recorded.</p>
               ) : (
                 <div className="space-y-2">
                   {company.signals.map((s) => (
@@ -158,7 +158,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {/* Founders */}
             {company.founders.length > 0 && (
               <div>
-                <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-3">Equipo fundador</h2>
+                <h2 className="text-[13px] font-semibold text-carbon uppercase tracking-wide mb-3">Founding team</h2>
                 <div className="grid grid-cols-2 gap-3">
                   {company.founders.map((f) => (
                     <div key={f.id} className="flex items-start gap-2.5 bg-fog rounded-[8px] p-3 border border-chalk">
@@ -180,7 +180,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             <div className="border-t-2 pt-4" style={{ borderColor: REC_COLOR }}>
               <div className="flex items-center gap-3 mb-2">
                 <div className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: REC_COLOR }}>
-                  Recomendación PANDO
+                  PANDO Recommendation
                 </div>
                 <div className="px-3 py-1 rounded-full text-[11px] font-bold text-white inline-block" style={{ background: REC_COLOR }}>
                   {RECOMMENDATION}
@@ -188,16 +188,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               </div>
               <p className="text-[12px] text-graphite leading-relaxed">
                 {company.score >= 85
-                  ? `${company.name} cumple los criterios del mandato con alto grado de confianza. Se recomienda iniciar due diligence formal y coordinar primera reunión con el equipo directivo.`
+                  ? `${company.name} meets the mandate criteria with a high degree of confidence. We recommend starting formal due diligence and scheduling an initial meeting with the management team.`
                   : company.score >= 70
-                  ? `${company.name} presenta características alineadas con la tesis pero requiere validar métricas clave antes de avanzar. Se recomienda solicitar información financiera adicional.`
-                  : `${company.name} continúa en seguimiento. Las señales detectadas justifican monitoreo activo para evaluar si el perfil evoluciona hacia los criterios del mandato.`}
+                  ? `${company.name} shows characteristics aligned with the thesis but requires validation of key metrics before proceeding. We recommend requesting additional financial information.`
+                  : `${company.name} remains under review. The detected signals warrant active monitoring to assess whether the profile evolves toward the mandate criteria.`}
               </p>
             </div>
 
             <div className="border-t border-chalk pt-4 flex items-center justify-between text-[10px] text-slate">
-              <span>Generado por PANDO · {new Date().toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}</span>
-              <span>Documento confidencial — uso interno</span>
+              <span>Generated by PANDO · {new Date().toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}</span>
+              <span>Confidential document — internal use only</span>
             </div>
           </div>
         </div>

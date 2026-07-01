@@ -50,13 +50,13 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
   const capTable = [
     { label: "Founders",      value: 38, color: "#202020" },
-    { label: "Serie B",       value: 22, color: "#ff682c" },
-    { label: "Serie A",       value: 18, color: "#828282" },
-    { label: "Seed / Ángeles",value: 14, color: "#e8e8e8" },
+    { label: "Series B",      value: 22, color: "#ff682c" },
+    { label: "Series A",      value: 18, color: "#828282" },
+    { label: "Seed / Angels", value: 14, color: "#e8e8e8" },
     { label: "ESOP",          value: 8,  color: "#d4cfc9" },
   ];
 
-  const radarAxes = ["Mercado", "Producto", "Equipo", "Finanzas", "Estrategia", "Riesgo"];
+  const radarAxes = ["Market", "Product", "Team", "Finance", "Strategy", "Risk"];
   const radarVals = [85, 78, 90, 72, 80, 65];
 
   return (
@@ -82,7 +82,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
                 <ScoreBadge score={company.score} />
                 <WebsiteLink url={company.website} />
               </div>
-              <p className="text-[13px] text-graphite max-w-2xl leading-relaxed mb-3">{company.description ?? "Sin descripción disponible."}</p>
+              <p className="text-[13px] text-graphite max-w-2xl leading-relaxed mb-3">{company.description ?? "No description available."}</p>
               <div className="flex flex-wrap gap-1.5">
                 {company.sector && <Badge variant="default">{company.sector}</Badge>}
                 {company.subsector && <Badge variant="default">{company.subsector}</Badge>}
@@ -96,8 +96,8 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
             <div className="grid grid-cols-2 gap-3 text-center shrink-0 ml-8">
               {[
                 { label: "Revenue", value: fmtM(company.revenueUsd), sub: company.revenueGrowth != null ? `${fmtPct(company.revenueGrowth)} YoY` : null, positive: (company.revenueGrowth ?? 0) >= 0 },
-                { label: "EBITDA", value: fmtM(company.ebitdaUsd), sub: company.ebitdaMargin != null ? `${company.ebitdaMargin.toFixed(1)}% margen` : null, positive: (company.ebitdaMargin ?? 0) >= 0 },
-                { label: "Empleados", value: company.employees?.toLocaleString("es-MX") ?? "—", sub: company.employeeGrowth != null ? `${fmtPct(company.employeeGrowth)} YoY` : null, positive: (company.employeeGrowth ?? 0) >= 0 },
+                { label: "EBITDA", value: fmtM(company.ebitdaUsd), sub: company.ebitdaMargin != null ? `${company.ebitdaMargin.toFixed(1)}% margin` : null, positive: (company.ebitdaMargin ?? 0) >= 0 },
+                { label: "Employees", value: company.employees?.toLocaleString("en-US") ?? "—", sub: company.employeeGrowth != null ? `${fmtPct(company.employeeGrowth)} YoY` : null, positive: (company.employeeGrowth ?? 0) >= 0 },
                 { label: "Total funding", value: fmtM(company.totalFunding), sub: company.fundingStage, positive: true },
               ].map(({ label, value, sub, positive }) => (
                 <div key={label} className="bg-fog rounded-[8px] p-3">
@@ -113,7 +113,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         {/* Charts */}
         <div className="grid grid-cols-3 gap-4">
           <Card className="col-span-2">
-            <SectionHeader title="Histórico financiero" subtitle="Revenue vs. EBITDA en $M USD" className="mb-3" />
+            <SectionHeader title="Financial History" subtitle="Revenue vs. EBITDA in $M USD" className="mb-3" />
             {chartYears.length > 1 ? (
               <>
                 <VBars labels={chartYears} values={chartRevenues} line={chartEbitda} width={400} height={140} color="#202020" lineColor="#ff682c" />
@@ -123,11 +123,11 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
                 </div>
               </>
             ) : (
-              <div className="h-32 flex items-center justify-center text-slate text-[12px]">Sin datos históricos</div>
+              <div className="h-32 flex items-center justify-center text-slate text-[12px]">No historical data</div>
             )}
           </Card>
           <Card>
-            <SectionHeader title="Evaluación" subtitle="Score por dimensión" className="mb-2" />
+            <SectionHeader title="Evaluation" subtitle="Score by dimension" className="mb-2" />
             <div className="flex justify-center">
               <RadarChart axes={radarAxes} values={radarVals} size={160} />
             </div>
@@ -137,9 +137,9 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         {/* Signals + Cap Table */}
         <div className="grid grid-cols-3 gap-4">
           <Card className="col-span-2">
-            <SectionHeader title="Señales" subtitle={`${company.signals.length} señales detectadas`} className="mb-2" />
+            <SectionHeader title="Signals" subtitle={`${company.signals.length} signals detected`} className="mb-2" />
             {company.signals.length === 0 ? (
-              <p className="text-[12px] text-slate py-4 text-center">Sin señales registradas</p>
+              <p className="text-[12px] text-slate py-4 text-center">No signals recorded</p>
             ) : (
               <div className="space-y-2">
                 {company.signals.map((sig) => (
@@ -161,7 +161,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
           <div className="space-y-4">
             <Card>
-              <SectionHeader title="Cap table" subtitle="Distribución estimada" className="mb-3" />
+              <SectionHeader title="Cap table" subtitle="Estimated distribution" className="mb-3" />
               <div className="flex items-center gap-4">
                 <Donut segments={capTable} size={90} thickness={16} centerLabel="100%" centerSub="equity" />
                 <div className="space-y-1.5 text-[10px] flex-1">
@@ -192,7 +192,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         <div className="grid grid-cols-2 gap-4">
           {company.founders.length > 0 && (
             <Card>
-              <SectionHeader title="Equipo fundador" className="mb-3" />
+              <SectionHeader title="Founding team" className="mb-3" />
               <div className="space-y-3">
                 {company.founders.map((f) => (
                   <div key={f.id} className="flex items-start gap-3">
@@ -214,11 +214,11 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
           <Card>
             <div className="flex items-center justify-between mb-2">
-              <SectionHeader title="Noticias recientes" className="mb-0" />
+              <SectionHeader title="Recent news" className="mb-0" />
               <NewsRefreshButton companyId={company.id} />
             </div>
             {company.newsItems.length === 0 ? (
-              <p className="text-[12px] text-slate py-4 text-center">Sin noticias registradas</p>
+              <p className="text-[12px] text-slate py-4 text-center">No news recorded</p>
             ) : (
               <div className="space-y-2">
                 {company.newsItems.map((news) => (
@@ -240,14 +240,14 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
         {/* Internal Notes */}
         <Card>
-          <SectionHeader title="Notas internas" subtitle="Visible solo para el equipo de la firma" className="mb-3" />
+          <SectionHeader title="Internal notes" subtitle="Visible only to the firm's team" className="mb-3" />
           <NotesSection companyId={company.id} />
         </Card>
 
         {/* Mandate matches */}
         {company.mandateMatches.length > 0 && (
           <Card>
-            <SectionHeader title="Match con mandatos" subtitle="Alineación con los criterios de inversión definidos" className="mb-3" />
+            <SectionHeader title="Mandate matches" subtitle="Alignment with defined investment criteria" className="mb-3" />
             <div className="grid grid-cols-2 gap-3">
               {/* Deduplicate by mandateId — seed may have created duplicates */}
               {[...new Map(company.mandateMatches.map(mm => [mm.mandateId, mm])).values()].map((mm) => (
@@ -256,7 +256,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
                     <span className="text-[12px] font-semibold text-carbon">{(mm as any).mandate.name}</span>
                     <div className="flex items-center gap-2">
                       <Badge variant={mm.tier === "strong" ? "green" : mm.tier === "candidate" ? "yellow" : "default"}>
-                        {mm.tier === "strong" ? "Fuerte" : mm.tier === "candidate" ? "Candidato" : "Débil"}
+                        {mm.tier === "strong" ? "Strong" : mm.tier === "candidate" ? "Candidate" : "Weak"}
                       </Badge>
                       <Spark values={[60, 65, 70, 75, mm.score]} width={40} height={16} color="#ff682c" />
                     </div>

@@ -29,45 +29,45 @@ async function buildContext(): Promise<string> {
 
   const companySummaries = allCompanies.map(c => {
     const lines = [
-      `• ${c.name} (${c.sector ?? "N/D"} | ${c.country} | ${c.stage ?? "N/D"} | Score: ${c.score?.toFixed(1) ?? "N/D"})`,
-      `  Revenue: ${fmtB(c.revenueUsd)} | Crec: ${fmtPct(c.revenueGrowth)} | EBITDA: ${fmtB(c.ebitdaUsd)} | Margen: ${fmtPct(c.ebitdaMargin)}`,
-      `  Empleados: ${c.employees ?? "N/D"} | Fondeo total: ${fmtB(c.totalFunding)} | Última ronda: ${fmtB(c.lastFundingAmt)} | Stage fondeo: ${c.fundingStage ?? "N/D"}`,
-      c.description ? `  Descripción: ${c.description.slice(0, 150)}` : "",
-      c.signals?.length ? `  Señales recientes: ${c.signals.map((s: any) => s.title).join("; ")}` : "",
+      `• ${c.name} (${c.sector ?? "N/A"} | ${c.country} | ${c.stage ?? "N/A"} | Score: ${c.score?.toFixed(1) ?? "N/A"})`,
+      `  Revenue: ${fmtB(c.revenueUsd)} | Growth: ${fmtPct(c.revenueGrowth)} | EBITDA: ${fmtB(c.ebitdaUsd)} | Margin: ${fmtPct(c.ebitdaMargin)}`,
+      `  Employees: ${c.employees ?? "N/A"} | Total funding: ${fmtB(c.totalFunding)} | Last round: ${fmtB(c.lastFundingAmt)} | Funding stage: ${c.fundingStage ?? "N/A"}`,
+      c.description ? `  Description: ${c.description.slice(0, 150)}` : "",
+      c.signals?.length ? `  Recent signals: ${c.signals.map((s: any) => s.title).join("; ")}` : "",
     ].filter(Boolean);
     return lines.join("\n");
   }).join("\n\n");
 
   const sectorCounts = allCompanies.reduce((acc, c) => {
-    acc[c.sector ?? "Sin sector"] = (acc[c.sector ?? "Sin sector"] || 0) + 1;
+    acc[c.sector ?? "No sector"] = (acc[c.sector ?? "No sector"] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
   const stageCounts = allCompanies.reduce((acc, c) => {
-    acc[c.stage ?? "Sin etapa"] = (acc[c.stage ?? "Sin etapa"] || 0) + 1;
+    acc[c.stage ?? "No stage"] = (acc[c.stage ?? "No stage"] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
-  return `Eres PANDO AI, el asistente inteligente de una plataforma de Private Equity.
-Tienes acceso completo al radar de empresas del fondo y sus métricas.
+  return `You are PANDO AI, the intelligent assistant of a Private Equity platform.
+You have full access to the fund's company radar and its metrics.
 
-FECHA ACTUAL: ${new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" })}
+CURRENT DATE: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
 
-RESUMEN DEL RADAR:
-- Total empresas monitoreadas: ${allCompanies.length}
-- Por sector: ${Object.entries(sectorCounts).map(([k, v]) => `${k}(${v})`).join(", ")}
-- Por etapa: ${Object.entries(stageCounts).map(([k, v]) => `${k}(${v})`).join(", ")}
+RADAR SUMMARY:
+- Total companies monitored: ${allCompanies.length}
+- By sector: ${Object.entries(sectorCounts).map(([k, v]) => `${k}(${v})`).join(", ")}
+- By stage: ${Object.entries(stageCounts).map(([k, v]) => `${k}(${v})`).join(", ")}
 
-EMPRESAS EN EL RADAR:
+COMPANIES IN THE RADAR:
 ${companySummaries}
 
-INSTRUCCIONES:
-- Responde en español, de forma concisa y directa como lo haría un analista senior de PE
-- Puedes comparar empresas, calcular métricas, identificar oportunidades, analizar tendencias
-- Si te preguntan sobre una empresa específica, usa todos los datos disponibles
-- Si no tienes datos de algo, dilo claramente
-- Usa bullet points y formato limpio cuando sea útil
-- Mantén respuestas enfocadas — no más de 300 palabras salvo que se pida más detalle`;
+INSTRUCTIONS:
+- Respond in English, concisely and directly like a senior PE analyst would
+- You can compare companies, calculate metrics, identify opportunities, analyze trends
+- If asked about a specific company, use all available data
+- If you lack data on something, say so clearly
+- Use bullet points and clean formatting when useful
+- Keep responses focused — no more than 300 words unless more detail is requested`;
 }
 
 // POST /api/chat
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
   if (!apiKey) {
     return NextResponse.json({
       error: "no_key",
-      message: "Configura tu API key de Anthropic en Configuración para usar el chat.",
+      message: "Configure your Anthropic API key in Settings to use the chat.",
     }, { status: 400 });
   }
 

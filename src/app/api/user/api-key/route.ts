@@ -31,14 +31,14 @@ export async function POST(req: NextRequest) {
   const userId = session.user.id;
   const { apiKey } = await req.json() as { apiKey?: string };
   if (!apiKey?.trim()) {
-    return NextResponse.json({ error: "apiKey es requerida" }, { status: 400 });
+    return NextResponse.json({ error: "apiKey is required" }, { status: 400 });
   }
 
   const trimmedKey = apiKey.trim();
 
   // Validate that it looks like a real Anthropic API key
   if (!trimmedKey.startsWith("sk-ant-")) {
-    return NextResponse.json({ error: "API key inválida — debe comenzar con 'sk-ant-'" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid API key — must start with 'sk-ant-'" }, { status: 400 });
   }
 
   // Check if settings already exist
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    message: "API key guardada correctamente",
+    message: "API key saved successfully",
   });
 }
 

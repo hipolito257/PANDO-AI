@@ -20,18 +20,18 @@ type Source = {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  financial:    "Datos Financieros y de Mercado",
-  intelligence: "Inteligencia Empresarial",
-  news:         "Noticias y Medios",
-  registry:     "Registros Públicos",
-  alternative:  "Datos Alternativos",
+  financial:    "Financial & Market Data",
+  intelligence: "Business Intelligence",
+  news:         "News & Media",
+  registry:     "Public Records",
+  alternative:  "Alternative Data",
 };
 const CATEGORY_ORDER = ["financial", "intelligence", "news", "registry", "alternative"];
 
 const COST: Record<string, { label: string; pill: string }> = {
-  free:     { label: "Gratis",   pill: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+  free:     { label: "Free",     pill: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
   freemium: { label: "Freemium", pill: "bg-amber-50 text-amber-700 border border-amber-200"       },
-  paid:     { label: "Pago",     pill: "bg-slate-100 text-slate-600 border border-slate-200"       },
+  paid:     { label: "Paid",     pill: "bg-slate-100 text-slate-600 border border-slate-200"       },
 };
 
 export default function ConectoresPage() {
@@ -56,7 +56,7 @@ export default function ConectoresPage() {
       body: JSON.stringify({}),
     });
     const data = await res.json();
-    setSyncResult(prev => ({ ...prev, google_news: `+${data.totalAdded} artículos nuevos en ${data.report?.length ?? 0} empresas` }));
+    setSyncResult(prev => ({ ...prev, google_news: `+${data.totalAdded} new articles across ${data.report?.length ?? 0} companies` }));
     setSyncing(null);
   }
 
@@ -82,7 +82,7 @@ export default function ConectoresPage() {
 
   return (
     <div>
-      <Topbar title="Conectores" subtitle={`${enabled} activos · ${configured} de ${sources.length} configurados`} />
+      <Topbar title="Connectors" subtitle={`${enabled} active · ${configured} of ${sources.length} configured`} />
 
       <div className="p-6 space-y-6">
 
@@ -90,28 +90,28 @@ export default function ConectoresPage() {
         <div className="bg-[#fff4f0] border border-[#ffd5c4] rounded-[8px] p-4 flex gap-3">
           <div className="w-5 h-5 rounded-full bg-orange flex items-center justify-center text-white text-[10px] font-bold flex-none mt-0.5">!</div>
           <div>
-            <p className="text-[13px] font-semibold text-carbon mb-0.5">PANDO funciona con cualquier combinación de fuentes</p>
+            <p className="text-[13px] font-semibold text-carbon mb-0.5">PANDO works with any combination of sources</p>
             <p className="text-[12px] text-graphite leading-relaxed">
-              Activa solo las que ya tienes. Las <strong>{free} fuentes gratuitas</strong> (Google News, SAT, registros públicos, medios)
-              están disponibles sin costo ni configuración.
-              Las de pago requieren que pegues tu API key para que PANDO las use.
+              Enable only the ones you already have. The <strong>{free} free sources</strong> (Google News, SAT, public records, media)
+              are available at no cost and require no setup.
+              Paid sources require you to paste your API key for PANDO to use them.
             </p>
           </div>
         </div>
 
-        {/* Leyenda */}
+        {/* Legend */}
         <div className="flex items-center gap-4 text-[11px]">
-          <span className="text-slate font-medium uppercase tracking-wide">Costo:</span>
+          <span className="text-slate font-medium uppercase tracking-wide">Cost:</span>
           {Object.entries(COST).map(([k, v]) => (
             <span key={k} className={`px-2.5 py-0.5 rounded-full font-medium ${v.pill}`}>{v.label}</span>
           ))}
-          <span className="ml-4 text-slate font-medium uppercase tracking-wide">Estado:</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />Activo en PANDO</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-chalk" />Inactivo</span>
+          <span className="ml-4 text-slate font-medium uppercase tracking-wide">Status:</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />Active in PANDO</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-chalk" />Inactive</span>
         </div>
 
         {loading ? (
-          <div className="text-center py-16 text-slate text-[13px]">Cargando...</div>
+          <div className="text-center py-16 text-slate text-[13px]">Loading...</div>
         ) : (
           <div className="space-y-8">
             {grouped.map(({ cat, label, items }) => (
@@ -193,36 +193,36 @@ function SourceCard({
         </span>
       </div>
 
-      {/* ── Descripción ── */}
+      {/* ── Description ── */}
       {source.description && (
         <p className="px-4 pb-3 text-[11px] text-graphite leading-relaxed border-b border-chalk">
           {source.description}
         </p>
       )}
 
-      {/* ── Cómo se consigue / cuánto cuesta ── */}
+      {/* ── How to get it / what it costs ── */}
       <div className="px-4 py-3 border-b border-chalk bg-fog/40">
         <p className="text-[10px] font-semibold text-slate uppercase tracking-wide mb-1">
-          {source.requiresApiKey ? "Cómo obtener acceso" : "Disponibilidad"}
+          {source.requiresApiKey ? "How to get access" : "Availability"}
         </p>
         <p className="text-[11px] text-graphite leading-snug">
           {source.accessHint ?? "—"}
         </p>
       </div>
 
-      {/* ── Sección de API Key (solo para fuentes que la requieren) ── */}
+      {/* ── API Key section (only for sources that require it) ── */}
       {source.requiresApiKey && (
         <div className="px-4 py-3 border-b border-chalk">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-semibold text-carbon">API Key / Credenciales</p>
+            <p className="text-[11px] font-semibold text-carbon">API Key / Credentials</p>
             {source.apiKeyConfigured ? (
               <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Configurada
+                Configured
               </span>
             ) : (
               <span className="text-[10px] text-slate bg-chalk px-2 py-0.5 rounded-full">
-                Sin configurar
+                Not configured
               </span>
             )}
           </div>
@@ -233,8 +233,8 @@ function SourceCard({
               className="w-full text-[11px] text-graphite border border-dashed border-chalk rounded-[6px] py-2 px-3 text-left hover:border-carbon hover:text-carbon transition-colors"
             >
               {source.apiKeyConfigured
-                ? "🔑 Cambiar API key..."
-                : "＋ Pegar API key o token..."}
+                ? "🔑 Change API key..."
+                : "＋ Paste API key or token..."}
             </button>
           ) : (
             <div className="space-y-2">
@@ -243,7 +243,7 @@ function SourceCard({
                   type={showKey ? "text" : "password"}
                   value={keyValue}
                   onChange={e => setKeyValue(e.target.value)}
-                  placeholder="Pega tu API key aquí..."
+                  placeholder="Paste your API key here..."
                   className="w-full text-[12px] bg-fog border border-chalk rounded-[6px] px-3 py-2 pr-10 focus:outline-none focus:border-carbon font-mono"
                   autoFocus
                 />
@@ -251,7 +251,7 @@ function SourceCard({
                   type="button"
                   onClick={() => setShowKey(!showKey)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-carbon"
-                  title={showKey ? "Ocultar" : "Mostrar"}
+                  title={showKey ? "Hide" : "Show"}
                 >
                   {showKey ? (
                     <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -273,22 +273,22 @@ function SourceCard({
                   disabled={!keyValue.trim() || saving}
                   className="flex-1 text-[11px] font-medium bg-carbon text-white rounded-[6px] py-1.5 hover:opacity-85 disabled:opacity-40 transition-opacity"
                 >
-                  {saving ? "Guardando..." : "Guardar"}
+                  {saving ? "Saving..." : "Save"}
                 </button>
                 <button
                   onClick={() => { setShowKeyInput(false); setKeyValue(""); }}
                   className="flex-1 text-[11px] font-medium bg-fog border border-chalk text-graphite rounded-[6px] py-1.5 hover:border-carbon transition-colors"
                 >
-                  Cancelar
+                  Cancel
                 </button>
               </div>
-              <p className="text-[10px] text-slate">La key se guarda localmente, solo accesible para el equipo de la firma.</p>
+              <p className="text-[10px] text-slate">The key is stored locally, accessible only to the firm's team.</p>
             </div>
           )}
         </div>
       )}
 
-      {/* ── Sync button (fuentes con acción de sync) ── */}
+      {/* ── Sync button (sources with a sync action) ── */}
       {onSync && source.isEnabled && (
         <div className="px-4 py-3 border-b border-chalk">
           <button
@@ -301,7 +301,7 @@ function SourceCard({
               <polyline points="23 4 23 10 17 10"/>
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
             </svg>
-            {syncing ? "Sincronizando todas las empresas..." : "Sincronizar noticias ahora"}
+            {syncing ? "Syncing all companies..." : "Sync news now"}
           </button>
           {syncResult && (
             <p className="text-[10px] text-emerald-700 text-center mt-1.5 font-medium">{syncResult}</p>
@@ -312,12 +312,12 @@ function SourceCard({
       {/* ── Toggles ── */}
       <div className="px-4 py-3 space-y-3">
 
-        {/* Toggle: Tengo acceso */}
+        {/* Toggle: I have access */}
         {source.requiresApiKey && (
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[12px] font-medium text-carbon">Tengo acceso contratado</p>
-              <p className="text-[10px] text-slate mt-0.5">Confirma que la firma tiene suscripción activa</p>
+              <p className="text-[12px] font-medium text-carbon">I have a subscription</p>
+              <p className="text-[10px] text-slate mt-0.5">Confirms the firm has an active subscription</p>
             </div>
             <Toggle
               value={source.isSubscribed}
@@ -327,16 +327,16 @@ function SourceCard({
           </div>
         )}
 
-        {/* Toggle: Habilitado en PANDO */}
+        {/* Toggle: Enabled in PANDO */}
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className={`text-[12px] font-medium ${canEnable ? "text-carbon" : "text-slate"}`}>
-              Usar en PANDO
+              Use in PANDO
             </p>
             <p className="text-[10px] text-slate mt-0.5">
               {canEnable
-                ? "PANDO incluye esta fuente en señales y radar"
-                : "Activa 'Tengo acceso contratado' primero"}
+                ? "PANDO includes this source in signals and radar"
+                : "Enable 'I have a subscription' first"}
             </p>
           </div>
           <Toggle

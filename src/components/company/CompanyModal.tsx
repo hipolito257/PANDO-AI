@@ -5,11 +5,11 @@ const SECTORS  = ["Fintech","Software","SaaS","Logistics","Healthcare","Consumer
 const COUNTRIES = ["México","Colombia","Chile","Perú","Brasil","Argentina"];
 const STAGES   = ["pre-seed","seed","series-a","series-b","series-c","growth","mature"];
 const STATUSES = [
-  { value: "monitoring", label: "Monitoreando" },
-  { value: "pipeline",   label: "Pipeline"      },
-  { value: "portfolio",  label: "Portafolio"    },
-  { value: "exited",     label: "Exited"         },
-  { value: "passed",     label: "Descartado"     },
+  { value: "monitoring", label: "Monitoring" },
+  { value: "pipeline",   label: "Pipeline"    },
+  { value: "portfolio",  label: "Portfolio"   },
+  { value: "exited",     label: "Exited"      },
+  { value: "passed",     label: "Passed"      },
 ];
 const FUNDING_STAGES = ["Pre-seed","Seed","Serie A","Serie B","Serie C","Serie D+","Growth","Bridge","Deuda"];
 
@@ -103,7 +103,7 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim()) { setError("El nombre es requerido."); return; }
+    if (!form.name.trim()) { setError("Name is required."); return; }
     setSaving(true);
     setError("");
 
@@ -118,7 +118,7 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      setError(err.error ?? "Error al guardar.");
+      setError(err.error ?? "Error saving.");
       setSaving(false);
       return;
     }
@@ -135,9 +135,9 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
   const lbl = "block text-[11px] font-medium text-slate mb-1";
 
   const tabs = [
-    { key: "basic",      label: "Información" },
-    { key: "financials", label: "Financieros" },
-    { key: "score",      label: "Score & Estado" },
+    { key: "basic",      label: "Information" },
+    { key: "financials", label: "Financials" },
+    { key: "score",      label: "Score & Status" },
   ] as const;
 
   return (
@@ -152,10 +152,10 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-chalk flex-none">
           <div>
             <h2 className="text-[16px] font-semibold text-carbon font-poly">
-              {isEdit ? `Editar — ${initial?.name}` : "Agregar empresa"}
+              {isEdit ? `Edit — ${initial?.name}` : "Add company"}
             </h2>
             <p className="text-[11px] text-slate mt-0.5">
-              {isEdit ? "Actualiza los datos de esta empresa" : "Nueva empresa en el radar"}
+              {isEdit ? "Update this company's data" : "New company in the radar"}
             </p>
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-fog flex items-center justify-center text-slate hover:text-carbon hover:bg-chalk transition-colors">
@@ -184,55 +184,55 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
         {/* Body — scrollable */}
         <form id="company-form" onSubmit={save} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
-          {/* TAB: Información básica */}
+          {/* TAB: Basic information */}
           {activeTab === "basic" && (
             <>
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className={lbl}>Nombre *</label>
+                  <label className={lbl}>Name *</label>
                   <input value={form.name} onChange={e => set("name", e.target.value)}
-                    placeholder="Ej. Konfío" className={inp} required />
+                    placeholder="E.g. Konfío" className={inp} required />
                 </div>
                 <div className="col-span-2">
-                  <label className={lbl}>Descripción</label>
+                  <label className={lbl}>Description</label>
                   <textarea value={form.description ?? ""} onChange={e => set("description", e.target.value)}
-                    rows={3} placeholder="Qué hace, modelo de negocio, ventaja competitiva..."
+                    rows={3} placeholder="What it does, business model, competitive advantage..."
                     className={inp + " resize-none"} />
                 </div>
                 <div>
                   <label className={lbl}>Sector</label>
                   <select value={form.sector ?? ""} onChange={e => set("sector", e.target.value)} className={sel}>
-                    <option value="">— Seleccionar —</option>
+                    <option value="">— Select —</option>
                     {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className={lbl}>Subsector</label>
                   <input value={form.subsector ?? ""} onChange={e => set("subsector", e.target.value)}
-                    placeholder="Ej. B2B Lending, CPaaS..." className={inp} />
+                    placeholder="E.g. B2B Lending, CPaaS..." className={inp} />
                 </div>
                 <div>
-                  <label className={lbl}>País</label>
+                  <label className={lbl}>Country</label>
                   <select value={form.country} onChange={e => set("country", e.target.value)} className={sel}>
                     {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className={lbl}>Ciudad</label>
+                  <label className={lbl}>City</label>
                   <input value={form.city ?? ""} onChange={e => set("city", e.target.value)}
-                    placeholder="Ej. CDMX, Bogotá..." className={inp} />
+                    placeholder="E.g. CDMX, Bogotá..." className={inp} />
                 </div>
                 <div>
-                  <label className={lbl}>Etapa</label>
+                  <label className={lbl}>Stage</label>
                   <select value={form.stage ?? ""} onChange={e => set("stage", e.target.value)} className={sel}>
-                    <option value="">— Seleccionar —</option>
+                    <option value="">— Select —</option>
                     {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className={lbl}>Ronda de funding</label>
+                  <label className={lbl}>Funding round</label>
                   <select value={form.fundingStage ?? ""} onChange={e => set("fundingStage", e.target.value)} className={sel}>
-                    <option value="">— Seleccionar —</option>
+                    <option value="">— Select —</option>
                     {FUNDING_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
@@ -250,62 +250,62 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
             </>
           )}
 
-          {/* TAB: Financieros */}
+          {/* TAB: Financials */}
           {activeTab === "financials" && (
             <>
               <p className="text-[11px] text-slate bg-fog rounded-[6px] px-3 py-2 border border-chalk">
-                Los valores de dinero van en <strong>USD</strong>. Ej: revenue de $5M → escribe 5000000.
+                Money values are in <strong>USD</strong>. E.g. revenue of $5M → enter 5000000.
               </p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={lbl}>Revenue (USD)</label>
                   <input type="number" value={form.revenueUsd ?? ""} onChange={e => set("revenueUsd", e.target.value)}
-                    placeholder="Ej. 32000000" className={inp} />
+                    placeholder="E.g. 32000000" className={inp} />
                 </div>
                 <div>
-                  <label className={lbl}>Crecimiento revenue (%)</label>
+                  <label className={lbl}>Revenue growth (%)</label>
                   <input type="number" value={form.revenueGrowth ?? ""} onChange={e => set("revenueGrowth", e.target.value)}
-                    placeholder="Ej. 42" className={inp} />
+                    placeholder="E.g. 42" className={inp} />
                 </div>
                 <div>
                   <label className={lbl}>EBITDA (USD)</label>
                   <input type="number" value={form.ebitdaUsd ?? ""} onChange={e => set("ebitdaUsd", e.target.value)}
-                    placeholder="Ej. 9600000" className={inp} />
+                    placeholder="E.g. 9600000" className={inp} />
                 </div>
                 <div>
-                  <label className={lbl}>Margen EBITDA (%)</label>
+                  <label className={lbl}>EBITDA margin (%)</label>
                   <input type="number" value={form.ebitdaMargin ?? ""} onChange={e => set("ebitdaMargin", e.target.value)}
-                    placeholder="Ej. 30" className={inp} />
+                    placeholder="E.g. 30" className={inp} />
                 </div>
                 <div>
-                  <label className={lbl}>Empleados</label>
+                  <label className={lbl}>Employees</label>
                   <input type="number" value={form.employees ?? ""} onChange={e => set("employees", e.target.value)}
-                    placeholder="Ej. 280" className={inp} />
+                    placeholder="E.g. 280" className={inp} />
                 </div>
                 <div>
-                  <label className={lbl}>Crecimiento headcount (%)</label>
+                  <label className={lbl}>Headcount growth (%)</label>
                   <input type="number" value={form.employeeGrowth ?? ""} onChange={e => set("employeeGrowth", e.target.value)}
-                    placeholder="Ej. 30" className={inp} />
+                    placeholder="E.g. 30" className={inp} />
                 </div>
                 <div>
                   <label className={lbl}>Total funding (USD)</label>
                   <input type="number" value={form.totalFunding ?? ""} onChange={e => set("totalFunding", e.target.value)}
-                    placeholder="Ej. 25000000" className={inp} />
+                    placeholder="E.g. 25000000" className={inp} />
                 </div>
                 <div>
-                  <label className={lbl}>Última ronda (USD)</label>
+                  <label className={lbl}>Last round (USD)</label>
                   <input type="number" value={form.lastFundingAmt ?? ""} onChange={e => set("lastFundingAmt", e.target.value)}
-                    placeholder="Ej. 15000000" className={inp} />
+                    placeholder="E.g. 15000000" className={inp} />
                 </div>
               </div>
             </>
           )}
 
-          {/* TAB: Score & Estado */}
+          {/* TAB: Score & Status */}
           {activeTab === "score" && (
             <>
               <div>
-                <label className={lbl}>Estado en el pipeline</label>
+                <label className={lbl}>Pipeline status</label>
                 <div className="grid grid-cols-2 gap-2 mt-1">
                   {STATUSES.map(s => (
                     <button key={s.value} type="button"
@@ -333,15 +333,15 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
                   </div>
                 </div>
                 <p className="text-[10px] text-slate mt-1">
-                  85–100: Proceder · 70–84: Investigar más · &lt;70: Monitorear
+                  85–100: Proceed · 70–84: Investigate further · &lt;70: Monitor
                 </p>
               </div>
 
               <div className="bg-fog rounded-[8px] p-4 border border-chalk">
                 <p className="text-[11px] text-graphite leading-relaxed">
-                  <strong className="text-carbon">Próximamente:</strong> score automático calculado
-                  desde revenue growth, márgenes, señales activas y fit con mandatos.
-                  Por ahora puedes ajustarlo manualmente.
+                  <strong className="text-carbon">Coming soon:</strong> automatic score calculated
+                  from revenue growth, margins, active signals, and fit with mandates.
+                  For now you can adjust it manually.
                 </p>
               </div>
             </>
@@ -364,11 +364,11 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
           <div className="flex gap-2">
             <button type="button" onClick={onClose}
               className="px-4 py-2 text-[12px] font-medium text-graphite bg-paper border border-chalk rounded-btn hover:bg-fog transition-colors">
-              Cancelar
+              Cancel
             </button>
             <button type="submit" form="company-form" disabled={saving}
               className="px-4 py-2 text-[12px] font-medium text-white bg-carbon rounded-btn hover:opacity-85 disabled:opacity-50 transition-opacity">
-              {saving ? "Guardando..." : isEdit ? "Guardar cambios" : "Agregar empresa"}
+              {saving ? "Saving..." : isEdit ? "Save changes" : "Add company"}
             </button>
           </div>
         </div>

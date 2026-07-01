@@ -51,7 +51,7 @@ export function NotesPanel({ companyId, authorName }: { companyId: string; autho
   }
 
   function fmtDate(s: string) {
-    return new Intl.DateTimeFormat("es-MX", {
+    return new Intl.DateTimeFormat("en-US", {
       day: "numeric", month: "short", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     }).format(new Date(s));
@@ -64,7 +64,7 @@ export function NotesPanel({ companyId, authorName }: { companyId: string; autho
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder="Escribe una nota... (call con el founder, info de un socio, updates del sector...)"
+          placeholder="Write a note... (founder call, partner info, sector updates...)"
           rows={3}
           className="w-full px-3 py-2 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon resize-none leading-relaxed"
         />
@@ -74,17 +74,17 @@ export function NotesPanel({ companyId, authorName }: { companyId: string; autho
             disabled={!text.trim() || saving}
             className="px-4 py-1.5 text-[12px] font-medium bg-carbon text-white rounded-btn hover:opacity-85 disabled:opacity-40 transition-opacity"
           >
-            {saving ? "Guardando..." : "Agregar nota"}
+            {saving ? "Saving..." : "Add note"}
           </button>
         </div>
       </form>
 
       {/* Notes list */}
       {loading ? (
-        <p className="text-[12px] text-slate py-2">Cargando notas...</p>
+        <p className="text-[12px] text-slate py-2">Loading notes...</p>
       ) : notes.length === 0 ? (
         <p className="text-[12px] text-slate py-4 text-center border border-dashed border-chalk rounded-[8px]">
-          Sin notas todavía — sé el primero en agregar contexto
+          No notes yet — be the first to add context
         </p>
       ) : (
         <div className="space-y-2">
@@ -104,7 +104,7 @@ export function NotesPanel({ companyId, authorName }: { companyId: string; autho
                   onClick={() => del(note.id)}
                   disabled={deleting === note.id}
                   className="opacity-0 group-hover:opacity-100 text-slate hover:text-red-500 transition-all text-[10px] flex-none"
-                  title="Eliminar nota"
+                  title="Delete note"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>

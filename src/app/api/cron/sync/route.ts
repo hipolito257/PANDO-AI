@@ -44,7 +44,7 @@ async function fetchGoogleNews(query: string): Promise<{ title: string; url: str
   } catch { return []; }
 }
 
-// ── Fuentes RSS especializadas en LATAM tech ──────────────────────────────────
+// ── RSS sources specialized in LATAM tech ─────────────────────────────────────
 const LATAM_RSS_FEEDS = [
   { url: "https://contxto.com/en/feed/",                              name: "Contxto EN" },
   { url: "https://contxto.com/es/feed/",                              name: "Contxto ES" },
@@ -70,7 +70,7 @@ async function fetchLatamFeeds(): Promise<{ title: string; url: string; date: st
   return results.flatMap(r => (r.status === "fulfilled" ? r.value : []));
 }
 
-// ── Queries de discovery ──────────────────────────────────────────────────────
+// ── Discovery queries ──────────────────────────────────────────────────────────
 const VC_QUERIES = [
   '"Kaszek" invierte startup',
   '"Softbank LATAM" inversión startup',
@@ -237,7 +237,7 @@ function extractFundingFromTitles(titles: string[]): { amount: number | null; st
   return { amount, stage };
 }
 
-// ── Tipos ─────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 type CompanyRow = Awaited<ReturnType<typeof db.query.companies.findMany>>[number];
 
 type CompanyResult = {
@@ -248,7 +248,7 @@ type CompanyResult = {
   fundingUpdated: boolean;
 };
 
-// ── Procesa una empresa individual ────────────────────────────────────────────
+// ── Process a single company ──────────────────────────────────────────────────
 async function processCompany(
   co: CompanyRow,
   systemApiKey: string | null,
@@ -294,7 +294,7 @@ async function processCompany(
           await db.insert(signals).values({
             id: randomUUID(), companyId: co.id,
             type: signalType, title: item.title.slice(0, 120),
-            detail: `Detectado automáticamente via Google News: ${item.source}`,
+            detail: `Automatically detected via Google News: ${item.source}`,
             severity, isRead: false, date: item.date,
           });
           signalsAdded++;
@@ -308,9 +308,9 @@ async function processCompany(
       const exitValidation = await validateExitWithClaude(co.name, allTitles, systemApiKey);
       if (exitValidation?.confirmed && exitValidation.confidence >= 0.85 && exitValidation.type) {
         const exitTypeLabel =
-          exitValidation.type === "public"   ? "IPO / Salida a bolsa"   :
-          exitValidation.type === "acquired" ? "Adquisición / Fusión"   :
-                                               "Cierre de operaciones";
+          exitValidation.type === "public"   ? "IPO / Going public"   :
+          exitValidation.type === "acquired" ? "Acquisition / Merger"   :
+                                               "Ceased operations";
         const existingExitSignal = await db.query.signals.findFirst({
           where: (s, { and, eq }) => and(eq(s.companyId, co.id), eq(s.type, "exit_signal")),
         });
@@ -318,8 +318,8 @@ async function processCompany(
           await db.insert(signals).values({
             id: randomUUID(), companyId: co.id,
             type: "exit_signal",
-            title: `⚠️ Posible ${exitTypeLabel} detectado — requiere confirmación`,
-            detail: `${exitValidation.summary} (Confianza: ${Math.round(exitValidation.confidence * 100)}%). Confirmar en Pipeline con 🏁 Salida.`,
+            title: `⚠️ Possible ${exitTypeLabel} detected — requires confirmation`,
+            detail: `${exitValidation.summary} (Confidence: ${Math.round(exitValidation.confidence * 100)}%). Confirm in Pipeline with 🏁 Exit.`,
             severity: "high", isRead: false, date: new Date().toISOString(),
           });
           exitsDetected++;
@@ -488,8 +488,8 @@ export async function GET(req: NextRequest) {
   const cos = await db.query.companies.findMany();
   const activeCompanies = cos.filter(c => !["public", "acquired", "closed"].includes(c.status));
 
-  // ── Guardar CronLog al inicio con status "running" ────────────────────────
-  // Si la función hace timeout, el registro "running" queda en DB (visible en el widget)
+  // ── Save CronLog at the start with status "running" ───────────────────────
+  // If the function times out, the "running" record stays in the DB (visible in the widget)
   const cronLogId = uid();
   await db.insert(cronLogs).values({
     id: cronLogId,
@@ -514,7 +514,7 @@ export async function GET(req: NextRequest) {
   let totalFundingUpdates = 0;
   const report: Record<string, unknown>[] = [];
 
-  // ── PHASE 1: Actualizar empresas — en batches paralelos de 5 ─────────────
+  // ── PHASE 1: Update companies — in parallel batches of 5 ─────────────────
   const BATCH = 5;
   for (let i = 0; i < activeCompanies.length; i += BATCH) {
     const batch = activeCompanies.slice(i, i + BATCH);
@@ -532,7 +532,7 @@ export async function GET(req: NextRequest) {
     if (i + BATCH < activeCompanies.length) await sleep(500);
   }
 
-  // ── PHASE 2: Discovery con fuentes ampliadas + scoring ────────────────────
+  // ── PHASE 2: Discovery with expanded sources + scoring ────────────────────
   let discovered = 0;
   let scored = 0;
   let filteredOut = 0;
@@ -573,7 +573,7 @@ export async function GET(req: NextRequest) {
       if (existingNames.has(comp.name.toLowerCase()) || existingSlugs.has(slug)) continue;
 
       const descWithNote = comp.thesisNote
-        ? `${comp.description} [Tesis: ${comp.thesisNote} Score: ${comp.thesisScore}/10]`
+        ? `${comp.description} [Thesis: ${comp.thesisNote} Score: ${comp.thesisScore}/10]`
         : comp.description;
 
       try {
@@ -601,7 +601,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── Actualizar CronLog con resultados finales ─────────────────────────────
+  // ── Update CronLog with final results ─────────────────────────────────────
   const durationMs = Date.now() - startedAt;
   await db.update(cronLogs)
     .set({
