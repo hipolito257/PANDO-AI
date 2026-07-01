@@ -23,30 +23,31 @@ function fmtSize(b: number): string {
 
 type Direction = "es-en" | "en-es";
 
+// Files above this size go through chunked upload to Blob storage instead of
+// a single POST body, since Vercel serverless functions cap request bodies
+// at ~4.5 MB. This is what lets large legal/finance documents work at all.
+const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB — safely under the 4.5 MB limit
+
+type Phase = "idle" | "uploading" | "translating" | "finalizing";
+
 export default function TranslatePage() {
   const [file, setFile] = useState<File | null>(null);
   const [direction, setDirection] = useState<Direction>("es-en");
   const [hasApiKey, setHasApiKey] = useState(true);
-  const [translating, setTranslating] = useState(false);
-  const [step, setStep] = useState(0);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const translating = phase !== "idle";
 
   const checkApiKey = useCallback(async () => {
     const r = await fetch("/api/user/api-key");
     if (r.ok) { const d = await r.json(); setHasApiKey(d.hasApiKey); }
   }, []);
   useEffect(() => { checkApiKey(); }, [checkApiKey]);
-
-  const STEPS = ["Reading document…", "Translating with AI…", "Rebuilding document…"];
-  useEffect(() => {
-    if (!translating) { setStep(0); return; }
-    const delays = [0, 2000, 20000];
-    const timers = delays.map((d, i) => setTimeout(() => setStep(i), d));
-    return () => timers.forEach(clearTimeout);
-  }, [translating]);
 
   function pickFile(f: File | null) {
     if (!f) return;
@@ -66,6 +67,46 @@ export default function TranslatePage() {
     pickFile(e.dataTransfer.files[0] ?? null);
   }
 
+  // Upload the file in 3 MB chunks to Vercel Blob and assemble it server-side —
+  // works for files of any size, unlike a single multipart POST.
+  async function uploadToBlob(f: File): Promise<string> {
+    const uploadId = crypto.randomUUID();
+    const totalChunks = Math.ceil(f.size / CHUNK_SIZE) || 1;
+    const chunkUrls: string[] = [];
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = f.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      const fd = new FormData();
+      fd.append("chunk", chunk);
+      fd.append("uploadId", uploadId);
+      fd.append("chunkIndex", String(i));
+      fd.append("filename", f.name);
+
+      const res = await fetch("/api/documents/translate/upload-chunk", { method: "POST", body: fd });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        let msg = `Upload part ${i + 1}/${totalChunks} failed (HTTP ${res.status})`;
+        try { msg = JSON.parse(text).error ?? msg; } catch { if (text) msg += `: ${text.slice(0, 300)}`; }
+        throw new Error(msg);
+      }
+      const { chunkUrl } = await res.json();
+      chunkUrls.push(chunkUrl);
+      setProgress({ done: i + 1, total: totalChunks });
+    }
+
+    const finalRes = await fetch("/api/documents/translate/upload-finalize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chunkUrls, filename: f.name }),
+    });
+    if (!finalRes.ok) {
+      const j = await finalRes.json().catch(() => ({}));
+      throw new Error((j as any).error ?? "Error assembling uploaded file");
+    }
+    const { blobUrl } = await finalRes.json();
+    return blobUrl;
+  }
+
   async function handleTranslate() {
     if (!file) return;
     if (!hasApiKey) {
@@ -73,37 +114,79 @@ export default function TranslatePage() {
       return;
     }
 
-    setTranslating(true);
     setError(null);
     setSuccess(false);
 
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("direction", direction);
-
     try {
-      const res = await fetch("/api/documents/translate", { method: "POST", body: fd });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        setError((j as any).message ?? (j as any).error ?? "Translation error");
-      } else {
-        const blob = await res.blob();
-        const disposition = res.headers.get("Content-Disposition") ?? "";
-        const match = disposition.match(/filename="?([^"]+)"?/);
-        const filename = match ? decodeURIComponent(match[1]) : `translated.${file.name.split(".").pop()}`;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 6000);
+      // 1. Upload
+      setPhase("uploading");
+      setProgress({ done: 0, total: 1 });
+      const blobUrl = await uploadToBlob(file);
+
+      // 2. Start job — extracts every translatable segment
+      setPhase("translating");
+      setProgress({ done: 0, total: 0 });
+      const startRes = await fetch("/api/documents/translate/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blobUrl, filename: file.name, direction }),
+      });
+      const startJson = await startRes.json().catch(() => ({}));
+      if (!startRes.ok) throw new Error(startJson.message ?? startJson.error ?? "Could not start translation");
+      const { jobId, jobUrl, total } = startJson as { jobId: string; jobUrl: string; total: number };
+      setProgress({ done: 0, total });
+
+      // 3. Poll batch translation until done — each call is short, so
+      //    documents of any size just take more (fast) round-trips.
+      let done = total === 0;
+      while (!done) {
+        const batchRes = await fetch("/api/documents/translate/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId, jobUrl }),
+        });
+        const batchJson = await batchRes.json().catch(() => ({}));
+        if (!batchRes.ok) throw new Error(batchJson.message ?? batchJson.error ?? "Translation batch failed");
+        setProgress({ done: batchJson.translatedCount ?? 0, total: batchJson.total ?? total });
+        done = !!batchJson.done;
       }
+
+      // 4. Finalize — reassemble and download
+      setPhase("finalizing");
+      const finalizeRes = await fetch("/api/documents/translate/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, jobUrl }),
+      });
+      if (!finalizeRes.ok) {
+        const j = await finalizeRes.json().catch(() => ({}));
+        throw new Error(j.message ?? j.error ?? "Could not finalize the translated document");
+      }
+      const blob = await finalizeRes.blob();
+      const disposition = finalizeRes.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match ? decodeURIComponent(match[1]) : `translated.${file.name.split(".").pop()}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 6000);
     } catch (err: any) {
-      setError(err?.message ?? "Network error during translation");
+      setError(err?.message ?? "Error during translation");
     }
 
-    setTranslating(false);
+    setPhase("idle");
   }
+
+  const phaseLabel =
+    phase === "uploading" ? `Uploading document… (${progress.done}/${progress.total})`
+    : phase === "translating" ? (progress.total > 0 ? `Translating with AI… (${progress.done}/${progress.total} segments)` : "Reading document…")
+    : phase === "finalizing" ? "Rebuilding document…"
+    : "";
+  const progressPct = phase === "translating" && progress.total > 0 ? Math.round((progress.done / progress.total) * 100)
+    : phase === "uploading" && progress.total > 0 ? Math.round((progress.done / progress.total) * 100)
+    : phase === "finalizing" ? 100 : 5;
 
   return (
     <div className="flex-1 overflow-y-auto bg-mist">
@@ -159,7 +242,7 @@ export default function TranslatePage() {
                 dragOver ? "border-carbon bg-fog" : "border-chalk hover:border-graphite/40 hover:bg-fog/50"}`}>
               <div className="flex justify-center mb-2"><Paperclip size={26} className="text-chalk" /></div>
               <div className="text-[12px] font-medium text-carbon">Click or drop a file here</div>
-              <div className="text-[10px] mt-1 text-slate">Word · PowerPoint · Excel</div>
+              <div className="text-[10px] mt-1 text-slate">Word · PowerPoint · Excel — any size, including long legal documents</div>
             </div>
           )}
         </div>
@@ -217,15 +300,14 @@ export default function TranslatePage() {
                 <svg className="animate-spin w-4 h-4 text-carbon shrink-0" viewBox="0 0 24 24" fill="none">
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                 </svg>
-                <span className="text-[13px] font-semibold text-carbon">{STEPS[step]}</span>
+                <span className="text-[13px] font-semibold text-carbon">{phaseLabel}</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                {STEPS.map((_, i) => (
-                  <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${
-                    i < step ? "bg-carbon flex-1" : i === step ? "bg-carbon/60 flex-1 animate-pulse" : "bg-chalk flex-1"}`} />
-                ))}
+              <div className="h-1.5 rounded-full bg-chalk overflow-hidden">
+                <div className="h-full bg-carbon transition-all duration-500 rounded-full" style={{ width: `${progressPct}%` }} />
               </div>
-              <p className="text-[10px] text-slate mt-2">Translation may take 30–90 seconds depending on document size</p>
+              <p className="text-[10px] text-slate mt-2">
+                Large documents are processed in small batches, so translation scales to documents of any size — this may take a while for long legal or financial documents.
+              </p>
             </div>
           )}
 
@@ -236,7 +318,7 @@ export default function TranslatePage() {
                 <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                   <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
                 </svg>
-                Translating…
+                {phase === "uploading" ? "Uploading…" : phase === "finalizing" ? "Finalizing…" : "Translating…"}
               </>
             ) : (
               <>
