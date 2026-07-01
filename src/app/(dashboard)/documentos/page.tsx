@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   LayoutTemplate, FileText, Table2, File, ImageIcon,
-  Paperclip, Sparkles, Target, Flag, Lock, FileCode,
+  Paperclip, Sparkles, Target, Flag, Lock, FileCode, ChevronLeft,
 } from "lucide-react";
 
 interface DocTemplate {
@@ -38,6 +38,31 @@ interface DeckPlan {
   slides: DeckSlide[];
 }
 
+type DocType = "pptx" | "docx";
+
+// The template a user picks here is never chosen by them — it's a single
+// fixed asset per document type, managed by us. We key it off a reserved
+// template name so no schema change is needed: whichever DocumentTemplate
+// row has this exact name+type is "the" hardcoded template for that type.
+const DEFAULT_TEMPLATE_NAME: Record<DocType, string> = {
+  pptx: "PANDO Default PowerPoint Template",
+  docx: "PANDO Default Word Template",
+};
+const DOC_TYPE_META: Record<DocType, { label: string; blurb: string; icon: (s: number) => React.ReactNode; color: string }> = {
+  pptx: {
+    label: "PowerPoint",
+    blurb: "Build an investor presentation — cover, sections, native charts.",
+    icon: (s) => <LayoutTemplate size={s} className="text-orange" />,
+    color: "bg-orange/10 text-orange border-orange/30",
+  },
+  docx: {
+    label: "Word",
+    blurb: "Build a written document — memo, 2-pager, report.",
+    icon: (s) => <FileText size={s} className="text-blue-600" />,
+    color: "bg-blue-500/10 text-blue-600 border-blue-400/30",
+  },
+};
+
 const TYPE_COLOR: Record<string, string> = {
   pptx: "bg-orange/10 text-orange border-orange/30",
   docx: "bg-blue-500/10 text-blue-600 border-blue-400/30",
@@ -71,7 +96,7 @@ function fmtSize(b: number | null): string {
 export default function DocumentosPage() {
   const [templates, setTemplates]     = useState<DocTemplate[]>([]);
   const [companies, setCompanies]     = useState<Company[]>([]);
-  const [selected, setSelected]       = useState<DocTemplate | null>(null);
+  const [docType, setDocType]         = useState<DocType | null>(null);
   const [companyId, setCompanyId]     = useState("");
   const [contextFiles, setContextFiles] = useState<File[]>([]);
   const [userPrompt, setUserPrompt]    = useState("");
@@ -94,11 +119,10 @@ export default function DocumentosPage() {
   const [planFeedback, setPlanFeedback] = useState("");
   const [uploadingCtx, setUploadingCtx] = useState(false);
   const [contextBlobUrls, setContextBlobUrls] = useState<{ name: string; url: string; type: string }[]>([]);
-  const [showUpload, setShowUpload]   = useState(false);
+  const [showUpload, setShowUpload]   = useState(false); // "set/replace default template" modal
   const [dragOver, setDragOver]       = useState(false);
   const [ctxDragOver, setCtxDragOver] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [uploadName, setUploadName]   = useState("");
   const [uploadDesc, setUploadDesc]   = useState("");
   const templateFileRef = useRef<HTMLInputElement>(null);
   const contextFileRef  = useRef<HTMLInputElement>(null);
@@ -118,6 +142,21 @@ export default function DocumentosPage() {
 
   useEffect(() => { loadTemplates(); loadCompanies(); checkApiKey(); }, [loadTemplates, loadCompanies, checkApiKey]);
 
+  // The one hardcoded template for the currently chosen document type.
+  const selected: DocTemplate | null = docType
+    ? templates.find(t => t.type === docType && t.name === DEFAULT_TEMPLATE_NAME[docType]) ?? null
+    : null;
+
+  function chooseDocType(t: DocType) {
+    setDocType(t);
+    setGenSuccess(false); setGenErr(null); setBuildErr(null); setPlanErr(null);
+    setPlan(null); setPlanFeedback(""); setContextFiles([]); setContextBlobUrls([]);
+    setGenResult(null); setLastDownload(null);
+  }
+  function backToLanding() {
+    setDocType(null);
+  }
+
   const GEN_STEPS = [
     "Downloading template…",
     "Analyzing document structure…",
@@ -134,28 +173,31 @@ export default function DocumentosPage() {
     return () => timers.forEach(clearTimeout);
   }, [generating]);
 
-  // ── Upload template ────────────────────────────────────────────────────────
+  // ── Set / replace the hardcoded default template for docType ──────────────
   // Files up to 25 MB: chunked upload (3 MB per chunk) → Vercel Blob assembly
   const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
   const CHUNK_SIZE        =  3 * 1024 * 1024; // 3 MB — well under Vercel's 4.5 MB limit
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
-    if (!pendingFile || !uploadName.trim()) return;
+    if (!pendingFile || !docType) return;
     if (pendingFile.size > MAX_UPLOAD_BYTES) {
       setUploadErr(`File too large (${fmtSize(pendingFile.size)}). Maximum size is 25 MB.`);
       return;
     }
+    const ext = pendingFile.name.split(".").pop()?.toLowerCase() ?? "";
+    if (ext !== docType) {
+      setUploadErr(`Please upload a .${docType} file.`);
+      return;
+    }
 
     setUploading(true); setUploadErr(null);
-    const ext      = pendingFile.name.split(".").pop()?.toLowerCase() ?? "";
     const uploadId = crypto.randomUUID();
 
     try {
       const totalChunks = Math.ceil(pendingFile.size / CHUNK_SIZE);
       const chunkUrls: string[] = [];
 
-      // Upload each chunk sequentially
       for (let i = 0; i < totalChunks; i++) {
         const chunk = pendingFile.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
         const fd = new FormData();
@@ -175,7 +217,6 @@ export default function DocumentosPage() {
         chunkUrls.push(chunkUrl);
       }
 
-      // Finalize: assemble chunks into one file in Vercel Blob
       const finalRes = await fetch("/api/templates/chunk/finalize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -187,15 +228,15 @@ export default function DocumentosPage() {
       }
       const { blobUrl } = await finalRes.json();
 
-      // Register template in database
+      // Register as THE default template for this doc type (fixed reserved name)
       const regRes = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           blobUrl,
-          name: uploadName.trim(),
+          name: DEFAULT_TEMPLATE_NAME[docType],
           description: uploadDesc.trim() || undefined,
-          type: ext,
+          type: docType,
         }),
       });
       if (!regRes.ok) {
@@ -204,22 +245,15 @@ export default function DocumentosPage() {
       }
 
       const t = await regRes.json() as DocTemplate;
-      setTemplates(prev => [t, ...prev]);
-      setShowUpload(false); setPendingFile(null); setUploadName(""); setUploadDesc("");
-      setSelected(t);
+      // Keep only the newest row for this type+name so lookup is unambiguous
+      setTemplates(prev => [t, ...prev.filter(x => !(x.type === docType && x.name === DEFAULT_TEMPLATE_NAME[docType]))]);
+      setShowUpload(false); setPendingFile(null); setUploadDesc("");
 
     } catch (err: any) {
       setUploadErr(err?.message ?? "Error uploading file");
     }
 
     setUploading(false);
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this template?")) return;
-    await fetch(`/api/templates/${id}`, { method: "DELETE" });
-    setTemplates(prev => prev.filter(t => t.id !== id));
-    if (selected?.id === id) setSelected(null);
   }
 
   // ── Generate document ──────────────────────────────────────────────────────
@@ -318,7 +352,6 @@ export default function DocumentosPage() {
   async function handlePlan(feedback?: string) {
     if (!selected || selected.type !== "pptx") return;
     setPlanning(true); setPlanErr(null);
-    // Upload context files to Blob so plan route can download them server-side
     let blobUrls: { name: string; url: string; type: string }[] = [];
     try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
       setPlanErr("Error uploading files: " + (e instanceof Error ? e.message : String(e)));
@@ -356,7 +389,6 @@ export default function DocumentosPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Reuse already-uploaded blobs from plan step when possible
     let blobUrls = contextBlobUrls;
     if (contextFiles.length > 0 && blobUrls.length !== contextFiles.length) {
       try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
@@ -404,7 +436,6 @@ export default function DocumentosPage() {
           if (event.type === "progress") {
             setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
           } else if (event.type === "chunk") {
-            // Accumulate base64 chunks — server splits the PPTX into 500 KB pieces
             if (event.index !== undefined) pptxChunks[event.index] = event.data ?? "";
           } else if (event.type === "done") {
             const base64 = pptxChunks.join("");
@@ -458,7 +489,7 @@ export default function DocumentosPage() {
       const existing = new Set(prev.map(f => f.name + f.size));
       return [...prev, ...arr.filter(f => !existing.has(f.name + f.size))];
     });
-    setContextBlobUrls([]); // reset blobs — force re-upload on next plan/build
+    setContextBlobUrls([]);
   }
   function removeContextFile(idx: number) {
     setContextFiles(prev => prev.filter((_, i) => i !== idx));
@@ -468,81 +499,25 @@ export default function DocumentosPage() {
   function handleTemplateDrop(e: React.DragEvent) {
     e.preventDefault(); setDragOver(false);
     const f = e.dataTransfer.files[0];
-    if (f) { setPendingFile(f); setUploadName(f.name.replace(/\.[^.]+$/, "")); setShowUpload(true); }
+    if (f) { setPendingFile(f); setShowUpload(true); }
   }
 
   return (
     <div className="flex h-full">
-
-      {/* ── Sidebar: template gallery ──────────────────────────────────── */}
-      <aside className="w-72 shrink-0 border-r border-chalk bg-paper flex flex-col h-full">
-        <div className="px-5 py-4 border-b border-chalk flex items-center justify-between">
-          <div>
-            <h2 className="text-[15px] font-semibold text-carbon">Documents</h2>
-            <p className="text-[11px] text-slate mt-0.5">Saved templates</p>
-          </div>
-          <button onClick={() => setShowUpload(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-carbon text-white text-[12px] font-medium rounded-[7px] hover:bg-graphite transition-colors">
-            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-              <line x1="5.5" y1="1" x2="5.5" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="1" y1="5.5" x2="10" y2="5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            Subir
-          </button>
-        </div>
-
-        <div onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)} onDrop={handleTemplateDrop}
-          className={`mx-3 mt-3 mb-1 rounded-[8px] border-2 border-dashed text-center py-3 text-[11px] transition-colors ${
-            dragOver ? "border-carbon bg-fog text-carbon" : "border-chalk/60 text-slate/60"}`}>
-          Drop template here
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-          {templates.length === 0 && (
-            <div className="text-center py-12 text-slate text-[12px]"><div className="flex justify-center mb-2"><File size={28} className="text-chalk" /></div>Upload your first template</div>
-          )}
-          {templates.map(t => (
-            <button key={t.id} onClick={() => { setSelected(t); setGenSuccess(false); setGenErr(null); setBuildErr(null); setPlanErr(null); setPlan(null); setPlanFeedback(""); setContextFiles([]); }}
-              className={`w-full text-left rounded-[8px] p-3 border transition-all group ${
-                selected?.id === t.id ? "bg-carbon text-white border-carbon" : "bg-white border-chalk hover:border-graphite/30 hover:shadow-sm"}`}>
-              <div className="flex items-start gap-2">
-                <span className="shrink-0 mt-0.5"><DocTypeIcon type={t.type} size={16} /></span>
-                <div className="flex-1 min-w-0">
-                  <div className={`text-[12px] font-semibold truncate ${selected?.id === t.id ? "text-white" : "text-carbon"}`}>{t.name}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${
-                      selected?.id === t.id ? "bg-white/20 text-white border-white/30" : TYPE_COLOR[t.type]}`}>
-                      {TYPE_LABEL[t.type]}
-                    </span>
-                    {t.fileSize && <span className={`text-[10px] ${selected?.id === t.id ? "text-white/60" : "text-slate"}`}>{fmtSize(t.fileSize)}</span>}
-                  </div>
-                  {t.description && <div className={`text-[10px] mt-1 truncate ${selected?.id === t.id ? "text-white/70" : "text-slate"}`}>{t.description}</div>}
-                </div>
-                <button onClick={e => { e.stopPropagation(); handleDelete(t.id); }}
-                  className={`opacity-0 group-hover:opacity-100 p-1 rounded ${selected?.id === t.id ? "hover:bg-white/20 text-white/60" : "hover:bg-fog text-slate"}`}>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    <line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                </button>
-              </div>
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      {/* ── Main content ───────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto bg-mist">
 
-        {/* Upload modal */}
-        {showUpload && (
+        {/* Set / replace default template modal */}
+        {showUpload && docType && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-[14px] shadow-xl w-full max-w-md p-6">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="text-[15px] font-semibold text-carbon">Upload Template</h3>
-                  <p className="text-[11px] text-slate mt-0.5">Upload your document without modifying it</p>
+                  <h3 className="text-[15px] font-semibold text-carbon">
+                    {selected ? "Replace" : "Set up"} the {DOC_TYPE_META[docType].label} template
+                  </h3>
+                  <p className="text-[11px] text-slate mt-0.5">
+                    This becomes the fixed template used for every {DOC_TYPE_META[docType].label} document — users won&apos;t choose between templates.
+                  </p>
                 </div>
                 <button onClick={() => { setShowUpload(false); setPendingFile(null); setUploadErr(null); }} className="text-slate hover:text-carbon">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -563,35 +538,34 @@ export default function DocumentosPage() {
                       <button type="button" onClick={() => { setPendingFile(null); if (templateFileRef.current) templateFileRef.current.value = ""; }} className="text-slate hover:text-carbon">✕</button>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => templateFileRef.current?.click()}
-                      className="w-full border-2 border-dashed border-chalk rounded-[8px] py-8 text-center text-[12px] text-slate hover:border-graphite/40 hover:bg-fog transition-colors">
+                    <button type="button"
+                      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleTemplateDrop}
+                      onClick={() => templateFileRef.current?.click()}
+                      className={`w-full border-2 border-dashed rounded-[8px] py-8 text-center text-[12px] transition-colors ${
+                        dragOver ? "border-carbon bg-fog text-carbon" : "border-chalk text-slate hover:border-graphite/40 hover:bg-fog"}`}>
                       <div className="flex justify-center mb-2"><Paperclip size={26} className="text-chalk" /></div>
-                      <div className="font-medium text-carbon">Click to select</div>
-                      <div className="text-[10px] mt-1 text-slate">PowerPoint · Word · Excel</div>
+                      <div className="font-medium text-carbon">Click or drop to select</div>
+                      <div className="text-[10px] mt-1 text-slate">.{docType} file only</div>
                     </button>
                   )}
-                  <input ref={templateFileRef} type="file" accept=".pptx,.docx,.xlsx" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) { setPendingFile(f); setUploadName(prev => prev || f.name.replace(/\.[^.]+$/, "")); } }} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-graphite mb-1.5">Name *</label>
-                  <input value={uploadName} onChange={e => setUploadName(e.target.value)}
-                    placeholder="e.g. Investment 2-Pager, LP Presentation..."
-                    className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[13px] text-carbon placeholder:text-slate/50 focus:outline-none focus:border-carbon"/>
+                  <input ref={templateFileRef} type="file" accept={`.${docType}`} className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) setPendingFile(f); }} />
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-graphite mb-1.5">Description (optional)</label>
                   <input value={uploadDesc} onChange={e => setUploadDesc(e.target.value)}
-                    placeholder="What this template is used for..."
+                    placeholder="Internal note about this template..."
                     className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[13px] text-carbon placeholder:text-slate/50 focus:outline-none focus:border-carbon"/>
                 </div>
                 {uploadErr && <div className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-[8px] p-3">{uploadErr}</div>}
                 <div className="flex gap-2 pt-1">
                   <button type="button" onClick={() => { setShowUpload(false); setPendingFile(null); setUploadErr(null); }}
                     className="flex-1 border border-chalk rounded-[8px] py-2 text-[13px] text-graphite hover:bg-fog">Cancel</button>
-                  <button type="submit" disabled={uploading || !pendingFile || !uploadName.trim()}
+                  <button type="submit" disabled={uploading || !pendingFile}
                     className="flex-1 bg-orange text-white rounded-[8px] py-2 text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed">
-                    {uploading ? "Uploading…" : "Upload"}
+                    {uploading ? "Uploading…" : "Save"}
                   </button>
                 </div>
               </form>
@@ -624,7 +598,6 @@ export default function DocumentosPage() {
               {/* Body */}
               <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
-                {/* No changes warning */}
                 {genResult.replacements.length === 0 && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-[10px] p-4 space-y-2">
                     <div className="text-[13px] font-semibold text-yellow-800">⚠ AI did not generate changes</div>
@@ -638,12 +611,11 @@ export default function DocumentosPage() {
                           <div>extracted text: <b>{genResult._debug.templateTextLength} chars</b></div>
                         </div>
                       )}
-                      <p>If the API key is active and there is a company/instructions, AI should generate changes. If it says "NO" for company and API key, configure them first.</p>
+                      <p>If the API key is active and there is a company/instructions, AI should generate changes. If it says &quot;NO&quot; for company and API key, configure them first.</p>
                     </div>
                   </div>
                 )}
 
-                {/* Replacements list */}
                 {genResult.replacements.length > 0 && (
                   <div>
                     <div className="text-[12px] font-semibold text-carbon mb-2">Changes applied</div>
@@ -664,7 +636,6 @@ export default function DocumentosPage() {
                   </div>
                 )}
 
-                {/* Preview text */}
                 {genResult.previewText && (
                   <div>
                     <div className="text-[12px] font-semibold text-carbon mb-2">Generated document content</div>
@@ -696,51 +667,73 @@ export default function DocumentosPage() {
           </div>
         )}
 
-        {/* Empty state */}
-        {!selected && (
+        {/* ── Landing: choose document type ─────────────────────────────── */}
+        {!docType && (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <div className="flex justify-center mb-4"><Sparkles size={40} className="text-orange" /></div>
             <h3 className="text-[20px] font-semibold text-carbon mb-2">AI Document Generator</h3>
             <p className="text-[13px] text-slate max-w-md mb-8 leading-relaxed">
-              Upload your existing presentation or document. Attach backup files
-              (PDFs, Excels with data, reports) and AI extracts the relevant information
-              to build a personalized document.
+              Choose what you want to build. Attach backup files (PDFs, Excels with data, reports)
+              and AI extracts the relevant information to fill in the document.
             </p>
-            <div className="grid grid-cols-3 gap-4 mb-8 w-full max-w-sm">
-              {(["pptx","docx","xlsx"] as const).map(type => (
-                <div key={type} className={`rounded-[12px] border-2 p-5 text-center ${TYPE_COLOR[type]}`}>
-                  <div className="flex justify-center mb-2"><DocTypeIcon type={type} size={28} /></div>
-                  <div className="text-[12px] font-semibold">{TYPE_LABEL[type]}</div>
-                </div>
+            <div className="grid grid-cols-2 gap-4 w-full max-w-md">
+              {(Object.keys(DOC_TYPE_META) as DocType[]).map(t => (
+                <button key={t} onClick={() => chooseDocType(t)}
+                  className={`rounded-[12px] border-2 p-6 text-center transition-transform hover:scale-[1.02] ${DOC_TYPE_META[t].color}`}>
+                  <div className="flex justify-center mb-3">{DOC_TYPE_META[t].icon(32)}</div>
+                  <div className="text-[13px] font-semibold mb-1">{DOC_TYPE_META[t].label}</div>
+                  <div className="text-[10px] text-slate leading-relaxed">{DOC_TYPE_META[t].blurb}</div>
+                </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ── Default template not configured yet ──────────────────────── */}
+        {docType && !selected && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-8">
+            <button onClick={backToLanding} className="flex items-center gap-1 text-[12px] text-slate hover:text-carbon mb-6">
+              <ChevronLeft size={14} /> Change document type
+            </button>
+            <div className="flex justify-center mb-4">{DOC_TYPE_META[docType].icon(40)}</div>
+            <h3 className="text-[18px] font-semibold text-carbon mb-2">No {DOC_TYPE_META[docType].label} template configured</h3>
+            <p className="text-[13px] text-slate max-w-md mb-6 leading-relaxed">
+              This document type doesn&apos;t have a fixed template yet. Upload the {DOC_TYPE_META[docType].label.toLowerCase()} file
+              that should be used as the base template for every future document of this type.
+            </p>
             <button onClick={() => setShowUpload(true)}
               className="flex items-center gap-2 px-6 py-3 bg-orange text-white rounded-[10px] text-[14px] font-medium hover:opacity-85 transition-colors shadow-sm">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                 <line x1="6.5" y1="1" x2="6.5" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 <line x1="1" y1="6.5" x2="12" y2="6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
-              Upload first template
+              Upload template
             </button>
           </div>
         )}
 
-        {/* Template selected — generation panel */}
-        {selected && (
-          <div className="py-10 px-6 space-y-4">
+        {/* ── Template ready — generation panel ────────────────────────── */}
+        {docType && selected && (
+          <div className="py-10 px-6 space-y-4 max-w-3xl mx-auto">
 
-            {/* Template header */}
+            <button onClick={backToLanding} className="flex items-center gap-1 text-[12px] text-slate hover:text-carbon">
+              <ChevronLeft size={14} /> Change document type
+            </button>
+
+            {/* Header */}
             <div className="flex items-center gap-4">
               <div className="shrink-0"><DocTypeIcon type={selected.type} size={44} /></div>
-              <div>
-                <h1 className="text-[20px] font-semibold text-carbon">{selected.name}</h1>
+              <div className="flex-1">
+                <h1 className="text-[20px] font-semibold text-carbon">New {DOC_TYPE_META[docType].label} document</h1>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${TYPE_COLOR[selected.type]}`}>{TYPE_LABEL[selected.type]}</span>
-                  {selected.fileSize && <span className="text-[11px] text-slate">{fmtSize(selected.fileSize)}</span>}
                   <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-medium"><Sparkles size={11} />AI</span>
                 </div>
-                {selected.description && <p className="text-[12px] text-slate mt-1">{selected.description}</p>}
               </div>
+              <button onClick={() => setShowUpload(true)}
+                className="text-[11px] font-medium text-slate hover:text-carbon border border-chalk px-3 py-1.5 rounded-[7px] hover:bg-fog transition-colors shrink-0">
+                Replace template
+              </button>
             </div>
 
             {/* Step 1 — Company (optional) */}
@@ -891,7 +884,7 @@ export default function DocumentosPage() {
             <div className="bg-white border border-chalk rounded-[12px] p-5">
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-5 h-5 rounded-full bg-orange text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
-                <div className="text-[13px] font-semibold text-carbon">Generar documento</div>
+                <div className="text-[13px] font-semibold text-carbon">Generate document</div>
               </div>
 
               {genErr && (
@@ -1001,7 +994,7 @@ export default function DocumentosPage() {
               <div className="mt-4 pt-4 border-t border-chalk flex items-start gap-2">
                 <Lock size={14} className="text-slate shrink-0" />
                 <div className="text-[10px] text-slate leading-relaxed">
-                  Your original template is never modified. Backup files are used only for this generation and are not stored on the server.
+                  The template is fixed by the firm. Backup files are used only for this generation and are not stored on the server.
                 </div>
               </div>
             </div>
@@ -1066,7 +1059,6 @@ export default function DocumentosPage() {
                         </div>
                       );
                     }
-                    // regular slide
                     const slideNumber = plan.slides.filter(s => s.type === "slide" && s.index <= slide.index).length;
                     return (
                       <div key={slide.index} className="flex items-start gap-3 py-2 pl-2">
@@ -1187,8 +1179,7 @@ export default function DocumentosPage() {
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                             <rect x="1" y="1" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
                             <rect x="8" y="1" width="5" height="5" rx="1" fill="currentColor"/>
-                            <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor"/>
-                            <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
+                            <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".7"/>
                           </svg>
                           Approve and build presentation
                         </>

@@ -38,7 +38,7 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
     <aside
       data-sidebar
       className={cn(
-        "no-print flex flex-col shrink-0 bg-paper border-r border-chalk h-screen sticky top-0",
+        "no-print flex flex-col shrink-0 bg-paper border-r-2 border-forest h-screen sticky top-0",
         "transition-[width] duration-300 ease-in-out overflow-hidden",
         collapsed ? "w-[56px]" : "w-[180px]",
       )}
