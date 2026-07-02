@@ -193,6 +193,15 @@ export const mandateMatches = pgTable("MandateMatch", {
   updatedAt: text("updatedAt").default(sql`now()`),
 });
 
+// ── Firm Settings (singleton row, id = "default") ──────────────────────────────
+
+export const firmSettings = pgTable("FirmSettings", {
+  id:                text("id").primaryKey(),
+  investmentThesis:  text("investmentThesis"),
+  updatedAt:         text("updatedAt").default(sql`now()`),
+  updatedBy:         text("updatedBy"),
+});
+
 // ── Document Templates ────────────────────────────────────────────────────────
 
 export const documentTemplates = pgTable("DocumentTemplate", {

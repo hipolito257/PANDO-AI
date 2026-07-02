@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { companies, newsItems, signals, cronLogs } from "@/lib/schema";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
+import { getFirmThesis } from "@/lib/firmThesis";
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -422,23 +423,14 @@ Return ONLY a valid JSON array. If no companies found, return [].`;
 async function scoreAndFilterCompanies(
   candidates: ExtractedCompany[],
   apiKey: string,
-  radarSectors: string[]
+  firmThesis: string
 ): Promise<ExtractedCompany[]> {
   if (!candidates.length) return [];
 
-  const prioritySectors = [...new Set([
-    ...radarSectors,
-    "Fintech", "SaaS", "Logistics", "Healthtech", "Marketplace",
-  ])].slice(0, 8).join(", ");
+  const prompt = `You are a senior PE analyst at Pando, a Mexico-focused growth equity fund. Score each candidate against Pando's actual investment policy below.
 
-  const prompt = `You are a senior PE analyst at a growth-stage fund focused on Latin America.
-
-Investment thesis:
-- Geography priority: Mexico, Colombia, Brazil, Chile, Peru, Argentina
-- Stage: Seed+ through Series C (pre-IPO, growth stage)
-- Sectors we like: ${prioritySectors}
-- Sectors we AVOID: Consumer social apps, Gaming, Crypto/Web3/NFT, Government services, Pure hardware, Adult content
-- Business model preference: B2B or B2B2C, recurring revenue, scalable tech-enabled
+Pando's Investment Policy:
+${firmThesis}
 
 Score each candidate company from 1–10 on thesis fit:
   9–10 → Perfect fit, high priority for pipeline
@@ -560,8 +552,9 @@ export async function GET(req: NextRequest) {
     ])];
 
     const candidates = await extractCompaniesFromHeadlines(allHeadlines, existingNames, systemApiKey);
+    const firmThesis = await getFirmThesis();
     const qualified = candidates.length > 0
-      ? await scoreAndFilterCompanies(candidates, systemApiKey, radarSectors)
+      ? await scoreAndFilterCompanies(candidates, systemApiKey, firmThesis)
       : [];
 
     filteredOut = candidates.length - qualified.length;

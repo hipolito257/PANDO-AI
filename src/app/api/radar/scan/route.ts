@@ -4,6 +4,7 @@ import { companies, signals, mandates } from "@/lib/schema";
 import { auth } from "@/lib/auth";
 import { eq, notInArray } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { getFirmThesis } from "@/lib/firmThesis";
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -57,8 +58,9 @@ export async function POST(req: NextRequest) {
 
   if (!pdfBase64) return NextResponse.json({ error: "pdfBase64 required" }, { status: 400 });
 
-  // ── Load context: mandates + existing company names ───────────────────────
-  const [activeMandates, existingCompanies] = await Promise.all([
+  // ── Load context: firm thesis + mandates + existing company names ─────────
+  const [firmThesis, activeMandates, existingCompanies] = await Promise.all([
+    getFirmThesis(),
     db.query.mandates.findMany().catch(() => []),
     db.query.companies.findMany(),
   ]);
@@ -77,8 +79,11 @@ export async function POST(req: NextRequest) {
     : "No specific mandates defined — evaluate for general PE fit (growth-stage, LATAM, $5M–$100M revenue).";
 
   // ── Build Claude prompt ────────────────────────────────────────────────────
-  const systemPrompt = `You are a senior private equity analyst at a LATAM-focused growth equity fund.
+  const systemPrompt = `You are a senior private equity analyst at Pando, a LATAM-focused growth equity fund.
 Your job is to scan documents and extract intelligence for the fund's investment radar.
+
+Pando's Investment Policy (weigh this first — mandateFit should reflect fit against this policy, refined by the specific mandates below):
+${firmThesis}
 
 Active investment mandates:
 ${mandateSummary}

@@ -32,6 +32,11 @@ export default function SettingsPage() {
   const [resetValue, setResetValue] = useState("");
   const [resetMessage, setResetMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  const [thesis, setThesis] = useState("");
+  const [thesisLoading, setThesisLoading] = useState(true);
+  const [thesisSaving, setThesisSaving] = useState(false);
+  const [thesisMessage, setThesisMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   useEffect(() => {
     async function load() {
       const res = await fetch("/api/user/api-key");
@@ -65,7 +70,39 @@ export default function SettingsPage() {
       setPendingLoading(false);
     }
     loadPending();
+
+    async function loadThesis() {
+      const res = await fetch("/api/admin/firm-thesis");
+      if (res.ok) {
+        const data = await res.json();
+        setThesis(data.thesis);
+      }
+      setThesisLoading(false);
+    }
+    loadThesis();
   }, [isAdmin]);
+
+  async function handleThesisSave() {
+    setThesisMessage(null);
+    if (!thesis.trim()) {
+      setThesisMessage({ type: "error", text: "Thesis text cannot be empty" });
+      return;
+    }
+    setThesisSaving(true);
+    const res = await fetch("/api/admin/firm-thesis", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thesis }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setThesis(data.thesis);
+      setThesisMessage({ type: "success", text: "Investment thesis updated — used by the scan cron and document scanner" });
+    } else {
+      setThesisMessage({ type: "error", text: data.error ?? "Could not save thesis" });
+    }
+    setThesisSaving(false);
+  }
 
   async function handlePendingAction(id: string, action: "approve" | "decline") {
     setPendingBusyId(id);
@@ -285,6 +322,48 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Investment Thesis (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+            <div>
+              <h2 className="text-[16px] font-semibold text-carbon">Investment Thesis</h2>
+              <p className="text-[12px] text-slate mt-1">
+                Pando's investment policy, used by the discovery cron and the "Scan document with AI" feature
+                to score how well a company fits the fund's mandate.
+              </p>
+            </div>
+
+            {thesisLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : (
+              <textarea
+                value={thesis}
+                onChange={e => setThesis(e.target.value)}
+                rows={16}
+                className="w-full px-3 py-2.5 text-[12px] leading-relaxed bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange font-mono"
+              />
+            )}
+
+            {thesisMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border ${
+                thesisMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {thesisMessage.text}
+              </div>
+            )}
+
+            <button
+              onClick={handleThesisSave}
+              disabled={thesisSaving || thesisLoading}
+              className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {thesisSaving ? "Saving…" : "Save Thesis"}
+            </button>
           </div>
         )}
 
