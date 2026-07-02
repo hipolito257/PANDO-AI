@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ChatPanel } from "./ChatPanel";
 import Link from "next/link";
+import { useSession, signOut } from "next-auth/react";
 import {
   DollarSign, Handshake, User, TrendingUp, AlertTriangle,
   Flag, AlertCircle, Shuffle, Users, Scale, Pin,
@@ -52,9 +53,27 @@ function fmtRelative(dateStr: string | null): string {
 }
 
 export function Topbar({ title, subtitle, actions }: TopbarProps) {
+  const { data: session } = useSession();
   const [query, setQuery]             = useState("");
   const [chatOpen, setChatOpen]       = useState(false);
   const [initialQuery, setInitialQuery] = useState("");
+
+  // Profile menu
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef                    = useRef<HTMLDivElement>(null);
+  const initials = (session?.user?.name ?? session?.user?.email ?? "?")
+    .trim().split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    function handler(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [profileOpen]);
 
   // Notifications
   const [bellOpen, setBellOpen]       = useState(false);
@@ -119,17 +138,17 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
 
   return (
     <>
-      <header data-no-print className="no-print h-[60px] px-6 flex items-center justify-between border-b border-chalk bg-paper sticky top-0 z-40">
+      <header data-no-print className="no-print h-[60px] px-6 flex items-center justify-between border-b border-chalk bg-forest sticky top-0 z-40">
         {/* Title */}
         <div>
-          <h1 className="text-[16px] font-semibold text-carbon tracking-tight">{title}</h1>
-          {subtitle && <p className="text-[11px] text-slate mt-0">{subtitle}</p>}
+          <h1 className="text-[16px] font-semibold text-white tracking-tight">{title}</h1>
+          {subtitle && <p className="text-[11px] text-white/60 mt-0">{subtitle}</p>}
         </div>
 
         {/* Ask PANDO bar */}
         <div className="flex-1 max-w-[400px] mx-8">
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate" width="13" height="13" viewBox="0 0 14 14" fill="none">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" width="13" height="13" viewBox="0 0 14 14" fill="none">
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" />
               <line x1="9.5" y1="9.5" x2="13" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
             </svg>
@@ -140,11 +159,11 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
               onChange={e => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               onFocus={() => { if (!query) openChat(""); }}
-              className="w-full pl-8 pr-4 py-1.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate focus:outline-none focus:border-orange focus:bg-paper transition-colors cursor-pointer"
+              className="w-full pl-8 pr-4 py-1.5 text-[13px] bg-white/10 border border-white/20 rounded-[8px] text-white placeholder:text-white/50 focus:outline-none focus:border-white/40 transition-colors cursor-pointer"
               readOnly={chatOpen}
             />
             {query && (
-              <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate bg-chalk px-1.5 py-0.5 rounded">↵</kbd>
+              <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-white/70 bg-white/15 px-1.5 py-0.5 rounded">↵</kbd>
             )}
           </div>
         </div>
@@ -155,7 +174,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
 
           {/* Chat button */}
           <button onClick={() => openChat("")}
-            className="relative w-8 h-8 flex items-center justify-center rounded-[8px] hover:bg-fog text-slate hover:text-carbon transition-colors"
+            className="relative w-8 h-8 flex items-center justify-center rounded-[8px] hover:bg-white/10 text-white/70 hover:text-white transition-colors"
             title="Open PANDO AI">
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
               <path d="M7.5 1C3.91 1 1 3.69 1 7c0 1.47.56 2.82 1.5 3.87L1.5 14l3.5-1.5C6.1 13 6.79 13 7.5 13c3.59 0 6.5-2.69 6.5-6S11.09 1 7.5 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
@@ -167,7 +186,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
           <div ref={bellRef} className="relative">
             <button
               onClick={openBell}
-              className={`relative w-8 h-8 flex items-center justify-center rounded-[8px] hover:bg-fog transition-colors ${bellOpen ? "bg-fog text-carbon" : "text-slate hover:text-carbon"}`}
+              className={`relative w-8 h-8 flex items-center justify-center rounded-[8px] hover:bg-white/10 transition-colors ${bellOpen ? "bg-white/15 text-white" : "text-white/70 hover:text-white"}`}
               title="Notifications"
             >
               <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
@@ -175,7 +194,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
                 <path d="M6.3 12.5a1.2 1.2 0 002.4 0" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
               </svg>
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 bg-orange text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 bg-white text-forest text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               )}
@@ -282,8 +301,43 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
           </div>
 
           {/* Avatar */}
-          <div className="w-7 h-7 rounded-full bg-orange flex items-center justify-center text-white text-[11px] font-semibold">
-            PM
+          <div ref={profileRef} className="relative">
+            <button
+              onClick={() => setProfileOpen(v => !v)}
+              className="w-7 h-7 rounded-full bg-white text-forest flex items-center justify-center text-[11px] font-semibold hover:opacity-85 transition-opacity"
+              title="Account"
+            >
+              {initials || "?"}
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 top-10 w-[220px] bg-paper border border-chalk rounded-[12px] shadow-xl z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-chalk">
+                  <p className="text-[13px] font-semibold text-carbon truncate">{session?.user?.name ?? "Account"}</p>
+                  <p className="text-[11px] text-slate truncate">{session?.user?.email}</p>
+                  {session?.user?.role && (
+                    <span className="inline-block mt-1.5 text-[10px] font-medium text-graphite bg-fog px-2 py-0.5 rounded-full capitalize">
+                      {session.user.role}
+                    </span>
+                  )}
+                </div>
+                <div className="py-1">
+                  <Link
+                    href="/settings"
+                    onClick={() => setProfileOpen(false)}
+                    className="block px-4 py-2 text-[12px] text-carbon hover:bg-fog transition-colors"
+                  >
+                    Settings
+                  </Link>
+                  <button
+                    onClick={() => signOut({ callbackUrl: "/login" })}
+                    className="w-full text-left px-4 py-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>

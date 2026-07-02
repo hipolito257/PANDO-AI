@@ -325,10 +325,10 @@ export default function RadarPage() {
         {/* ── PIPELINE tab ── */}
         {activeTab === "pipeline" && (
           <Card padding="none">
-            <div className="px-5 py-3 border-b border-chalk bg-fog/30 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-chalk bg-forest flex items-center justify-between">
               <div>
-                <p className="text-[13px] font-semibold text-carbon">Active Pipeline</p>
-                <p className="text-[11px] text-slate">Companies under active evaluation · Promoted from Radar by the team</p>
+                <p className="text-[13px] font-semibold text-white">Active Pipeline</p>
+                <p className="text-[11px] text-white/70">Companies under active evaluation · Promoted from Radar by the team</p>
               </div>
             </div>
             {pipelineCompanies.length === 0 ? (
@@ -408,9 +408,9 @@ export default function RadarPage() {
         {/* ── SALIDAS tab ── */}
         {activeTab === "salidas" && (
           <Card padding="none">
-            <div className="px-5 py-3 border-b border-chalk bg-fog/30">
-              <p className="text-[13px] font-semibold text-carbon">Exits detected</p>
-              <p className="text-[11px] text-slate">Companies that went public, were acquired, or shut down · Detected automatically from news</p>
+            <div className="px-5 py-3 border-b border-chalk bg-forest">
+              <p className="text-[13px] font-semibold text-white">Exits detected</p>
+              <p className="text-[11px] text-white/70">Companies that went public, were acquired, or shut down · Detected automatically from news</p>
             </div>
             {exitedCompanies.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-slate">
@@ -696,11 +696,11 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
           {/* Companies found */}
           {result.companies.length > 0 && (
             <Card padding="none">
-              <div className="px-5 py-3 border-b border-chalk bg-fog/30">
-                <p className="text-[13px] font-semibold text-carbon">
+              <div className="px-5 py-3 border-b border-chalk bg-forest">
+                <p className="text-[13px] font-semibold text-white">
                   Companies found — {result.companiesAdded} added to Radar
                 </p>
-                <p className="text-[11px] text-slate">Fit score calculated against the fund's active mandates</p>
+                <p className="text-[11px] text-white/70">Fit score calculated against the fund's active mandates</p>
               </div>
               <div className="divide-y divide-chalk">
                 {result.companies.map((co, i) => (
@@ -731,9 +731,9 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
           {/* Signals for existing companies */}
           {result.signals.length > 0 && (
             <Card padding="none">
-              <div className="px-5 py-3 border-b border-chalk bg-fog/30">
-                <p className="text-[13px] font-semibold text-carbon">Signals detected for Radar companies</p>
-                <p className="text-[11px] text-slate">Relevant information about companies you're already monitoring</p>
+              <div className="px-5 py-3 border-b border-chalk bg-forest">
+                <p className="text-[13px] font-semibold text-white">Signals detected for Radar companies</p>
+                <p className="text-[11px] text-white/70">Relevant information about companies you're already monitoring</p>
               </div>
               <div className="divide-y divide-chalk">
                 {result.signals.map((sig, i) => (

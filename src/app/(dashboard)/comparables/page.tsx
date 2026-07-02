@@ -400,17 +400,17 @@ function ComparablesPage() {
           ) : (
             <div className="p-5 space-y-4">
               {/* Company header */}
-              <div className="bg-paper rounded-[10px] border border-chalk p-4">
+              <div className="bg-forest rounded-[10px] border border-chalk p-4">
                 <div className="flex items-start gap-3 flex-wrap">
                   <CompanyLogo name={selectedCompany.name} website={selectedCompany.website} size="lg" />
                   <div className="flex-1 min-w-[180px]">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-[16px] font-semibold text-carbon font-poly">{selectedCompany.name}</h2>
-                      <span className="text-[10px] bg-orange/10 text-orange border border-orange/20 px-2 py-0.5 rounded-full font-medium">PRIVATE</span>
-                      {selectedCompany.sector && <span className="text-[10px] bg-fog border border-chalk text-slate px-2 py-0.5 rounded-full">{selectedCompany.sector}</span>}
-                      <WebsiteLink url={selectedCompany.website} />
+                      <h2 className="text-[16px] font-semibold text-white font-poly">{selectedCompany.name}</h2>
+                      <span className="text-[10px] bg-white/15 text-white border border-white/25 px-2 py-0.5 rounded-full font-medium">PRIVATE</span>
+                      {selectedCompany.sector && <span className="text-[10px] bg-white/10 border border-white/20 text-white/80 px-2 py-0.5 rounded-full">{selectedCompany.sector}</span>}
+                      <WebsiteLink url={selectedCompany.website} className="text-white/70 hover:text-white" />
                     </div>
-                    {selectedCompany.description && <p className="text-[11px] text-slate mt-0.5 line-clamp-1">{selectedCompany.description}</p>}
+                    {selectedCompany.description && <p className="text-[11px] text-white/70 mt-0.5 line-clamp-1">{selectedCompany.description}</p>}
                   </div>
                   <div className="flex gap-4 shrink-0">
                     {[
@@ -420,8 +420,8 @@ function ComparablesPage() {
                       { l: "EBITDA Mg.", v: fmtPct(selectedCompany.ebitdaMargin) },
                     ].map(({ l, v }) => (
                       <div key={l} className="text-center">
-                        <p className="text-[15px] font-bold text-carbon font-poly">{v}</p>
-                        <p className="text-[9px] text-slate">{l}</p>
+                        <p className="text-[15px] font-bold text-white font-poly">{v}</p>
+                        <p className="text-[9px] text-white/60">{l}</p>
                       </div>
                     ))}
                   </div>
