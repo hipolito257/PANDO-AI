@@ -3,11 +3,10 @@
 // across many short-lived serverless calls (avoiding the 300s function
 // timeout on very large documents), and reconstructed once at the end.
 
-export type Direction = "es-en" | "en-es";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { XMLParser, XMLBuilder } = require("fast-xml-parser");
 
-export function escapeXmlText(str: string): string {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+export type Direction = "es-en" | "en-es";
 
 // ── Claude translation call, internally chunked + parallelized ───────────────
 export async function callTranslateBatch(texts: string[], apiKey: string, direction: Direction): Promise<string[]> {
@@ -37,9 +36,11 @@ export async function callTranslateBatch(texts: string[], apiKey: string, direct
 
 RULES:
 - Preserve meaning, tone, and register exactly — these may be formal business, financial, or legal documents.
-- Keep numbers, dates, currency symbols, percentages, proper nouns, company names, and acronyms unchanged unless they have a standard translated form.
+- Translate everything into ${targetLang}, including abbreviations, acronyms, units, and job titles — give the standard ${targetLang} form where one exists (e.g. an acronym that expands to a translatable phrase should have its expansion translated, even if the acronym letters themselves stay the same).
+- The ONLY things that must stay unchanged are proper names: company names, people's names, brand names, and product names. Do not translate these even if they look like ordinary words.
+- Keep numbers, dates, currency symbols, and percentages unchanged (format only, not surrounding words).
 - Preserve any placeholder tokens exactly as-is (e.g. "{{name}}", "%s", "{0}").
-- If a string is already fully in ${targetLang}, or has no translatable text (e.g. just a number, date, or symbol), return it unchanged.
+- If a string is just a number, date, symbol, or proper name with no other translatable text, return it unchanged.
 - Return ONLY a JSON array of the same length and in the same order as the input, containing the translated strings. No markdown, no explanation, no extra text.
 
 INPUT:
@@ -77,104 +78,170 @@ ${JSON.stringify(chunk)}`,
   return results.flat();
 }
 
-// ── DOCX: extract merged paragraph text (flattening runs), and reconstruct ──
-// Paragraphs containing images, hyperlinks, or fields are left untouched and
-// are NOT included in the extracted segment list.
+// ── DOCX/PPTX: AST-based extraction & reconstruction ─────────────────────────
+// We parse the OOXML with a real XML parser (preserving element order and all
+// attributes) instead of regex, and only ever mutate the text content of leaf
+// <w:t>/<a:t> nodes in place. Every other node — runs, run properties, tracked
+// changes (w:ins/w:del/pPrChange/rPrChange), drawings, hyperlinks, fields,
+// tables, textboxes — is copied back untouched, so formatting is guaranteed to
+// stay pixel-identical. Regex-based paragraph slicing previously mis-parsed
+// nested <w:pPr> (from tracked paragraph-format changes), silently corrupting
+// or dropping content such as entire footnotes.
+
+const XML_PARSE_OPTS = {
+  preserveOrder: true,
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text",
+  trimValues: false,
+  processEntities: true,
+};
+const XML_BUILD_OPTS = {
+  preserveOrder: true,
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text",
+  suppressEmptyNode: false,
+  unpairedTags: [] as string[],
+};
+
+type XNode = Record<string, any>;
+
+function tagOf(node: XNode): string | null {
+  for (const k of Object.keys(node)) if (k !== ":@") return k;
+  return null;
+}
+
+// Walks the tree collecting one entry per paragraph: the ordered list of its
+// own <w:t>/<a:t> leaf nodes. A paragraph nested inside another (e.g. a
+// textbox's txbxContent inside a drawing) is treated as its own independent
+// entry — its text is not merged into the surrounding paragraph.
+function collectParagraphTextNodes(root: XNode[], pTag: string, tTag: string, fldTag: string | null): XNode[][] {
+  const paragraphs: XNode[][] = [];
+
+  function collectLeaves(nodes: XNode[], out: XNode[]) {
+    for (const node of nodes) {
+      if (node["#text"] !== undefined) continue;
+      const tag = tagOf(node);
+      if (!tag) continue;
+      if (tag === pTag) { processParagraph(node); continue; }
+      if (fldTag && tag === fldTag) continue; // field code (e.g. slide number) — leave untranslated
+      if (tag === tTag) { out.push(node); continue; }
+      if (Array.isArray(node[tag])) collectLeaves(node[tag], out);
+    }
+  }
+
+  function processParagraph(pNode: XNode) {
+    const tag = tagOf(pNode)!;
+    const textNodes: XNode[] = [];
+    collectLeaves(pNode[tag] ?? [], textNodes);
+    paragraphs.push(textNodes);
+  }
+
+  function walk(nodes: XNode[]) {
+    for (const node of nodes) {
+      if (node["#text"] !== undefined) continue;
+      const tag = tagOf(node);
+      if (!tag) continue;
+      if (tag === pTag) { processParagraph(node); continue; }
+      if (Array.isArray(node[tag])) walk(node[tag]);
+    }
+  }
+
+  walk(root);
+  return paragraphs;
+}
+
+function nodeText(tNode: XNode, tTag: string): string {
+  return (tNode[tTag] ?? []).map((c: XNode) => c["#text"] ?? "").join("");
+}
+
+function setNodeText(tNode: XNode, tTag: string, text: string) {
+  tNode[tTag] = text.length ? [{ "#text": text }] : [];
+  if (/^\s|\s$/.test(text)) {
+    tNode[":@"] = { ...(tNode[":@"] ?? {}), "@_xml:space": "preserve" };
+  }
+}
+
+// Snaps a proportional split point to the nearest word boundary (within 8
+// chars) so a translated sentence spread across multiple runs (e.g. part
+// bold, part not) doesn't get cut mid-word.
+function snapToSpace(text: string, idx: number): number {
+  if (idx <= 0) return 0;
+  if (idx >= text.length) return text.length;
+  if (text[idx] === " ") return idx;
+  for (let d = 1; d <= 8; d++) {
+    if (text[idx - d] === " ") return idx - d + 1;
+    if (text[idx + d] === " ") return idx + d;
+  }
+  return idx;
+}
+
+// Splits translated text across the N original run-text lengths, proportional
+// to each run's original share of the paragraph, so each run keeps its own
+// formatting (bold/italic/color spans) instead of collapsing into one run.
+function distributeTranslated(translated: string, originalLens: number[]): string[] {
+  if (originalLens.length <= 1) return [translated];
+  const total = originalLens.reduce((a, b) => a + b, 0);
+  if (total === 0) {
+    const maxIdx = originalLens.indexOf(Math.max(...originalLens));
+    return originalLens.map((_, i) => (i === maxIdx ? translated : ""));
+  }
+  const cuts: number[] = [];
+  let cum = 0;
+  for (let i = 0; i < originalLens.length - 1; i++) {
+    cum += originalLens[i];
+    let idx = snapToSpace(translated, Math.round((cum / total) * translated.length));
+    if (cuts.length && idx < cuts[cuts.length - 1]) idx = cuts[cuts.length - 1];
+    cuts.push(idx);
+  }
+  const parts: string[] = [];
+  let prev = 0;
+  for (const c of cuts) { parts.push(translated.slice(prev, c)); prev = c; }
+  parts.push(translated.slice(prev));
+  return parts;
+}
+
+function extractXmlTexts(xml: string, pTag: string, tTag: string, fldTag: string | null): string[] {
+  const ast = new XMLParser(XML_PARSE_OPTS).parse(xml);
+  const paragraphs = collectParagraphTextNodes(ast, pTag, tTag, fldTag);
+  const texts: string[] = [];
+  for (const nodes of paragraphs) {
+    if (!nodes.length) continue;
+    const merged = nodes.map(n => nodeText(n, tTag)).join("");
+    if (!merged.trim()) continue;
+    texts.push(merged);
+  }
+  return texts;
+}
+
+function reconstructXml(xml: string, translatedTexts: string[], pTag: string, tTag: string, fldTag: string | null): string {
+  const ast = new XMLParser(XML_PARSE_OPTS).parse(xml);
+  const paragraphs = collectParagraphTextNodes(ast, pTag, tTag, fldTag);
+  let ti = 0;
+  for (const nodes of paragraphs) {
+    if (!nodes.length) continue;
+    const originalTexts = nodes.map(n => nodeText(n, tTag));
+    const merged = originalTexts.join("");
+    if (!merged.trim()) continue;
+    const translated = translatedTexts[ti++] ?? merged;
+    const parts = distributeTranslated(translated, originalTexts.map(t => t.length));
+    nodes.forEach((n, i) => setNodeText(n, tTag, parts[i] ?? ""));
+  }
+  return new XMLBuilder(XML_BUILD_OPTS).build(ast);
+}
+
 export function extractDocxTexts(xml: string): string[] {
-  const texts: string[] = [];
-  for (const m of xml.matchAll(/<w:p\b([^>]*)>([\s\S]*?)<\/w:p>/g)) {
-    const inner = m[2];
-    if (/<w:drawing\b|<w:hyperlink\b|<w:pict\b|<w:object\b|<w:fldSimple\b|<w:fldChar\b/.test(inner)) continue;
-    const pPrMatch = inner.match(/^\s*<w:pPr\b[\s\S]*?<\/w:pPr>/);
-    const afterPPr = pPrMatch ? inner.slice(pPrMatch[0].length) : inner;
-    const runs = [...afterPPr.matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)];
-    if (!runs.length) continue;
-
-    let mergedText = "";
-    for (const r of runs) {
-      mergedText += [...r[0].matchAll(/<w:t(?:\s+[\w:]+="[^"]*")*\s*>([\s\S]*?)<\/w:t>/g)].map(x => x[1]).join("");
-    }
-    if (!mergedText.trim()) continue;
-    texts.push(mergedText);
-  }
-  return texts;
+  return extractXmlTexts(xml, "w:p", "w:t", null);
 }
-
 export function reconstructDocxXml(xml: string, translatedTexts: string[]): string {
-  let ti = 0;
-  return xml.replace(/<w:p\b([^>]*)>([\s\S]*?)<\/w:p>/g, (full, pAttrs, inner) => {
-    if (/<w:drawing\b|<w:hyperlink\b|<w:pict\b|<w:object\b|<w:fldSimple\b|<w:fldChar\b/.test(inner)) return full;
-    const pPrMatch = inner.match(/^\s*<w:pPr\b[\s\S]*?<\/w:pPr>/);
-    const pPr = pPrMatch ? pPrMatch[0] : "";
-    const afterPPr = pPrMatch ? inner.slice(pPrMatch[0].length) : inner;
-    const runs = [...afterPPr.matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)];
-    if (!runs.length) return full;
-
-    let mergedText = "";
-    for (const r of runs) {
-      mergedText += [...r[0].matchAll(/<w:t(?:\s+[\w:]+="[^"]*")*\s*>([\s\S]*?)<\/w:t>/g)].map(x => x[1]).join("");
-    }
-    if (!mergedText.trim()) return full;
-
-    let firstRPr = "";
-    for (const r of runs) {
-      const rPrMatch = r[0].match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
-      if (rPrMatch) { firstRPr = rPrMatch[0]; break; }
-    }
-
-    const newText = escapeXmlText(translatedTexts[ti++] ?? mergedText);
-    const newRun = `<w:r>${firstRPr}<w:t xml:space="preserve">${newText}</w:t></w:r>`;
-    return `<w:p${pAttrs}>${pPr}${newRun}</w:p>`;
-  });
+  return reconstructXml(xml, translatedTexts, "w:p", "w:t", null);
 }
-
-// ── PPTX: same idea at the <a:p>/<a:r>/<a:t> level (shapes, tables, notes) ───
 export function extractPptxTexts(xml: string): string[] {
-  const texts: string[] = [];
-  for (const m of xml.matchAll(/<a:p\b([^>]*)>([\s\S]*?)<\/a:p>/g)) {
-    const inner = m[2];
-    if (/<a:fld\b/.test(inner)) continue;
-    const pPrMatch = inner.match(/^\s*<a:pPr\b[\s\S]*?(?:\/>|<\/a:pPr>)/);
-    const afterPPr = pPrMatch ? inner.slice(pPrMatch[0].length) : inner;
-    const runs = [...afterPPr.matchAll(/<a:r\b[\s\S]*?<\/a:r>/g)];
-    if (!runs.length) continue;
-
-    let mergedText = "";
-    for (const r of runs) {
-      mergedText += [...r[0].matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(x => x[1]).join("");
-    }
-    if (!mergedText.trim()) continue;
-    texts.push(mergedText);
-  }
-  return texts;
+  return extractXmlTexts(xml, "a:p", "a:t", "a:fld");
 }
-
 export function reconstructPptxXml(xml: string, translatedTexts: string[]): string {
-  let ti = 0;
-  return xml.replace(/<a:p\b([^>]*)>([\s\S]*?)<\/a:p>/g, (full, pAttrs, inner) => {
-    if (/<a:fld\b/.test(inner)) return full;
-    const pPrMatch = inner.match(/^\s*<a:pPr\b[\s\S]*?(?:\/>|<\/a:pPr>)/);
-    const pPr = pPrMatch ? pPrMatch[0] : "";
-    const afterPPr = pPrMatch ? inner.slice(pPrMatch[0].length) : inner;
-    const runs = [...afterPPr.matchAll(/<a:r\b[\s\S]*?<\/a:r>/g)];
-    if (!runs.length) return full;
-
-    let mergedText = "";
-    for (const r of runs) {
-      mergedText += [...r[0].matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(x => x[1]).join("");
-    }
-    if (!mergedText.trim()) return full;
-
-    let firstRPr = "";
-    for (const r of runs) {
-      const rPrMatch = r[0].match(/<a:rPr\b[^>]*\/>|<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/);
-      if (rPrMatch) { firstRPr = rPrMatch[0]; break; }
-    }
-
-    const newText = escapeXmlText(translatedTexts[ti++] ?? mergedText);
-    const newRun = `<a:r>${firstRPr}<a:t>${newText}</a:t></a:r>`;
-    return `<a:p${pAttrs}>${pPr}${newRun}</a:p>`;
-  });
+  return reconstructXml(xml, translatedTexts, "a:p", "a:t", "a:fld");
 }
 
 export function docxPartNames(zip: any): string[] {
