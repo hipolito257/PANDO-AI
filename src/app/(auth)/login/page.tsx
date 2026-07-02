@@ -36,11 +36,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-mist flex items-center justify-center p-4">
+    <div className="min-h-screen bg-forest flex items-center justify-center p-4">
       <div className="w-full max-w-[360px]">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <Logo size="lg" />
+          <div className="bg-white rounded-[12px] p-3 shadow-float">
+            <Logo size="lg" />
+          </div>
         </div>
 
         {/* Card */}
@@ -93,7 +95,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-center text-[11px] text-slate mt-6">
+        <p className="text-center text-[11px] text-white/60 mt-6">
           PANDO — Restricted access for firm members
         </p>
       </div>
