@@ -647,6 +647,18 @@ class PptxBuilder:
                 else:
                     el.set("val", str(skip))
 
+    def _set_chart_default_font(self, ch):
+        """python-pptx always writes a chartSpace-level c:txPr fallback (18pt,
+        no typeface) that any unstyled chart text inherits from the theme's
+        minor font (Aptos) instead of our Work Sans Light — patch it in so
+        nothing inside a chart can silently fall back to the theme font."""
+        try:
+            defRPr = ch._chartSpace.find(qn("c:txPr")).find(qn("a:p")).find(qn("a:pPr")).find(qn("a:defRPr"))
+            if defRPr is not None and defRPr.find(qn("a:latin")) is None:
+                latin = etree.SubElement(defRPr, qn("a:latin"))
+                latin.set("typeface", self.DEFAULT_FONT)
+        except Exception: pass
+
     def _style_axes(self, ch, ymin=None, ymax=None, num_fmt="#,##0",
                     skip=1, csize=5.5, grid_color="EBEBEB"):
         try:
@@ -659,6 +671,7 @@ class PptxBuilder:
                 va.major_gridlines.format.line.width = Pt(0.25)
             except Exception: pass
             va.tick_labels.font.size = Pt(6)
+            va.tick_labels.font.name = self.DEFAULT_FONT
             va.tick_labels.font.color.rgb = _rgb("999999")
             va.tick_labels.number_format = num_fmt
             try: va.format.line.fill.background()
@@ -668,6 +681,7 @@ class PptxBuilder:
             ca = ch.category_axis
             ca.has_major_gridlines = False
             ca.tick_labels.font.size = Pt(csize)
+            ca.tick_labels.font.name = self.DEFAULT_FONT
             ca.tick_labels.font.color.rgb = _rgb("999999")
             try:
                 ca.format.line.color.rgb = _rgb("DDDDD8")
@@ -713,6 +727,7 @@ class PptxBuilder:
             ch.legend.position = XL_LEGEND_POSITION.BOTTOM
             ch.legend.include_in_layout = False
             ch.legend.font.size = Pt(7.5)
+            ch.legend.font.name = self.DEFAULT_FONT
             ch.legend.font.color.rgb = _rgb("444444")
         except Exception: pass
 
@@ -766,6 +781,7 @@ class PptxBuilder:
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.BAR_STACKED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart
+        self._set_chart_default_font(ch)
         ch.has_title = False; ch.has_legend = False
 
         sp = ch.series[0]
@@ -781,10 +797,12 @@ class PptxBuilder:
             ch.value_axis.major_gridlines.format.line.color.rgb = _rgb("EBEBEB")
             ch.value_axis.major_gridlines.format.line.width = Pt(0.25)
             ch.value_axis.tick_labels.font.size = Pt(6)
+            ch.value_axis.tick_labels.font.name = self.DEFAULT_FONT
             ch.value_axis.tick_labels.font.color.rgb = _rgb("999999")
             ch.value_axis.tick_labels.number_format = "#,##0"
             ch.category_axis.has_major_gridlines = False
             ch.category_axis.tick_labels.font.size = Pt(7)
+            ch.category_axis.tick_labels.font.name = self.DEFAULT_FONT
             ch.category_axis.tick_labels.font.color.rgb = _rgb("444444")
         except Exception: pass
         try: ch.plot_area.format.line.fill.background()
@@ -804,6 +822,7 @@ class PptxBuilder:
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
+        self._set_chart_default_font(ch)
         ser = ch.series[0]
         self._set_line_style(ser, el.get("color", self.PALETTE["MDG"]), _num(el.get("width"), 1.8))
         self._smooth_all(ch)
@@ -822,6 +841,7 @@ class PptxBuilder:
             dl.number_format = _str(el.get("num_fmt"), "#,##0")
             dl.number_format_is_linked = False
             dl.font.size = Pt(7); dl.font.bold = True
+            dl.font.name = self.DEFAULT_FONT
             dl.font.color.rgb = _rgb("333333")
             dl.position = XL_LABEL_POSITION.ABOVE
             if el.get("box_labels", True):
@@ -847,6 +867,7 @@ class PptxBuilder:
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False
+        self._set_chart_default_font(ch)
         for i, s in enumerate(series_list):
             if i < len(ch.series):
                 col = s.get("color", self.PALETTE["DKG"])
@@ -874,6 +895,7 @@ class PptxBuilder:
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False
+        self._set_chart_default_font(ch)
 
         for i, s in enumerate(series_list):
             if i >= len(ch.series):
@@ -891,6 +913,7 @@ class PptxBuilder:
                     dl.number_format = _str(el.get("num_fmt"), "0%")
                     dl.number_format_is_linked = False
                     dl.font.size = Pt(7); dl.font.bold = False
+                    dl.font.name = self.DEFAULT_FONT
                     dl.font.color.rgb = _rgb("444444")
                     dl.position = XL_LABEL_POSITION.OUTSIDE_END
                     # Boxed value callouts are the PANDO default (e.g. "1,727", "37%"
@@ -1187,6 +1210,7 @@ class PptxBuilder:
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.DOUGHNUT, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False
+        self._set_chart_default_font(ch)
         ser = ch.series[0]
         NS = f'xmlns:c="{C_NS}" xmlns:a="{A_NS}"'
         cat_el = ser._element.find(qn("c:cat"))
@@ -1219,6 +1243,7 @@ class PptxBuilder:
                 dl.number_format_is_linked = False
                 dl.font.size = Pt(_num(el.get("label_size"), 8))
                 dl.font.bold = True
+                dl.font.name = self.DEFAULT_FONT
                 dl.font.color.rgb = _rgb(el.get("label_color", "FFFFFF" if hole < 70 else "444444"))
             except Exception: pass
 
@@ -1275,6 +1300,7 @@ class PptxBuilder:
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
+        self._set_chart_default_font(ch)
         for i, pt in enumerate(points):
             if i >= len(ch.series):
                 break
@@ -1298,9 +1324,11 @@ class PptxBuilder:
                 self._scatter_point_label(s, col, _num(pt.get("label_size"), 7))
         try:
             ch.value_axis.tick_labels.font.size = Pt(6)
+            ch.value_axis.tick_labels.font.name = self.DEFAULT_FONT
             ch.value_axis.tick_labels.number_format = _str(el.get("y_fmt"), "#,##0")
             ch.value_axis.tick_labels.number_format_is_linked = False
             ch.category_axis.tick_labels.font.size = Pt(6)
+            ch.category_axis.tick_labels.font.name = self.DEFAULT_FONT
             ch.category_axis.tick_labels.number_format = _str(el.get("x_fmt"), "#,##0")
             ch.category_axis.tick_labels.number_format_is_linked = False
         except Exception: pass
@@ -1734,6 +1762,7 @@ class PptxBuilder:
         cf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_STACKED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart
         ch.has_title = False; ch.has_legend = False
+        self._set_chart_default_font(ch)
 
         base_series = ch.series[0]
         base_series.format.fill.background()
