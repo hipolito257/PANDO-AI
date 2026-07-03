@@ -39,22 +39,26 @@ const PANDO_TEMPLATE_PROFILE = {
   slide_width_in: 13.33,
   slide_height_in: 7.5,
   element_types: {
-    textbox:    "Plain text — THIS is how chart/panel titles work in PANDO decks, e.g. 'Brand NPS' (bold, ~11pt, NKB) with a smaller italic subtitle below it like '(Net Promoter Score)' (size 9, italic, grey 666666). No background, no border. Props: text, x, y, w, h, size, bold, italic, fg, align (l/c/r).",
+    textbox:    "Plain text. Supports **bold** spans inside the text for partial emphasis. Props: text, x, y, w, h, size, bold, italic, fg, align (l/c/r). NOTE: for chart titles, prefer the chart's own title/subtitle props (see below) instead of a separate textbox.",
     shape:      "Filled rectangle (optionally with text) or a thin bordered box around a single data callout (e.g. a percentage label like '37%' boxed in a thin black/grey border with white fill). Props: x, y, w, h, bg, text, fg, border, border_pt.",
-    bar:        "Vertical clustered column chart — use for comparing 2+ series across the same categories. Props: x, y, w, h, labels[], series:[{name, values[], color, hatched?, data_labels?}], ymin, ymax, num_fmt, gap_width, overlap.",
+    bar:        "Vertical clustered column chart — use for comparing 2+ series across the same categories. Props: x, y, w, h, labels[], series:[{name, values[], color, hatched?, data_labels?}], ymin, ymax, num_fmt, gap_width, overlap. Set data_labels:true on each series — real PANDO charts always label the bars.",
     hbar_float: "Horizontal floating bar chart for price/value ranges. Props: x, y, w, h, series:[{label,min,max}], colors[].",
     line:       "Single-series line chart (time series). Props: x, y, w, h, labels[], values[], color, ymin, ymax, num_fmt, skip.",
     line_multi: "Multi-series line chart. Props: x, y, w, h, labels[], series:[{name,values[],color,dashed?}], ymin, ymax.",
-    donut:      "Doughnut market share chart. Props: x, y, w, h, slices:[{label,value,color}], hole (default 55).",
+    donut:      "Doughnut chart. Props: x, y, w, h, slices:[{label,value,color}], hole (default 55), center:[string] — 1-2 short lines of KPI text rendered INSIDE the hole (e.g. ['~570k annual customers','+82% younger than 45']; first line bold). Two or three donuts side by side with center KPIs is a signature PANDO pattern for segment/mix comparisons.",
     scatter:    "XY scatter. Props: x, y, w, h, points:[{label,x,y,color,size}], x_fmt?, y_fmt? (axis number formats, default plain '#,##0' — only set to '0%' the axis that is actually a percentage; do not format a €M/revenue axis as a percentage).",
     quadrant:   "2×2 positioning matrix. Props: x, y, w, h, axis_labels:{top,bottom,left,right}, brands:[{label,px,py,color}].",
-    table:      "Native PPTX table. Props: x, y, w, headers:[string], rows:[[string|number,...]], col_widths?:[inches], size, zebra, bold_first_col, header_h, row_h. Height is driven entirely by row count (header_h + row_h × rows) — do not pass h, and leave at least 0.15in extra clearance below a table before placing another element, since a table with many rows renders taller than a quick mental estimate suggests.",
+    table:      "Native PPTX table. Props: x, y, w, headers:[string], rows:[[string|number,...]], col_widths?:[inches], size, zebra, bold_first_col, label_col (first column becomes a row-label rail with alternating dark-green/white cells — use for comparison matrices like brand × region metrics, with an empty first header cell), header_h, row_h. Height is driven entirely by row count (header_h + row_h × rows) — do not pass h, and leave at least 0.15in extra clearance below a table before placing another element, since a table with many rows renders taller than a quick mental estimate suggests.",
     panel_hdr:  "RARELY USED. A colored full-width header bar. Do not use as chart title.",
     stat_row:   "Row of large-number KPI callouts (e.g. '$42M' bold 32pt over a small grey label 'ARR', with an optional italic delta badge like '+18% YoY' in the corner). Use for a summary/highlights slide instead of a chart when the story IS the numbers. Props: x, y, w, h, items:[{value, label, delta?, color?}]. 2-5 items looks best.",
     icon_row:   "Colored circle with a bold 1-2 char glyph (a letter or number ONLY — never an emoji, emoji don't render reliably in PowerPoint) next to a bold header and a description line below it — the 'icon + text row' pattern. Use for narrative points (thesis pillars, risk factors, value-creation levers) that aren't data at all. Props: x, y, w, h, direction:'row'|'col' (default col), items:[{glyph, title, text, color?}].",
     comparison_cards: "2-4 side-by-side cards, each with a subtly tinted background (derived from its color), a bold colored header, and a bullet list. Use for before/after, pros/cons, or options comparison — never build this out of a table. Props: x, y, w, h, cards:[{title, bullets:[string], color?}].",
     timeline:   "Horizontal numbered milestones connected by a thin line — numbered circles with a bold label under each and optional detail text. Use for roadmaps, process flows, deal timelines, or historical milestones — never as a bulleted list. Props: x, y, w, h, steps:[{num?, label, text?, color?}].",
     waterfall:  "Bridge/waterfall chart for financial walks (e.g. Revenue → COGS → Opex → EBITDA, or a valuation bridge). First and last bars are anchored totals by default; middle bars float from the running cumulative total, colored green for increases and a darker tone for decreases. THIS is the correct element for any 'walk' or 'bridge' data — never fake it with a regular bar chart. Props: x, y, w, h, labels[], values[] (deltas; anchor/total bars pass their absolute value), totals?:[bool] (defaults to true only for first/last), up_color?, down_color?, total_color?.",
+    alt_timeline: "Company-history timeline: a horizontal axis mid-element with milestone dots, entries alternating above and below with dashed connectors. Each entry: bold colored year label + short description with **bold** spans on the key facts. THE element for a COMPANY HISTORY / deal-history slide — far richer than 'timeline'. Fits 5-8 entries full-width. Props: x, y, w, h, entries:[{label, text, color?}].",
+    org_chart:  "Corporate/holding structure chart: rows of boxes (colored title band + light jurisdiction band + optional italic note below), connected to their parent with dashed elbow lines annotated with ownership percentages. THE element for a CORPORATE STRUCTURE / transaction-perimeter slide. Props: x, y, w, h, levels:[[{label, sub?, note?, color?, parent? (index of parent node in the level above), pct? (e.g. '99.9%')}]].",
+    process_flow: "Horizontal value-chain/process: dark header boxes joined by arrows, each with an italic description underneath (Designer → Manufacturer → Brand → Retailer). Use for business-model, supply-chain, or step-sequence explanations. 3-6 steps. Props: x, y, w, h, steps:[{title, text?, color?}].",
+    pill_row:   "Bottom-of-slide band of 3-5 rounded tinted callouts, each a short sentence with **bold** spans on the figures (e.g. '**+3.0x** sales per store vs. incumbents'). Use UNDER a diagram/chart to hammer home proof points — pairs especially well with process_flow and icon_row. Props: x, y, w, h (≈0.75-0.9), items:[{text, color?, size?}].",
   },
 };
 
@@ -72,12 +76,11 @@ HOW REAL PANDO SLIDES LOOK:
 A real PANDO data slide has, top to bottom:
 1. A small category tag ("THE COMPANY", "MARKET OVERVIEW") and a bold ALL-CAPS title ("BRAND PERCEPTION").
 2. One or two sentences of body copy with key phrases in **bold** — this sentence states the actual finding/argument.
-3. One or two chart panels side by side. Each panel's "header" is just a textbox: a bold ~11pt line with an optional italic grey subtitle underneath — PLAIN TEXT, never inside a colored rectangle.
-4. The chart itself, clean: thin grey gridlines, small soft-grey axis labels, a simple legend below.
-5. Data callouts directly on top of/around bars when useful — small boxed numbers with thin borders.
-6. A footnote "Source  [name]" bottom-left, in small grey italic text.
+3. One or two chart panels side by side. EVERY chart element (bar, line, line_multi, donut, hbar_float, scatter, waterfall) accepts "title" and "subtitle" props that render as its plain-text header — a bold ~10.5pt title with an italic grey subtitle in parentheses under it, e.g. title: "Brand NPS", subtitle: "(Net Promoter Score)". ALWAYS set both on every chart: a chart without a header looks unfinished. The header is drawn inside the chart's own x/y/w/h box, so no separate textbox and no extra spacing math is needed.
+4. The chart itself, clean: thin grey gridlines, small soft-grey axis labels, data labels on bars, a small legend below.
+5. A footnote "Source  [name]" bottom-left, in small grey italic text — set "note" on every data slide.
 
-NEVER wrap a chart's title in a solid colored rectangle (panel_hdr). Chart titles are always plain text.
+NEVER wrap a chart's title in a solid colored rectangle (panel_hdr). Chart titles are always plain text via the chart's title/subtitle props.
 
 LAYOUT RULES:
 - The slide canvas is 13.33 inches wide × 7.5 inches tall.
@@ -94,10 +97,18 @@ A deck where every content slide is "two chart panels side by side" reads as tem
 - A slide whose story IS a handful of headline numbers → stat_row, full-width, no chart at all.
 - A slide about qualitative pillars (thesis, risks, value-creation levers, team strengths) → icon_row, not a chart forced onto text.
 - A slide comparing two or more options/scenarios/before-after → comparison_cards, not a table.
-- A slide about a roadmap, process, or sequence of milestones/deal history → timeline, not a bulleted textbox.
+- A slide about the company's history/milestones over the years → alt_timeline full-width (the alternating above/below axis), not "timeline" and never bullets.
+- A slide about a roadmap, process steps, or deal next-steps → timeline (simple numbered) or process_flow (boxed steps with arrows) depending on whether the steps need descriptions.
+- A slide explaining the business model or value chain → process_flow, optionally with a pill_row of proof-point callouts underneath.
+- A slide about corporate/legal structure or the transaction perimeter → org_chart.
+- A slide comparing brands/regions across many metrics → table with label_col:true (the comparison-matrix look).
+- A slide about customer/segment mix → 2-3 donuts side by side, each with center KPI text.
 - A slide about a financial walk (revenue to EBITDA, valuation build-up, cost bridge) → waterfall, never a regular bar chart pretending to be one.
 - Single full-bleed chart taking the whole content area is often stronger than two cramped panels — use it when one chart deserves the whole slide.
 - Across a section of 4-6 slides, aim for at least 3 different element types/layouts, not the same panel formula every time.
+
+DENSITY — REAL DECKS ARE RICH, NOT SPARSE:
+Reference-quality PANDO slides are DENSE: a full-width diagram plus a pill_row of KPIs, or two charts each with headers and data labels, or a 6-row comparison matrix. A slide with one small chart floating in white space reads as unfinished. Fill the content area (y=2.0 to ~6.5): if the main element only needs 3 inches of height, add a complementary element below it (pill_row of proof points, a small table, a stat_row) that reinforces the takeaway with real numbers from the source material.
 
 CHART/ELEMENT SELECTION:
 - Comparing groups across categories → bar (clustered columns).

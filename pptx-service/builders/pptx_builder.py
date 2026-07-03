@@ -14,7 +14,7 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION
 from pptx.chart.data import ChartData, XyChartData
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import qn
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from lxml import etree
 
 
@@ -295,6 +295,7 @@ class PptxBuilder:
     _VISUAL_TYPES = {
         "bar", "line", "line_multi", "hbar_float", "donut", "scatter", "quadrant",
         "table", "stat_row", "icon_row", "comparison_cards", "timeline", "waterfall",
+        "alt_timeline", "org_chart", "process_flow", "pill_row",
     }
 
     def _qa_check_slide(self, sd: dict, elements: list[dict]):
@@ -479,6 +480,14 @@ class PptxBuilder:
             return
         if t == "waterfall" and not el.get("labels"):
             return
+        if t == "alt_timeline" and not el.get("entries"):
+            return
+        if t == "org_chart" and not el.get("levels"):
+            return
+        if t == "process_flow" and not el.get("steps"):
+            return
+        if t == "pill_row" and not el.get("items"):
+            return
 
         dispatch = {
             "panel_hdr":  self._panel_hdr,
@@ -497,6 +506,10 @@ class PptxBuilder:
             "comparison_cards": self._comparison_cards,
             "timeline":         self._timeline,
             "waterfall":        self._waterfall,
+            "alt_timeline":     self._alt_timeline,
+            "org_chart":        self._org_chart,
+            "process_flow":     self._process_flow,
+            "pill_row":         self._pill_row,
         }
         fn = dispatch.get(t)
         if not fn:
@@ -624,6 +637,17 @@ class PptxBuilder:
             self._fix_catax(ch, skip)
         except Exception: pass
 
+    def _style_legend(self, ch):
+        """Small bottom legend — PowerPoint's default legend text is huge (~18pt)
+        next to our 6-7pt axis labels, so always shrink it to match the deck."""
+        try:
+            ch.has_legend = True
+            ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+            ch.legend.include_in_layout = False
+            ch.legend.font.size = Pt(7.5)
+            ch.legend.font.color.rgb = _rgb("444444")
+        except Exception: pass
+
     def _set_line_style(self, series, color, width_pt: float = 1.5, dashed: bool = False):
         try:
             series.format.line.color.rgb = _rgb(color)
@@ -670,6 +694,8 @@ class PptxBuilder:
         cd.add_series("range",  highs)
 
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.BAR_STACKED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart
         ch.has_title = False; ch.has_legend = False
@@ -706,6 +732,8 @@ class PptxBuilder:
         cd.categories = [_str(l) for l in labels]
         cd.add_series("", values)
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
         self._set_line_style(ch.series[0], el.get("color", self.PALETTE["MDG"]), _num(el.get("width"), 1.8))
@@ -729,6 +757,8 @@ class PptxBuilder:
                 vals = vals + [last] * (len(labels) - len(vals))
             cd.add_series(_str(s.get("name"), ""), vals)
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False
         for i, s in enumerate(series_list):
@@ -739,9 +769,7 @@ class PptxBuilder:
         self._style_axes(ch, ymin=_num(el.get("ymin"), 0), ymax=el.get("ymax"),
                          num_fmt=_str(el.get("num_fmt"), "#,##0"),
                          skip=int(_num(el.get("skip"), 1)), csize=5)
-        ch.has_legend = True
-        ch.legend.position = XL_LEGEND_POSITION.BOTTOM
-        ch.legend.include_in_layout = False
+        self._style_legend(ch)
 
     # ── Clustered column chart ─────────────────────────────────────────────────
     def _bar(self, slide, el: dict):
@@ -754,6 +782,8 @@ class PptxBuilder:
         for s in series_list:
             cd.add_series(_str(s.get("name"), ""), [_num(v) for v in (s.get("values") or [])])
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False
 
@@ -768,8 +798,8 @@ class PptxBuilder:
                 self._set_hatch(ser, _str(col, self.PALETTE["DKG"]))
             if s.get("data_labels"):
                 try:
-                    ser.has_data_labels = True
                     dl = ser.data_labels
+                    dl.show_value = True  # Series has no has_data_labels — this is what actually turns labels on
                     dl.number_format = _str(el.get("num_fmt"), "0%")
                     dl.number_format_is_linked = False
                     dl.font.size = Pt(7); dl.font.bold = False
@@ -787,9 +817,7 @@ class PptxBuilder:
                          skip=int(_num(el.get("skip"), 1)), csize=6.5)
 
         if len(series_list) > 1:
-            ch.has_legend = True
-            ch.legend.position = XL_LEGEND_POSITION.BOTTOM
-            ch.legend.include_in_layout = False
+            self._style_legend(ch)
         else:
             ch.has_legend = False
 
@@ -877,13 +905,23 @@ class PptxBuilder:
 
         zebra           = el.get("zebra", True)
         bold_first_col  = el.get("bold_first_col", False)
+        # label_col: the first column is a row-label rail with alternating dark-green
+        # (white text) and white cells — the comparison-matrix style from real PANDO
+        # decks (e.g. the BRANDS brand/region matrix). Pairs best with zebra=true.
+        label_col = bool(el.get("label_col", False))
         for ridx, row in enumerate(rows):
             bg = self.PALETTE["GRG"] if (zebra and ridx % 2 == 1) else self.PALETTE["WHT"]
             row_vals = list(row) if isinstance(row, (list, tuple)) else []
             for c in range(n_cols):
                 val = row_vals[c] if c < len(row_vals) else ""
-                _style_cell(table.cell(ridx + 1, c), val, bold_first_col and c == 0,
-                            self.PALETTE["NKB"], bg, "l" if c == 0 else "c")
+                if label_col and c == 0:
+                    dark = ridx % 2 == 1
+                    _style_cell(table.cell(ridx + 1, c), val, False,
+                                self.PALETTE["WHT"] if dark else self.PALETTE["NKB"],
+                                self.PALETTE["DKG"] if dark else self.PALETTE["WHT"], "l")
+                else:
+                    _style_cell(table.cell(ridx + 1, c), val, bold_first_col and c == 0,
+                                self.PALETTE["NKB"], bg, "l" if c == 0 else "c")
             try: table.rows[ridx + 1].height = Inches(row_h)
             except Exception: pass
 
@@ -896,6 +934,8 @@ class PptxBuilder:
         cd.categories = [_str(s.get("label", "")) for s in slices]
         cd.add_series("", [_num(s.get("value"), 0) for s in slices])
         x, y, w, h = _geom(el, (0.85, 1.78, 5.0, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.DOUGHNUT, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
         ser = ch.series[0]
@@ -918,6 +958,37 @@ class PptxBuilder:
             if hs is not None: hs.set("val", str(hole))
             else: dc.append(parse_xml(f'<c:holeSize xmlns:c="{C_NS}" val="{hole}"/>'))
 
+        # Center KPI text inside the hole ("~570k annual customers / +82% younger
+        # than 45") — the Leon-deck donut pattern. First line renders bold; use
+        # **bold** spans inside other lines for partial emphasis.
+        center = el.get("center") or []
+        if isinstance(center, str):
+            center = [center]
+        center = [_str(c) for c in center if _str(c).strip()]
+        if center:
+            cw = w * 0.52
+            chh = min(0.30 * len(center) + 0.1, h * 0.5)
+            tb = slide.shapes.add_textbox(Inches(x + (w - cw) / 2), Inches(y + h / 2 - chh / 2),
+                                          Inches(cw), Inches(chh))
+            tf = tb.text_frame; tf.word_wrap = True
+            try: tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            except Exception: pass
+            for i, line in enumerate(center):
+                p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                p.alignment = PP_ALIGN.CENTER
+                for part in re.split(r'(\*\*.*?\*\*)', line):
+                    if not part:
+                        continue
+                    r = p.add_run()
+                    if part.startswith("**") and part.endswith("**") and len(part) > 4:
+                        r.text = part[2:-2]; r.font.bold = True
+                    else:
+                        r.text = part; r.font.bold = (i == 0)
+                    r.font.name = self.DEFAULT_FONT
+                    r.font.size = Pt(_num(el.get("center_size"), 9.5) if i == 0 else _num(el.get("center_size"), 9.5) - 1)
+                    r.font.italic = (i > 0)
+                    r.font.color.rgb = _rgb(self.PALETTE["NKB"])
+
     # ── Scatter chart ──────────────────────────────────────────────────────────
     def _scatter(self, slide, el: dict):
         points = el.get("points") or []
@@ -928,6 +999,8 @@ class PptxBuilder:
             s = cd.add_series(_str(pt.get("label", "")))
             s.add_data_point(_num(pt.get("x")), _num(pt.get("y")))
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
         for i, pt in enumerate(points):
@@ -1005,11 +1078,45 @@ class PptxBuilder:
         for i, line in enumerate(lines):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
             p.alignment = align_map.get(align, PP_ALIGN.LEFT)
-            r = p.add_run(); r.text = line
-            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
-            r.font.bold = bold; r.font.italic = italic
-            r.font.color.rgb = _rgb(fg)
+            # **bold** spans render as bold runs — the Leon-deck pattern of body
+            # copy with only the key figures/phrases emphasized.
+            for part in re.split(r'(\*\*.*?\*\*)', line):
+                if not part:
+                    continue
+                r = p.add_run()
+                if part.startswith("**") and part.endswith("**") and len(part) > 4:
+                    r.text = part[2:-2]; r.font.bold = True
+                else:
+                    r.text = part; r.font.bold = bold
+                r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
+                r.font.italic = italic
+                r.font.color.rgb = _rgb(fg)
         return box
+
+    def _dash(self, line_or_conn, style: str = "dash"):
+        """Set a dashed stroke on a connector/shape line (grey QA-friendly dashes)."""
+        try:
+            ln = line_or_conn.line._get_or_add_ln()
+            pd = ln.find("{%s}prstDash" % A_NS)
+            if pd is None:
+                pd = etree.SubElement(ln, "{%s}prstDash" % A_NS)
+            pd.set("val", style)
+        except Exception: pass
+
+    def _chart_header(self, slide, el: dict, x: float, y: float, w: float) -> float:
+        """Plain-text header above a chart — bold title + italic grey subtitle
+        (the 'Brand NPS / (Net Promoter Score)' pattern from real PANDO decks).
+        Returns the vertical space consumed so the chart starts below it."""
+        title = _str(el.get("title")).strip()
+        sub   = _str(el.get("subtitle")).strip()
+        dy = 0.0
+        if title:
+            self._txt_box(slide, title, x, y, w, 0.24, 10.5, bold=True, fg=self.PALETTE["NKB"])
+            dy += 0.26
+        if sub:
+            self._txt_box(slide, sub, x, y + dy, w, 0.20, 8.5, italic=True, fg="666666")
+            dy += 0.24
+        return dy
 
     def _bullet_list(self, slide, items, x, y, w, h, size=8.5, fg="0A231F", bullet_color=None, space_after_pt=3):
         box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
@@ -1192,6 +1299,8 @@ class PptxBuilder:
         cd.add_series("delta", tops)
 
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_STACKED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart
         ch.has_title = False; ch.has_legend = False
@@ -1210,3 +1319,214 @@ class PptxBuilder:
         self._style_axes(ch, ymin=_num(el.get("ymin"), 0), ymax=el.get("ymax"),
                          num_fmt=_str(el.get("num_fmt"), "#,##0"),
                          skip=1, csize=6.5)
+
+    # ── Alternating timeline: entries above/below a central axis ───────────────
+    # The COMPANY HISTORY pattern: a horizontal line mid-element, milestone dots on
+    # it, entries alternating above (even index) and below (odd index) with dashed
+    # connectors, each entry a bold accent-colored year plus **bold**-mixed text.
+    def _alt_timeline(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 2.0, 12.18, 4.4))
+        entries = [e for e in (el.get("entries") or []) if isinstance(e, dict)]
+        n = len(entries)
+        if not n:
+            return
+        line_y = y + h * 0.5
+        dot_d = 0.12
+        try:
+            ln = slide.shapes.add_connector(1, Inches(x), Inches(line_y), Inches(x + w), Inches(line_y))
+            ln.line.color.rgb = _rgb(self.PALETTE["NKB"]); ln.line.width = Pt(1.25)
+        except Exception: pass
+
+        slot_w = w / n
+        text_h = h * 0.5 - 0.35
+        for i, e in enumerate(entries):
+            cx = x + slot_w * i + slot_w / 2
+            col = _str(e.get("color"), self.PALETTE["DKG"])
+            above = i % 2 == 0
+            try:
+                dot = slide.shapes.add_shape(9, Inches(cx - dot_d / 2), Inches(line_y - dot_d / 2),
+                                             Inches(dot_d), Inches(dot_d))
+                dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
+                dot.line.fill.background()
+            except Exception: pass
+            conn_len = 0.30
+            try:
+                if above:
+                    c1 = slide.shapes.add_connector(1, Inches(cx), Inches(line_y - dot_d / 2 - conn_len),
+                                                    Inches(cx), Inches(line_y - dot_d / 2))
+                else:
+                    c1 = slide.shapes.add_connector(1, Inches(cx), Inches(line_y + dot_d / 2),
+                                                    Inches(cx), Inches(line_y + dot_d / 2 + conn_len))
+                c1.line.color.rgb = _rgb("999999"); c1.line.width = Pt(0.75)
+                self._dash(c1)
+            except Exception: pass
+
+            tx = x + slot_w * i + 0.06
+            tw = slot_w - 0.12
+            if above:
+                tb = slide.shapes.add_textbox(Inches(tx), Inches(y), Inches(tw), Inches(text_h))
+                anchor = MSO_ANCHOR.BOTTOM
+            else:
+                tb = slide.shapes.add_textbox(Inches(tx), Inches(line_y + dot_d / 2 + conn_len + 0.05),
+                                              Inches(tw), Inches(text_h))
+                anchor = MSO_ANCHOR.TOP
+            tf = tb.text_frame; tf.word_wrap = True
+            try: tf.vertical_anchor = anchor
+            except Exception: pass
+            p = tf.paragraphs[0]
+            r = p.add_run(); r.text = _str(e.get("label"))
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(_num(e.get("label_size"), 10))
+            r.font.bold = True; r.font.color.rgb = _rgb(col)
+            body = _str(e.get("text"))
+            if body:
+                p2 = tf.add_paragraph()
+                for part in re.split(r'(\*\*.*?\*\*)', body):
+                    if not part:
+                        continue
+                    r2 = p2.add_run()
+                    if part.startswith("**") and part.endswith("**") and len(part) > 4:
+                        r2.text = part[2:-2]; r2.font.bold = True
+                    else:
+                        r2.text = part
+                    r2.font.name = self.DEFAULT_FONT
+                    r2.font.size = Pt(_num(e.get("text_size"), 7.5))
+                    r2.font.color.rgb = _rgb("444444")
+
+    # ── Org chart: hierarchy of two-band boxes with dashed connectors ──────────
+    # The CORPORATE STRUCTURE pattern: each node is a colored title band over a
+    # light subtitle band (jurisdiction), an optional italic note below, and a
+    # dashed connector from its parent annotated with an ownership percentage.
+    def _org_chart(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 2.0, 12.18, 4.4))
+        levels = [lv for lv in (el.get("levels") or []) if isinstance(lv, list) and lv]
+        n_levels = len(levels)
+        if not n_levels:
+            return
+        title_h = 0.34; sub_h = 0.26
+        level_h = h / n_levels
+        positions: list[list[tuple[float, float]]] = []  # (center_x, box_bottom_y) per node
+
+        cycle = [self.PALETTE["NKB"], self.PALETTE["MDG"], self.PALETTE["OLV"]]
+        for li, level in enumerate(levels):
+            nodes = [nd for nd in level if isinstance(nd, dict)]
+            k = len(nodes)
+            slot_w = w / k
+            box_w = min(slot_w - 0.4, 3.6)
+            ly = y + li * level_h
+            row_pos = []
+            for ni, nd in enumerate(nodes):
+                cx = x + slot_w * ni + slot_w / 2
+                bx = cx - box_w / 2
+                col = _str(nd.get("color"), cycle[li % len(cycle)])
+                bar = slide.shapes.add_shape(1, Inches(bx), Inches(ly), Inches(box_w), Inches(title_h))
+                bar.fill.solid(); bar.fill.fore_color.rgb = _rgb(col)
+                bar.line.fill.background()
+                tf = bar.text_frame; tf.word_wrap = False
+                p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+                r = p.add_run(); r.text = _str(nd.get("label"))
+                r.font.name = self.DEFAULT_FONT; r.font.size = Pt(9.5)
+                r.font.bold = False; r.font.color.rgb = _rgb(self.PALETTE["WHT"])
+                sub = _str(nd.get("sub"))
+                bottom = ly + title_h
+                if sub:
+                    sb = slide.shapes.add_shape(1, Inches(bx), Inches(bottom), Inches(box_w), Inches(sub_h))
+                    sb.fill.solid(); sb.fill.fore_color.rgb = _rgb(_tint(self.PALETTE["GRG"], 0.4))
+                    sb.line.fill.background()
+                    tf2 = sb.text_frame; p2 = tf2.paragraphs[0]; p2.alignment = PP_ALIGN.CENTER
+                    r2 = p2.add_run(); r2.text = sub
+                    r2.font.name = self.DEFAULT_FONT; r2.font.size = Pt(8)
+                    r2.font.italic = True; r2.font.color.rgb = _rgb("555555")
+                    bottom += sub_h
+                note = _str(nd.get("note"))
+                if note:
+                    self._txt_box(slide, note, bx, bottom + 0.04, box_w, 0.22, 8,
+                                  italic=True, fg="777777", align="c")
+                row_pos.append((cx, bottom))
+
+                parent_idx = nd.get("parent")
+                pct = _str(nd.get("pct"))
+                if li > 0 and parent_idx is not None and int(_num(parent_idx, 0)) < len(positions[li - 1]):
+                    px, pbottom = positions[li - 1][int(_num(parent_idx, 0))]
+                    try:
+                        conn = slide.shapes.add_connector(2, Inches(px), Inches(pbottom),
+                                                          Inches(cx), Inches(ly))
+                        conn.line.color.rgb = _rgb("999999"); conn.line.width = Pt(0.75)
+                        self._dash(conn)
+                    except Exception: pass
+                    if pct:
+                        self._txt_box(slide, pct, cx + 0.08, ly - 0.30, 0.9, 0.22, 8,
+                                      italic=True, fg="444444")
+            positions.append(row_pos)
+
+    # ── Process flow: boxed steps connected by arrows ───────────────────────────
+    # For value chains and step sequences (Designer → Manufacturer → ... → Retailer):
+    # each step is a dark header band with description text below, joined by arrows.
+    def _process_flow(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 2.0, 12.18, 2.2))
+        steps = [s for s in (el.get("steps") or []) if isinstance(s, dict)]
+        n = len(steps)
+        if not n:
+            return
+        arrow_w = 0.32
+        gap = 0.12
+        box_w = (w - (arrow_w + gap * 2) * (n - 1)) / n
+        head_h = 0.34
+        for i, s in enumerate(steps):
+            bx = x + i * (box_w + arrow_w + gap * 2)
+            col = _str(s.get("color"), self.PALETTE["NKB"])
+            bar = slide.shapes.add_shape(1, Inches(bx), Inches(y), Inches(box_w), Inches(head_h))
+            bar.fill.solid(); bar.fill.fore_color.rgb = _rgb(col)
+            bar.line.fill.background()
+            tf = bar.text_frame; tf.word_wrap = False
+            p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+            r = p.add_run(); r.text = _str(s.get("title"))
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(_num(s.get("title_size"), 9.5))
+            r.font.color.rgb = _rgb(self.PALETTE["WHT"])
+            body = _str(s.get("text"))
+            if body:
+                self._txt_box(slide, body, bx + 0.05, y + head_h + 0.08, box_w - 0.1,
+                              h - head_h - 0.08, _num(s.get("text_size"), 7.5),
+                              italic=True, fg="444444", align="c")
+            if i < n - 1:
+                try:
+                    ar = slide.shapes.add_shape(33, Inches(bx + box_w + gap),
+                                                Inches(y + head_h / 2 - 0.07),
+                                                Inches(arrow_w), Inches(0.14))
+                    ar.fill.solid(); ar.fill.fore_color.rgb = _rgb(self.PALETTE["NKB"])
+                    ar.line.fill.background()
+                except Exception: pass
+
+    # ── Pill row: rounded-rectangle stat callouts ───────────────────────────────
+    # The bottom-of-slide KPI band ("+3.0x sales per store vs. incumbents"): tinted
+    # rounded rectangles with **bold**-mixed sentences. Distinct from stat_row —
+    # these are sentences with an embedded figure, not a big number over a label.
+    def _pill_row(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 5.6, 12.18, 0.75))
+        items = [it for it in (el.get("items") or []) if isinstance(it, dict) or isinstance(it, str)]
+        n = len(items)
+        if not n:
+            return
+        gap = 0.28
+        pill_w = (w - gap * (n - 1)) / n
+        for i, it in enumerate(items):
+            if isinstance(it, str):
+                it = {"text": it}
+            col = _str(it.get("color"), self.PALETTE["MDG"])
+            px = x + i * (pill_w + gap)
+            pill = slide.shapes.add_shape(5, Inches(px), Inches(y), Inches(pill_w), Inches(h))
+            pill.fill.solid(); pill.fill.fore_color.rgb = _rgb(_tint(col, 0.82))
+            pill.line.fill.background()
+            tf = pill.text_frame; tf.word_wrap = True
+            tf.margin_left = Inches(0.16); tf.margin_right = Inches(0.16)
+            p = tf.paragraphs[0]; p.alignment = PP_ALIGN.LEFT
+            for part in re.split(r'(\*\*.*?\*\*)', _str(it.get("text"))):
+                if not part:
+                    continue
+                r = p.add_run()
+                if part.startswith("**") and part.endswith("**") and len(part) > 4:
+                    r.text = part[2:-2]; r.font.bold = True
+                else:
+                    r.text = part
+                r.font.name = self.DEFAULT_FONT
+                r.font.size = Pt(_num(it.get("size"), 9))
+                r.font.color.rgb = _rgb(self.PALETTE["NKB"])

@@ -138,6 +138,11 @@ ELEMENT TYPES (to indicate in the plan) — vary these across the deck, don't re
 - icon_row: qualitative narrative points (thesis pillars, risks, value-creation levers) as icon + header + description
 - comparison_cards: before/after or options comparison as 2-4 cards, not a table
 - timeline: roadmap, process, or deal milestones as numbered steps
+- alt_timeline: company history over the years — milestones alternating above/below a horizontal axis (richer than timeline; use for any COMPANY HISTORY slide)
+- org_chart: corporate/holding structure — boxes per entity with jurisdiction and ownership % connectors (use for CORPORATE STRUCTURE / transaction perimeter)
+- process_flow: value chain or step sequence as arrowed boxes with descriptions (use for BUSINESS MODEL slides)
+- pill_row: 3-5 rounded KPI proof-point callouts, usually under a diagram
+- multiple donuts side by side with center KPI text: customer/segment mix comparison across brands
 
 RESPONSE FORMAT — your entire reply must be ONLY this JSON object and nothing else: no preamble, no summary of the attached document, no analysis, no markdown code fences. The first character of your reply must be "{".
 {

@@ -116,8 +116,23 @@ async def build_pptx(req: BuildRequest):
             { "type": "timeline", "x": 0.85, "y": 2.0, "w": 12.18, "h": 3.0,
               "steps": [{"label":"Q1 2025","text":"Seed round"},{"label":"Q3 2025","text":"Series A"}, ...] },
             { "type": "waterfall", "x": 0.85, "y": 2.0, "w": 12.18, "h": 4.0,
-              "labels": ["Revenue","COGS","Opex","EBITDA"], "values": [100,-40,-35,25], "totals": [true,false,false,true] }
+              "labels": ["Revenue","COGS","Opex","EBITDA"], "values": [100,-40,-35,25], "totals": [true,false,false,true] },
+            { "type": "alt_timeline", "x": 0.85, "y": 2.0, "w": 12.18, "h": 4.4,
+              "entries": [{"label":"2015","text":"**Founded** in Mexico City."}, ...] },  // company history: entries alternate above/below the axis
+            { "type": "org_chart", "x": 0.85, "y": 2.0, "w": 12.18, "h": 4.4,
+              "levels": [[{"label":"HoldCo","sub":"Cayman"}],
+                         [{"label":"OpCo MX","sub":"Mexico","note":"Brand A","parent":0,"pct":"99.9%"}, ...]] },
+            { "type": "process_flow", "x": 0.85, "y": 2.0, "w": 12.18, "h": 1.9,
+              "steps": [{"title":"Designer","text":"Designs in-house."}, ...] },  // arrowed value-chain boxes
+            { "type": "pill_row", "x": 0.85, "y": 4.6, "w": 12.18, "h": 0.85,
+              "items": [{"text":"**+3.0x** sales per store vs. incumbents"}, ...] }  // rounded tinted KPI callouts
           ]
+
+    All chart elements (bar/line/line_multi/donut/hbar_float/scatter/waterfall) also accept
+    "title" and "subtitle" — a plain-text bold header + italic grey subtitle rendered above
+    the chart inside its box. donut also accepts "center": [str] — KPI lines inside the hole.
+    table accepts "label_col": true — first column becomes an alternating dark/white label rail.
+    textbox/pill_row/alt_timeline text supports **bold** spans.
         }
       ]
     }
