@@ -14,7 +14,7 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION
 from pptx.chart.data import ChartData, XyChartData
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import qn
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from lxml import etree
 
 
@@ -89,6 +89,7 @@ def _tint(hex_color: str, amount: float) -> str:
 
 CONTENT_X = 0.918      # left edge of title/takeaway/content placeholders in the template (839788 EMU)
 CONTENT_RIGHT = 12.415  # right edge of the content placeholder (839788 + 10512714 EMU) — symmetric margin
+CANVAS_BOTTOM = 7.15    # below this collides with the note/footer placeholder
 
 
 def _geom(el: dict, defaults=(CONTENT_X, 2.0, 11.5, 4.0)):
@@ -280,6 +281,19 @@ class PptxBuilder:
             if _str(el.get("type")) == "table":
                 el["h"] = self._table_height(el)
 
+        # The plan's y/h numbers are LLM-estimated and occasionally run past the
+        # note/footer placeholder near the bottom of the slide (e.g. a chart given
+        # h=2.05 at y=5.5 when the footer sits at y=6.84) — clamp so every visual
+        # element's own box stays within the printable canvas rather than silently
+        # rendering through the footer.
+        for el in elements:
+            if _str(el.get("type")) not in self._VISUAL_TYPES:
+                continue
+            y = _num(el.get("y"))
+            h = _num(el.get("h"))
+            if h and y + h > CANVAS_BOTTOM + 0.02:
+                el["h"] = max(0.3, CANVAS_BOTTOM - y)
+
         self._qa_check_slide(sd, elements)
 
         for el in elements:
@@ -300,7 +314,7 @@ class PptxBuilder:
 
     def _qa_check_slide(self, sd: dict, elements: list[dict]):
         title = _str(sd.get("title"), "(untitled slide)")
-        canvas = (CONTENT_X - 0.05, 1.95, CONTENT_RIGHT + 0.05, 7.15)
+        canvas = (CONTENT_X - 0.05, 1.95, CONTENT_RIGHT + 0.05, CANVAS_BOTTOM)
 
         boxes = []
         for el in elements:
@@ -449,6 +463,15 @@ class PptxBuilder:
                     r.font.bold = True
                 else:
                     r.text = part
+        # A long title/takeaway that wraps to a second line can overflow its
+        # placeholder's fixed box and collide with the text below it (e.g. the
+        # takeaway paragraph sitting right under the title). Let PowerPoint
+        # shrink the text to fit rather than overflow — it only kicks in when
+        # the text actually doesn't fit, so single-line titles are unaffected.
+        try:
+            tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        except Exception:
+            pass
 
     # ── Element dispatcher ─────────────────────────────────────────────────────
     def _element(self, slide, el: dict):
@@ -551,11 +574,24 @@ class PptxBuilder:
         for i, line in enumerate(lines):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
             p.alignment = align
-            r = p.add_run()
-            r.text = line
-            r.font.name = self.DEFAULT_FONT; r.font.size = font_size
-            r.font.bold = font_bold; r.font.italic = font_ital
-            r.font.color.rgb = font_color
+            for part in re.split(r'(\*\*.*?\*\*)', line):
+                if not part:
+                    continue
+                r = p.add_run()
+                if part.startswith("**") and part.endswith("**") and len(part) > 4:
+                    r.text = part[2:-2]; r.font.bold = True
+                else:
+                    r.text = part; r.font.bold = font_bold
+                r.font.name = self.DEFAULT_FONT; r.font.size = font_size
+                r.font.italic = font_ital
+                r.font.color.rgb = font_color
+        # Free-form textboxes are common for KPI-style callouts (e.g. a big
+        # "~15,000" stat in a narrow column) where the plan's font size doesn't
+        # always fit the declared width — shrink rather than wrap/overflow.
+        try:
+            tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        except Exception:
+            pass
 
     def _shape(self, slide, el: dict):
         x, y, w, h = _geom(el, (0.85, 1.78, 5.0, 0.27))
