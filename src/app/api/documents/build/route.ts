@@ -260,11 +260,15 @@ export async function POST(req: NextRequest) {
           send({ type: "error", message: "PPTX templates only" }); controller.close(); return;
         }
 
-        // ── Profile the actual uploaded template (colors/font) ──────────────
+        // ── Profile the actual uploaded template (colors only) ──────────────
         // Falls back to PANDO's own hardcoded profile if this isn't PANDO's
         // template, or profiling fails/returns too little to trust.
+        // Font is intentionally NOT taken from the template: nearly every
+        // uploaded .pptx carries "Aptos" as its theme minor font (the Office
+        // default, left untouched even in fully custom-designed decks), so
+        // trusting it here silently replaced PANDO's brand font (Work Sans
+        // Light) on almost every generated deck. The brand font is fixed.
         let templatePalette: Record<string, string> | null = null;
-        let templateFont: string | null = null;
         try {
           const profResp = await fetch(getProfileEndpoint(), {
             method: "POST",
@@ -274,13 +278,11 @@ export async function POST(req: NextRequest) {
           if (profResp.ok) {
             const prof = await profResp.json();
             if (prof?.palette && Object.keys(prof.palette).length >= 6) templatePalette = prof.palette;
-            if (prof?.fonts?.minorFont) templateFont = prof.fonts.minorFont;
           }
         } catch { /* profiling is best-effort — PANDO defaults still apply */ }
 
         const templateProfile = {
           ...PANDO_TEMPLATE_PROFILE,
-          font: templateFont || PANDO_TEMPLATE_PROFILE.font,
           colors: templatePalette || PANDO_TEMPLATE_PROFILE.colors,
         };
 
@@ -533,7 +535,6 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
               template_url: template.filePath,
               slide_plan: fullSlidePlan,
               palette: templatePalette ?? undefined,
-              font: templateFont ?? undefined,
             }),
           });
         } catch (fetchErr) {

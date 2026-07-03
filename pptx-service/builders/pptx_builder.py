@@ -122,6 +122,37 @@ class PptxBuilder:
         self._save_template_covers()
         self._clear_slides()
 
+    def _pcolor(self, raw, default: str) -> str:
+        """Snap a color value from the LLM-authored slide plan to the nearest
+        PANDO brand hue. The build prompt tells the model to "never use colors
+        outside the PANDO palette", but that's prose, not a schema constraint —
+        models still sometimes emit an arbitrary off-brand hex (e.g. a gold
+        badge color with no brand equivalent). This makes the constraint real:
+        anything that isn't already an exact brand hex gets snapped to the
+        closest one instead of rendering literally."""
+        if not isinstance(raw, str) or not raw:
+            return default
+        key = raw.upper().lstrip("#")
+        if key in self.PALETTE:
+            return self.PALETTE[key]
+        hexval = raw.lstrip("#")
+        if len(hexval) != 6:
+            return default
+        try:
+            r, g, b = int(hexval[0:2], 16), int(hexval[2:4], 16), int(hexval[4:6], 16)
+        except ValueError:
+            return default
+        hexval = hexval.upper()
+        brand_hexes = [self.PALETTE[k] for k in ("DKG", "MDG", "OLV", "TEL", "LBL", "GRG", "NKB", "WHT")]
+        if hexval in brand_hexes:
+            return hexval
+
+        def _dist(h):
+            br, bg, bb = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return (r - br) ** 2 + (g - bg) ** 2 + (b - bb) ** 2
+
+        return min(brand_hexes, key=_dist)
+
     def _save_template_covers(self):
         slides = list(self.prs.slides)
         self._cover_info = None
@@ -283,10 +314,26 @@ class PptxBuilder:
         # PowerPoint enforces regardless of the "h" the plan declared — a table
         # with more rows than the declared h assumed will silently grow taller
         # than the plan says, overlapping whatever sits below it. Recompute the
-        # real height from the row count up front so QA and layout both see it.
+        # real height from the row count up front so QA and layout both see it,
+        # and push down anything else in the table's column that was placed
+        # assuming the plan's (too-small) height — otherwise a heading or card
+        # meant to sit just below the table renders on top of its last row.
         for el in elements:
             if _str(el.get("type")) == "table":
-                el["h"] = self._table_height(el)
+                old_h = _num(el.get("h"))
+                new_h = self._table_height(el)
+                el["h"] = new_h
+                delta = new_h - old_h
+                if delta > 0.01:
+                    tx, ty, tw = _num(el.get("x")), _num(el.get("y")), _num(el.get("w"))
+                    old_bottom = ty + old_h
+                    for other in elements:
+                        if other is el:
+                            continue
+                        ox, oy, ow = _num(other.get("x")), _num(other.get("y")), _num(other.get("w"))
+                        overlaps_x = ox < tx + tw and ox + ow > tx
+                        if overlaps_x and oy >= old_bottom - 0.05:
+                            other["y"] = oy + delta
 
         # The plan's y/h numbers are LLM-estimated and occasionally run past the
         # note/footer placeholder near the bottom of the slide (e.g. a chart given
@@ -795,7 +842,8 @@ class PptxBuilder:
         sp.format.fill.background()
         sp.format.line.fill.background()
 
-        colors = el.get("colors") or [self.PALETTE["DKG"], self.PALETTE["MDG"], self.PALETTE["OLV"], self.PALETTE["TEL"], self.PALETTE["LBL"], self.PALETTE["GRG"]]
+        colors = [self._pcolor(c, self.PALETTE["DKG"]) for c in el.get("colors")] if el.get("colors") else \
+            [self.PALETTE["DKG"], self.PALETTE["MDG"], self.PALETTE["OLV"], self.PALETTE["TEL"], self.PALETTE["LBL"], self.PALETTE["GRG"]]
         rng = ch.series[1]
         self._color_bar_points(rng, colors, len(series_defs))
 
@@ -831,7 +879,7 @@ class PptxBuilder:
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
         self._set_chart_default_font(ch)
         ser = ch.series[0]
-        self._set_line_style(ser, el.get("color", self.PALETTE["MDG"]), _num(el.get("width"), 1.8))
+        self._set_line_style(ser, self._pcolor(el.get("color"), self.PALETTE["MDG"]), _num(el.get("width"), 1.8))
         self._smooth_all(ch)
         if el.get("data_labels"):
             self._line_point_labels(ser, el, self.PALETTE["MDG"])
@@ -877,7 +925,7 @@ class PptxBuilder:
         self._set_chart_default_font(ch)
         for i, s in enumerate(series_list):
             if i < len(ch.series):
-                col = s.get("color", self.PALETTE["DKG"])
+                col = self._pcolor(s.get("color"), self.PALETTE["DKG"])
                 self._set_line_style(ch.series[i], col, _num(s.get("width"), 1.4), dashed=bool(s.get("dashed")))
                 if s.get("data_labels"):
                     self._line_point_labels(ch.series[i], el, col)
@@ -908,7 +956,7 @@ class PptxBuilder:
             if i >= len(ch.series):
                 break
             ser = ch.series[i]
-            col = s.get("color", self.PALETTE["DKG"])
+            col = self._pcolor(s.get("color"), self.PALETTE["DKG"])
             ser.format.fill.solid(); ser.format.fill.fore_color.rgb = _rgb(col)
             ser.format.line.fill.background()
             if s.get("hatched"):
@@ -1226,7 +1274,7 @@ class PptxBuilder:
         if cat_el is not None:
             idx = list(ser._element).index(cat_el)
             for i, s in enumerate(slices):
-                col = _str(s.get("color"), self.PALETTE["GRG"])
+                col = self._pcolor(s.get("color"), self.PALETTE["GRG"])
                 ser._element.insert(idx + i, parse_xml(
                     f'<c:dPt {NS}><c:idx val="{i}"/>'
                     f'<c:spPr><a:solidFill><a:srgbClr val="{col}"/></a:solidFill>'
@@ -1315,7 +1363,7 @@ class PptxBuilder:
                 s = ch.series[i]
                 s.format.line.fill.background()
                 s.marker.format.fill.solid()
-                col = pt.get("color", self.PALETTE["DKG"])
+                col = self._pcolor(pt.get("color"), self.PALETTE["DKG"])
                 s.marker.format.fill.fore_color.rgb = _rgb(col)
                 s.marker.format.line.fill.background()
                 s.marker.size = int(_num(pt.get("size"), 10))
@@ -1408,7 +1456,7 @@ class PptxBuilder:
             try:
                 bx = x + _num(brand.get("px")) * w
                 by = y + (1 - _num(brand.get("py"))) * h
-                col = _str(brand.get("color"), self.PALETTE["DKG"])
+                col = self._pcolor(brand.get("color"), self.PALETTE["DKG"])
                 dot = slide.shapes.add_shape(9, Inches(bx - 0.08), Inches(by - 0.08), Inches(0.16), Inches(0.16))
                 dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
                 dot.line.fill.background()
@@ -1444,7 +1492,7 @@ class PptxBuilder:
             by = plot_y + (1 - y1) * plot_h
             bh = max((y1 - y0) * plot_h, 0.01)
             rect = slide.shapes.add_shape(1, Inches(plot_x), Inches(by), Inches(plot_w), Inches(bh))
-            rect.fill.solid(); rect.fill.fore_color.rgb = _rgb(band.get("color", "F2F2F2"))
+            rect.fill.solid(); rect.fill.fore_color.rgb = _rgb(self._pcolor(band.get("color"), "F2F2F2"))
             rect.line.fill.background()
             lbl = _str(band.get("label"))
             if lbl and bh >= 0.18:  # skip label on a band too thin to hold a 0.22"-tall box without overlapping neighbors
@@ -1485,7 +1533,7 @@ class PptxBuilder:
             cy = plot_y + (1 - py) * plot_h
             d = _num(pt.get("size"), 0.09)
             dot = slide.shapes.add_shape(9, Inches(cx - d / 2), Inches(cy - d / 2), Inches(d), Inches(d))
-            dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(pt.get("color", self.PALETTE["DKG"]))
+            dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(self._pcolor(pt.get("color"), self.PALETTE["DKG"]))
             dot.line.fill.background()
 
         if legend:
@@ -1494,7 +1542,7 @@ class PptxBuilder:
             for i, g in enumerate(legend):
                 lx = x + i * slot_w
                 dot = slide.shapes.add_shape(9, Inches(lx), Inches(ly + 0.03), Inches(0.09), Inches(0.09))
-                dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(g.get("color", self.PALETTE["DKG"]))
+                dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(self._pcolor(g.get("color"), self.PALETTE["DKG"]))
                 dot.line.fill.background()
                 self._txt_box(slide, _str(g.get("label")), lx + 0.14, ly, slot_w - 0.16, 0.18, 7, fg="444444")
 
@@ -1589,7 +1637,7 @@ class PptxBuilder:
         label_size = _num(el.get("label_size"), 9)
         for i, it in enumerate(items):
             cx = x + i * (cell_w + gap)
-            col = _str(it.get("color"), self.PALETTE["DKG"])
+            col = self._pcolor(it.get("color"), self.PALETTE["DKG"])
             sub = _str(it.get("delta"))
             # Reserve a top band for the delta badge so a long/wrapping value never
             # collides with it — they used to share the same y and overlapped
@@ -1624,7 +1672,7 @@ class PptxBuilder:
         circle_d = _num(el.get("circle_size"), 0.42)
 
         def _one(ix, iy, iw, ih, it):
-            col = _str(it.get("color"), self.PALETTE["DKG"])
+            col = self._pcolor(it.get("color"), self.PALETTE["DKG"])
             dot = slide.shapes.add_shape(9, Inches(ix), Inches(iy), Inches(circle_d), Inches(circle_d))
             dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
             dot.line.fill.background()
@@ -1682,7 +1730,7 @@ class PptxBuilder:
         pad = 0.18
         for i, card in enumerate(cards):
             cx = x + i * (card_w + gap)
-            col = _str(card.get("color"), self.PALETTE["DKG"])
+            col = self._pcolor(card.get("color"), self.PALETTE["DKG"])
             tint = _tint(col, 0.90)
             panel = slide.shapes.add_shape(1, Inches(cx), Inches(y), Inches(card_w), Inches(h))
             panel.fill.solid(); panel.fill.fore_color.rgb = _rgb(tint)
@@ -1714,7 +1762,7 @@ class PptxBuilder:
         slot_w = w / n if n > 1 else w
         for i, step in enumerate(steps):
             cx = x + slot_w * i + (slot_w - dot_d) / 2 if n > 1 else x
-            col = _str(step.get("color"), cycle[i % len(cycle)])
+            col = self._pcolor(step.get("color"), cycle[i % len(cycle)])
             dot = slide.shapes.add_shape(9, Inches(cx), Inches(y), Inches(dot_d), Inches(dot_d))
             dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
             dot.line.color.rgb = _rgb(self.PALETTE["WHT"]); dot.line.width = Pt(1.25)
@@ -1837,7 +1885,7 @@ class PptxBuilder:
         text_h = h * 0.5 - 0.35
         for i, e in enumerate(entries):
             cx = x + slot_w * i + slot_w / 2
-            col = _str(e.get("color"), self.PALETTE["DKG"])
+            col = self._pcolor(e.get("color"), self.PALETTE["DKG"])
             above = i % 2 == 0
             try:
                 dot = slide.shapes.add_shape(9, Inches(cx - dot_d / 2), Inches(line_y - dot_d / 2),
@@ -1913,7 +1961,7 @@ class PptxBuilder:
             for ni, nd in enumerate(nodes):
                 cx = x + slot_w * ni + slot_w / 2
                 bx = cx - box_w / 2
-                col = _str(nd.get("color"), cycle[li % len(cycle)])
+                col = self._pcolor(nd.get("color"), cycle[li % len(cycle)])
                 bar = slide.shapes.add_shape(1, Inches(bx), Inches(ly), Inches(box_w), Inches(title_h))
                 bar.fill.solid(); bar.fill.fore_color.rgb = _rgb(col)
                 bar.line.fill.background()
@@ -1969,7 +2017,7 @@ class PptxBuilder:
         head_h = 0.34
         for i, s in enumerate(steps):
             bx = x + i * (box_w + arrow_w + gap * 2)
-            col = _str(s.get("color"), self.PALETTE["NKB"])
+            col = self._pcolor(s.get("color"), self.PALETTE["NKB"])
             bar = slide.shapes.add_shape(1, Inches(bx), Inches(y), Inches(box_w), Inches(head_h))
             bar.fill.solid(); bar.fill.fore_color.rgb = _rgb(col)
             bar.line.fill.background()
@@ -2007,7 +2055,7 @@ class PptxBuilder:
         for i, it in enumerate(items):
             if isinstance(it, str):
                 it = {"text": it}
-            col = _str(it.get("color"), self.PALETTE["MDG"])
+            col = self._pcolor(it.get("color"), self.PALETTE["MDG"])
             px = x + i * (pill_w + gap)
             pill = slide.shapes.add_shape(5, Inches(px), Inches(y), Inches(pill_w), Inches(h))
             pill.fill.solid(); pill.fill.fore_color.rgb = _rgb(_tint(col, 0.82))
