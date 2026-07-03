@@ -1131,9 +1131,16 @@ class PptxBuilder:
             buChar = parse_xml(f'<a:buChar xmlns:a="{A_NS}" char="&#8226;"/>')
             buClr = parse_xml(f'<a:buClr xmlns:a="{A_NS}"><a:srgbClr val="{bcol}"/></a:buClr>')
             pPr.append(buClr); pPr.append(buFont); pPr.append(buChar)
-            r = p.add_run(); r.text = _str(item)
-            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
-            r.font.color.rgb = _rgb(fg)
+            for part in re.split(r'(\*\*.*?\*\*)', _str(item)):
+                if not part:
+                    continue
+                r = p.add_run()
+                if part.startswith("**") and part.endswith("**") and len(part) > 4:
+                    r.text = part[2:-2]; r.font.bold = True
+                else:
+                    r.text = part
+                r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
+                r.font.color.rgb = _rgb(fg)
         return box
 
     # ── Stat row: large-number KPI callouts (no icons, just number + label) ────
@@ -1150,15 +1157,22 @@ class PptxBuilder:
         for i, it in enumerate(items):
             cx = x + i * (cell_w + gap)
             col = _str(it.get("color"), self.PALETTE["DKG"])
-            self._txt_box(slide, _str(it.get("value")), cx, y, cell_w, h * 0.62,
-                          value_size, bold=True, fg=col, align="l")
             sub = _str(it.get("delta"))
+            # Reserve a top band for the delta badge so a long/wrapping value never
+            # collides with it — they used to share the same y and overlapped
+            # whenever the value text wrapped to two lines in a narrow cell.
+            delta_h = 0.22 if sub else 0.0
+            if sub:
+                self._txt_box(slide, sub, cx, y, cell_w, delta_h,
+                              label_size - 0.5, italic=True, fg=col, align="r")
+            # Long values in a crowded row (5+ items) need a smaller size to have
+            # any chance of staying on one line instead of wrapping into the label.
+            v_size = value_size if n <= 4 else min(value_size, 22)
+            self._txt_box(slide, _str(it.get("value")), cx, y + delta_h, cell_w, h * 0.62 - delta_h,
+                          v_size, bold=True, fg=col, align="l")
             label_y = y + h * 0.62
             self._txt_box(slide, _str(it.get("label")), cx, label_y, cell_w, h * 0.30,
                           label_size, fg="555555", align="l")
-            if sub:
-                self._txt_box(slide, sub, cx, y + h * 0.05, cell_w, 0.24,
-                              label_size - 0.5, italic=True, fg=col, align="r")
             if i < n - 1:
                 try:
                     ln = slide.shapes.add_connector(1, Inches(cx + cell_w + gap / 2), Inches(y + 0.05),
@@ -1188,18 +1202,36 @@ class PptxBuilder:
             r.font.bold = True; r.font.color.rgb = _rgb(self.PALETTE["WHT"])
             text_x = ix + circle_d + 0.15
             text_w = iw - circle_d - 0.15
-            self._txt_box(slide, _str(it.get("title")), text_x, iy - 0.03, text_w, 0.24,
-                          _num(it.get("title_size"), 10.5), bold=True, fg=self.PALETTE["NKB"])
+            title = _str(it.get("title"))
+            title_size = _num(it.get("title_size"), 10.5)
+            # A narrow column (e.g. 4+ items in a row) often wraps the title to two
+            # lines — reserve a second line of height so the body copy doesn't start
+            # underneath the wrapped second line of the title.
+            chars_per_line = max(1, text_w / (title_size * 0.0095))
+            title_lines = 2 if len(title) > chars_per_line else 1
+            title_h = 0.24 * title_lines
+            self._txt_box(slide, title, text_x, iy - 0.03, text_w, title_h,
+                          title_size, bold=True, fg=self.PALETTE["NKB"])
             body = _str(it.get("text"))
             if body:
-                self._txt_box(slide, body, text_x, iy + 0.22, text_w, ih - 0.22,
+                self._txt_box(slide, body, text_x, iy - 0.03 + title_h, text_w, ih - title_h,
                               _num(it.get("text_size"), 8), fg="555555")
 
         if direction == "row":
+            # A single row only has room for a handful of items before the text
+            # column becomes too narrow to hold a title, let alone body copy —
+            # wrap into a multi-row grid once items would drop below a readable
+            # minimum width instead of squeezing everything onto one line.
             gap = 0.3
-            cell_w = (w - gap * (n - 1)) / n
+            min_text_w = 1.3
+            min_cell_w = circle_d + 0.15 + min_text_w
+            cols = max(1, min(n, int((w + gap) // (min_cell_w + gap))))
+            rows = -(-n // cols)  # ceil
+            cell_w = (w - gap * (cols - 1)) / cols
+            cell_h = (h - gap * (rows - 1)) / rows
             for i, it in enumerate(items):
-                _one(x + i * (cell_w + gap), y, cell_w, h, it)
+                r, c = divmod(i, cols)
+                _one(x + c * (cell_w + gap), y + r * (cell_h + gap), cell_w, cell_h, it)
         else:
             row_h = h / n
             for i, it in enumerate(items):
