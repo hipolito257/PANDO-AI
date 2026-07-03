@@ -237,9 +237,16 @@ class PptxBuilder:
                 if t_el is not None:
                     t_el.text = new_text
                 p._p.append(first_run_el)
+                # The cloned run keeps the template's own rPr (bold/italic/size),
+                # which is exactly what we want — but the template's cover runs
+                # often have no explicit <a:latin> override at all, so they'd
+                # silently inherit the theme's minor font (Aptos) instead of
+                # PANDO's brand font. Force it explicitly.
+                p.runs[-1].font.name = self.DEFAULT_FONT
             else:
                 r = p.add_run()
                 r.text = new_text
+                r.font.name = self.DEFAULT_FONT
                 r.font.color.rgb = _rgb(self.PALETTE["WHT"])
 
         if title and shapes_by_size:
