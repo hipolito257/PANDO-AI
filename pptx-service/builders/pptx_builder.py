@@ -972,15 +972,112 @@ class PptxBuilder:
         except Exception: pass
 
     # ── Table ─────────────────────────────────────────────────────────────────
-    def _table_height(self, el: dict) -> float:
-        """The true rendered height of a table, driven by row count — PowerPoint
-        enforces a minimum row height, so the plan's declared "h" is only ever a
-        floor, never a ceiling. Always trust this over the plan's own value."""
+    _NUM_CELL_RE = re.compile(r'^[\s$€£]*\(?-?[\d.,]+\)?\s*%?\s*[kKmMbB]?\+?\s*$')
+
+    def _wrap_lines(self, text: str, col_w: float, size: float) -> int:
+        """Estimate wrapped-line count for text inside a column of width col_w
+        (inches) at font size (pt) — same char-width heuristic used elsewhere
+        in this file (icon_row title wrap), applied to table cells so row
+        height can be computed from what will actually render, not guessed."""
+        text = _str(text)
+        if not text:
+            return 1
+        usable = max(col_w - 0.14, 0.35)
+        cpl = max(4, usable / (size * 0.0092))
+        total = 0
+        for line in text.split("\n"):
+            total += max(1, -(-len(line) // int(cpl)))  # ceil div
+        return total
+
+    def _table_col_widths(self, el: dict, headers: list, rows: list, w: float) -> list:
+        """Distribute column width proportionally to each column's actual content
+        length (header + widest cell) rather than splitting evenly — a numbers
+        column ('12.4%') and a commentary column (a full sentence) should not
+        get the same width, which is how columns used to end up either wasting
+        space or wrapping/overflowing their declared row height."""
+        n_cols = len(headers)
+        explicit = el.get("col_widths")
+        if explicit and isinstance(explicit, list) and len(explicit) == n_cols:
+            widths = [max(_num(cw, 1.0), 0.3) for cw in explicit]
+            total = sum(widths) or 1.0
+            return [wd * w / total for wd in widths]
+        weights = []
+        for c in range(n_cols):
+            maxlen = len(_str(headers[c]))
+            for row in rows:
+                vals = list(row) if isinstance(row, (list, tuple)) else []
+                if c < len(vals):
+                    maxlen = max(maxlen, len(_str(vals[c])))
+            weights.append(max(maxlen, 3))
+        total_w = sum(weights) or 1
+        raw = [max(w * wt / total_w, 0.55) for wt in weights]
+        scale = w / sum(raw) if sum(raw) else 1.0
+        return [r * scale for r in raw]
+
+    def _table_layout(self, el: dict):
+        """Single source of truth for a table's real geometry — column widths,
+        header height, and per-row heights all computed from actual content via
+        _wrap_lines, so _table_height (used for slide-layout QA) and _table
+        (the actual renderer) can never disagree with each other."""
+        headers = el.get("headers") or []
         rows = el.get("rows") or []
-        header_h = max(_num(el.get("header_h"), 0.32), 0.1)
-        row_h    = max(_num(el.get("row_h"),    0.28), 0.1)
-        computed = header_h + row_h * len(rows)
-        return max(computed, _num(el.get("h"), computed), 0.2)
+        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 3.0))
+        size = _num(el.get("size"), 8)
+        col_widths = self._table_col_widths(el, headers, rows, w)
+
+        header_h_base = max(_num(el.get("header_h"), 0.32), 0.1)
+        row_h_base    = max(_num(el.get("row_h"),    0.28), 0.1)
+
+        header_lines = 1
+        for c, htext in enumerate(headers):
+            header_lines = max(header_lines, self._wrap_lines(_str(htext), col_widths[c], size))
+        header_line_h = (size * 1.25) / 72 + 0.05
+        header_h = max(header_h_base, header_line_h * header_lines + 0.08)
+
+        row_heights = []
+        line_h = (size * 1.22) / 72 + 0.02
+        for row in rows:
+            vals = list(row) if isinstance(row, (list, tuple)) else []
+            max_lines = 1
+            for c in range(len(headers)):
+                val = vals[c] if c < len(vals) else ""
+                max_lines = max(max_lines, self._wrap_lines(_str(val), col_widths[c], size))
+            row_heights.append(max(row_h_base, line_h * max_lines + 0.06))
+
+        total_h = header_h + sum(row_heights)
+        return x, y, w, col_widths, header_h, row_heights, max(total_h, 0.2)
+
+    def _table_height(self, el: dict) -> float:
+        """The true rendered height of a table, driven by row count and actual
+        text wrap — PowerPoint enforces a minimum row height and long cell text
+        grows a row taller, so the plan's declared "h" is only ever a floor,
+        never a ceiling. Always trust this over the plan's own value."""
+        _x, _y, _w, _cw, header_h, row_heights, total_h = self._table_layout(el)
+        return max(total_h, _num(el.get("h"), total_h))
+
+    def _set_cell_borders(self, cell, color: str = "D9DBD4", width_pt: float = 0.5):
+        """Thin borders on every side of a cell — native python-pptx tables render
+        with no visible gridlines by default, which reads as a flat, undefined
+        block of color rather than a table; real PANDO decks always show hairline
+        rules between cells (see the D2C matrix / brand comparison tables)."""
+        try:
+            tcPr = cell._tc.get_or_add_tcPr()
+            w_emu = int(Pt(width_pt))
+            # ln* elements must precede fill elements in tcPr's schema order —
+            # inserting each at an incrementing index (rather than appending)
+            # keeps lnL/lnR/lnT/lnB ahead of whatever fill cell.fill.solid()
+            # already wrote, regardless of call order.
+            for i, tag in enumerate(("a:lnL", "a:lnR", "a:lnT", "a:lnB")):
+                existing = tcPr.find(qn(tag))
+                if existing is not None:
+                    tcPr.remove(existing)
+                ln = parse_xml(
+                    f'<{tag} xmlns:a="{A_NS}" w="{w_emu}" cap="flat" cmpd="sng" algn="ctr">'
+                    f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
+                    f'<a:prstDash val="solid"/></{tag}>'
+                )
+                tcPr.insert(i, ln)
+        except Exception: pass
 
     def _table(self, slide, el: dict):
         headers = el.get("headers") or []
@@ -989,10 +1086,7 @@ class PptxBuilder:
             return
         n_cols = len(headers)
         n_rows = len(rows) + 1
-        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 3.0))
-        header_h = max(_num(el.get("header_h"), 0.32), 0.1)
-        row_h    = max(_num(el.get("row_h"),    0.28), 0.1)
-        h = self._table_height(el)
+        x, y, w, col_widths, header_h, row_heights, h = self._table_layout(el)
 
         gframe = slide.shapes.add_table(n_rows, n_cols, Inches(x), Inches(y), Inches(w), Inches(h))
         table = gframe.table
@@ -1003,16 +1097,13 @@ class PptxBuilder:
             tblPr.set("firstRow", "0")
             tblPr.set("bandRow", "0")
 
-        col_widths = el.get("col_widths")
-        if col_widths and isinstance(col_widths, list):
-            for i, cw in enumerate(col_widths[:n_cols]):
-                try:
-                    table.columns[i].width = Inches(_num(cw, 1.0))
-                except Exception: pass
+        for i, cw in enumerate(col_widths[:n_cols]):
+            try: table.columns[i].width = Inches(cw)
+            except Exception: pass
 
         size = _num(el.get("size"), 8)
 
-        def _style_cell(cell, text, bold, fg, bg, align):
+        def _style_cell(cell, text, bold, fg, bg, align, border_color="D9DBD4"):
             try:
                 cell.fill.solid(); cell.fill.fore_color.rgb = _rgb(bg)
                 cell.margin_left = Inches(0.06); cell.margin_right = Inches(0.06)
@@ -1024,11 +1115,12 @@ class PptxBuilder:
                 r = p.add_run(); r.text = _str(text)
                 r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
                 r.font.bold = bold; r.font.color.rgb = _rgb(fg)
+                self._set_cell_borders(cell, border_color)
             except Exception: pass
 
         for c, htext in enumerate(headers):
             _style_cell(table.cell(0, c), htext, True, self.PALETTE["WHT"], self.PALETTE["DKG"],
-                        "l" if c == 0 else "c")
+                        "l" if c == 0 else "c", border_color=self.PALETTE["DKG"])
         try: table.rows[0].height = Inches(header_h)
         except Exception: pass
 
@@ -1049,9 +1141,14 @@ class PptxBuilder:
                                 self.PALETTE["WHT"] if dark else self.PALETTE["NKB"],
                                 self.PALETTE["DKG"] if dark else self.PALETTE["WHT"], "l")
                 else:
+                    # Numeric-looking values ('12.4%', '$1,234', '(3.2)') read better
+                    # right-aligned like a spreadsheet; free-text commentary stays
+                    # left/centered as before.
+                    is_num = c != 0 and bool(self._NUM_CELL_RE.match(_str(val)))
+                    align = "r" if is_num else ("l" if c == 0 else "c")
                     _style_cell(table.cell(ridx + 1, c), val, bold_first_col and c == 0,
-                                self.PALETTE["NKB"], bg, "l" if c == 0 else "c")
-            try: table.rows[ridx + 1].height = Inches(row_h)
+                                self.PALETTE["NKB"], bg, align)
+            try: table.rows[ridx + 1].height = Inches(row_heights[ridx])
             except Exception: pass
 
     # ── Donut chart ────────────────────────────────────────────────────────────
@@ -1066,7 +1163,7 @@ class PptxBuilder:
         hdr = self._chart_header(slide, el, x, y, w)
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.DOUGHNUT, Inches(x), Inches(y), Inches(w), Inches(h), cd)
-        ch = cf.chart; ch.has_title = False; ch.has_legend = False
+        ch = cf.chart; ch.has_title = False
         ser = ch.series[0]
         NS = f'xmlns:c="{C_NS}" xmlns:a="{A_NS}"'
         cat_el = ser._element.find(qn("c:cat"))
@@ -1086,6 +1183,29 @@ class PptxBuilder:
             hs = dc.find("{%s}holeSize" % C_NS)
             if hs is not None: hs.set("val", str(hole))
             else: dc.append(parse_xml(f'<c:holeSize xmlns:c="{C_NS}" val="{hole}"/>'))
+
+        # Per-slice value/percentage labels — without these the ring is unreadable
+        # without a legend (real PANDO donuts, e.g. "Client Profile", show a %
+        # figure on every slice). Values are assumed to already be percentage
+        # points (23.0, not 0.23); pass num_fmt to override for other units.
+        if el.get("data_labels", True) and len(slices) > 1:
+            try:
+                dl = ser.data_labels
+                dl.show_value = True
+                dl.number_format = _str(el.get("num_fmt"), '0"%"')
+                dl.number_format_is_linked = False
+                dl.font.size = Pt(_num(el.get("label_size"), 8))
+                dl.font.bold = True
+                dl.font.color.rgb = _rgb(el.get("label_color", "FFFFFF" if hole < 70 else "444444"))
+            except Exception: pass
+
+        # Bottom legend maps slice color -> category (the ring alone can't carry
+        # that once labels are just numbers) — suppress with legend:false when a
+        # caller supplies its own legend/annotation instead.
+        if el.get("legend", True) and len(slices) > 1:
+            self._style_legend(ch)
+        else:
+            ch.has_legend = False
 
         # Center KPI text inside the hole ("~570k annual customers / +82% younger
         # than 45") — the Leon-deck donut pattern. First line renders bold; use
@@ -1139,10 +1259,20 @@ class PptxBuilder:
                 s = ch.series[i]
                 s.format.line.fill.background()
                 s.marker.format.fill.solid()
-                s.marker.format.fill.fore_color.rgb = _rgb(pt.get("color", self.PALETTE["DKG"]))
+                col = pt.get("color", self.PALETTE["DKG"])
+                s.marker.format.fill.fore_color.rgb = _rgb(col)
                 s.marker.format.line.fill.background()
                 s.marker.size = int(_num(pt.get("size"), 10))
             except Exception: pass
+            # Native XY scatter can't attach arbitrary text to a point, but each
+            # point IS its own series (named by pt["label"]) — showing the series
+            # name as the data label is the only way to label a scatter point
+            # without hand-rolled pixel math from an axis range we can't know
+            # precisely (the chart auto-scales its own axes). python-pptx's
+            # Series.data_labels property isn't implemented for XySeries (raises
+            # AttributeError), so this writes the <c:dLbls> OOXML directly.
+            if _str(pt.get("label")):
+                self._scatter_point_label(s, col, _num(pt.get("label_size"), 7))
         try:
             ch.value_axis.tick_labels.font.size = Pt(6)
             ch.value_axis.tick_labels.number_format = _str(el.get("y_fmt"), "#,##0")
@@ -1150,6 +1280,32 @@ class PptxBuilder:
             ch.category_axis.tick_labels.font.size = Pt(6)
             ch.category_axis.tick_labels.number_format = _str(el.get("x_fmt"), "#,##0")
             ch.category_axis.tick_labels.number_format_is_linked = False
+        except Exception: pass
+
+    def _scatter_point_label(self, series, color: str, size: float = 7):
+        """Insert a <c:dLbls> block showing the series name, positioned to the
+        right of the marker — the only way to label an XY scatter point since
+        python-pptx exposes no data_labels API for XySeries."""
+        try:
+            ser_el = series._element
+            dLbls = parse_xml(
+                f'<c:dLbls xmlns:c="{C_NS}" xmlns:a="{A_NS}">'
+                f'<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>'
+                f'<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>'
+                f'<a:defRPr sz="{int(size * 100)}" b="0">'
+                f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
+                f'<a:latin typeface="{self.DEFAULT_FONT}"/></a:defRPr>'
+                f'</a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>'
+                f'<c:dLblPos val="r"/>'
+                f'<c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/>'
+                f'<c:showSerName val="1"/><c:showPercent val="0"/><c:showBubbleSize val="0"/>'
+                f'</c:dLbls>'
+            )
+            xVal = ser_el.find(qn("c:xVal"))
+            if xVal is not None:
+                xVal.addprevious(dLbls)
+            else:
+                ser_el.append(dLbls)
         except Exception: pass
 
     # ── Quadrant map ───────────────────────────────────────────────────────────
@@ -1174,11 +1330,22 @@ class PptxBuilder:
                 r.font.color.rgb = _rgb(fg)
             except Exception: pass
 
+        # Clamp left/right axis labels inside the printable canvas — a quadrant
+        # sized close to the full content width used to push the right-side
+        # label (placed at x+w+0.05) past CONTENT_RIGHT and off the slide.
+        right_lx = min(x + w + 0.05, CONTENT_RIGHT - 1.5)
+        left_lx  = max(x - 1.6, CONTENT_X - 0.05)
         if labels.get("top"):    _lbl(labels["top"],    mid_x - 0.75, y - 0.25)
         if labels.get("bottom"): _lbl(labels["bottom"], mid_x - 0.75, y + h + 0.03)
-        if labels.get("left"):   _lbl(labels["left"],   x - 1.6,      mid_y - 0.10)
-        if labels.get("right"):  _lbl(labels["right"],  x + w + 0.05, mid_y - 0.10)
+        if labels.get("left"):   _lbl(labels["left"],   left_lx,      mid_y - 0.10)
+        if labels.get("right"):  _lbl(labels["right"],  right_lx,     mid_y - 0.10)
 
+        # Two dots placed close together end up with their labels overlapping
+        # (both default to sitting just below the dot) — alternate a nearby
+        # label above the dot instead, a cheap stand-in for real collision
+        # detection that catches the common "two competitors near each other"
+        # case seen in the reference deck's positioning maps.
+        placed: list[tuple[float, float]] = []
         for brand in (el.get("brands") or []):
             try:
                 bx = x + _num(brand.get("px")) * w
@@ -1187,7 +1354,10 @@ class PptxBuilder:
                 dot = slide.shapes.add_shape(9, Inches(bx - 0.08), Inches(by - 0.08), Inches(0.16), Inches(0.16))
                 dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
                 dot.line.fill.background()
-                box = slide.shapes.add_textbox(Inches(bx - 0.5), Inches(by + 0.10), Inches(1.0), Inches(0.20))
+                below = not any(abs(bx - px) < 0.9 and abs(by - py) < 0.35 for px, py in placed)
+                placed.append((bx, by))
+                label_y = by + 0.10 if below else by - 0.30
+                box = slide.shapes.add_textbox(Inches(bx - 0.5), Inches(label_y), Inches(1.0), Inches(0.20))
                 tf = box.text_frame; p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                 r = p.add_run(); r.text = _str(brand.get("label"))
                 r.font.name = self.DEFAULT_FONT; r.font.size = Pt(6.5)
@@ -1219,7 +1389,7 @@ class PptxBuilder:
             rect.fill.solid(); rect.fill.fore_color.rgb = _rgb(band.get("color", "F2F2F2"))
             rect.line.fill.background()
             lbl = _str(band.get("label"))
-            if lbl:
+            if lbl and bh >= 0.18:  # skip label on a band too thin to hold a 0.22"-tall box without overlapping neighbors
                 tb = slide.shapes.add_shape(1, Inches(plot_x + 0.06), Inches(by + bh / 2 - 0.11),
                                             Inches(1.15), Inches(0.22))
                 tb.fill.solid(); tb.fill.fore_color.rgb = _rgb("FFFFFF")
@@ -1549,13 +1719,43 @@ class PptxBuilder:
         delta_series = ch.series[1]
         self._color_bar_points(delta_series, colors, len(values))
 
+        gap_width = int(_num(el.get("gap_width"), 45))
         try:
-            ch.plot_area.gap_width = int(_num(el.get("gap_width"), 45))
+            ch.plot_area.gap_width = gap_width
         except Exception: pass
 
-        self._style_axes(ch, ymin=_num(el.get("ymin"), 0), ymax=el.get("ymax"),
+        # Force an explicit axis max (rather than leaving it to PowerPoint's
+        # auto-scale) so the bridge-line overlay below — drawn with our own
+        # approximate plot-rect math — lines up with where the bars actually
+        # render instead of guessing a scale PowerPoint might pick differently.
+        top_edges = [b + t for b, t in zip(bases, tops)]
+        ymax_eff = _num(el.get("ymax")) or (max(top_edges) * 1.15 if top_edges else 1.0)
+        self._style_axes(ch, ymin=_num(el.get("ymin"), 0), ymax=ymax_eff,
                          num_fmt=_str(el.get("num_fmt"), "#,##0"),
                          skip=1, csize=6.5)
+
+        # Dashed bridge lines connecting the top of each bar to the next — without
+        # these, a stacked-column waterfall is visually indistinguishable from a
+        # plain stacked bar chart (the defining "waterfall" cue is the connector).
+        if el.get("bridges", True) and len(values) > 1:
+            # top=0.16 (vs. _plot_rect's 0.05 default) calibrated against a
+            # COM-rendered waterfall: a single-series stacked column with no
+            # legend reserves more top headroom than the bar-chart pair_deltas
+            # overlay this helper was originally tuned for.
+            plot_x, plot_y, plot_w, plot_h = self._plot_rect(x, y, w, h, top=0.16)
+            n = len(values)
+            cat_w = plot_w / n
+            bar_frac = 100.0 / (100.0 + gap_width)
+            for i in range(n - 1):
+                edge_val = top_edges[i]
+                ty = plot_y + plot_h * (1 - (edge_val / ymax_eff if ymax_eff else 0))
+                x1 = plot_x + (i + 0.5) * cat_w + cat_w * bar_frac / 2
+                x2 = plot_x + (i + 1.5) * cat_w - cat_w * bar_frac / 2
+                try:
+                    conn = slide.shapes.add_connector(1, Inches(x1), Inches(ty), Inches(x2), Inches(ty))
+                    conn.line.color.rgb = _rgb("999999"); conn.line.width = Pt(0.75)
+                    self._dash(conn)
+                except Exception: pass
 
     # ── Alternating timeline: entries above/below a central axis ───────────────
     # The COMPANY HISTORY pattern: a horizontal line mid-element, milestone dots on
