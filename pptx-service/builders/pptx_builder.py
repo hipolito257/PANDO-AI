@@ -1018,42 +1018,67 @@ class PptxBuilder:
         """Single source of truth for a table's real geometry — column widths,
         header height, and per-row heights all computed from actual content via
         _wrap_lines, so _table_height (used for slide-layout QA) and _table
-        (the actual renderer) can never disagree with each other."""
+        (the actual renderer) can never disagree with each other.
+
+        A table with many rows (e.g. a 9-row operating-lever matrix) can need
+        more vertical space than exists between its y and the footer — used to
+        just render past the bottom of the slide with the extra rows silently
+        clipped off-canvas by PowerPoint. Now: shrink the font first, and if
+        that's still not enough (font already at its floor), compress every
+        row proportionally so the whole table always fits within the slide."""
         headers = el.get("headers") or []
         rows = el.get("rows") or []
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 3.0))
-        size = _num(el.get("size"), 8)
         col_widths = self._table_col_widths(el, headers, rows, w)
 
         header_h_base = max(_num(el.get("header_h"), 0.32), 0.1)
         row_h_base    = max(_num(el.get("row_h"),    0.28), 0.1)
 
-        header_lines = 1
-        for c, htext in enumerate(headers):
-            header_lines = max(header_lines, self._wrap_lines(_str(htext), col_widths[c], size))
-        header_line_h = (size * 1.25) / 72 + 0.05
-        header_h = max(header_h_base, header_line_h * header_lines + 0.08)
+        def _compute(size):
+            header_lines = 1
+            for c, htext in enumerate(headers):
+                header_lines = max(header_lines, self._wrap_lines(_str(htext), col_widths[c], size))
+            header_line_h = (size * 1.25) / 72 + 0.05
+            header_h = max(header_h_base, header_line_h * header_lines + 0.08)
 
-        row_heights = []
-        line_h = (size * 1.22) / 72 + 0.02
-        for row in rows:
-            vals = list(row) if isinstance(row, (list, tuple)) else []
-            max_lines = 1
-            for c in range(len(headers)):
-                val = vals[c] if c < len(vals) else ""
-                max_lines = max(max_lines, self._wrap_lines(_str(val), col_widths[c], size))
-            row_heights.append(max(row_h_base, line_h * max_lines + 0.06))
+            heights = []
+            line_h = (size * 1.22) / 72 + 0.02
+            for row in rows:
+                vals = list(row) if isinstance(row, (list, tuple)) else []
+                max_lines = 1
+                for c in range(len(headers)):
+                    val = vals[c] if c < len(vals) else ""
+                    max_lines = max(max_lines, self._wrap_lines(_str(val), col_widths[c], size))
+                heights.append(max(row_h_base, line_h * max_lines + 0.06))
+            return header_h, heights
 
+        size = _num(el.get("size"), 8)
+        header_h, row_heights = _compute(size)
         total_h = header_h + sum(row_heights)
-        return x, y, w, col_widths, header_h, row_heights, max(total_h, 0.2)
+
+        available_h = max(CANVAS_BOTTOM - y, 0.5)
+        min_size = 6.0
+        while total_h > available_h and size > min_size:
+            size = max(size - 0.5, min_size)
+            header_h, row_heights = _compute(size)
+            total_h = header_h + sum(row_heights)
+
+        if total_h > available_h:
+            # Font is already at its floor — compress rows proportionally
+            # rather than let them render past the canvas edge.
+            scale = available_h / total_h
+            header_h *= scale
+            row_heights = [rh * scale for rh in row_heights]
+            total_h = available_h
+
+        return x, y, w, col_widths, header_h, row_heights, max(total_h, 0.2), size
 
     def _table_height(self, el: dict) -> float:
         """The true rendered height of a table, driven by row count and actual
-        text wrap — PowerPoint enforces a minimum row height and long cell text
-        grows a row taller, so the plan's declared "h" is only ever a floor,
-        never a ceiling. Always trust this over the plan's own value."""
-        _x, _y, _w, _cw, header_h, row_heights, total_h = self._table_layout(el)
-        return max(total_h, _num(el.get("h"), total_h))
+        text wrap, capped to never exceed the printable canvas — see
+        _table_layout. Always trust this over the plan's own declared "h"."""
+        _x, _y, _w, _cw, _hh, _rh, total_h, _size = self._table_layout(el)
+        return total_h
 
     def _set_cell_borders(self, cell, color: str = "D9DBD4", width_pt: float = 0.5):
         """Thin borders on every side of a cell — native python-pptx tables render
@@ -1086,7 +1111,7 @@ class PptxBuilder:
             return
         n_cols = len(headers)
         n_rows = len(rows) + 1
-        x, y, w, col_widths, header_h, row_heights, h = self._table_layout(el)
+        x, y, w, col_widths, header_h, row_heights, h, size = self._table_layout(el)
 
         gframe = slide.shapes.add_table(n_rows, n_cols, Inches(x), Inches(y), Inches(w), Inches(h))
         table = gframe.table
@@ -1100,8 +1125,6 @@ class PptxBuilder:
         for i, cw in enumerate(col_widths[:n_cols]):
             try: table.columns[i].width = Inches(cw)
             except Exception: pass
-
-        size = _num(el.get("size"), 8)
 
         def _style_cell(cell, text, bold, fg, bg, align, border_color="D9DBD4"):
             try:
