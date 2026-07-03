@@ -70,6 +70,23 @@ def _num(val, default: float = 0.0) -> float:
         return default
 
 
+def _tint(hex_color: str, amount: float) -> str:
+    """Lighten a hex color toward white by `amount` (0 = unchanged, 1 = white).
+    Used for subtle card background tints instead of hardcoding light colors,
+    so comparison cards stay visually tied to the same palette as the charts."""
+    h = (hex_color or "").lstrip("#")
+    if len(h) != 6:
+        return "F2F2F2"
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        r = round(r + (255 - r) * amount)
+        g = round(g + (255 - g) * amount)
+        b = round(b + (255 - b) * amount)
+        return f"{r:02X}{g:02X}{b:02X}"
+    except ValueError:
+        return "F2F2F2"
+
+
 CONTENT_X = 0.918      # left edge of title/takeaway/content placeholders in the template (839788 EMU)
 CONTENT_RIGHT = 12.415  # right edge of the content placeholder (839788 + 10512714 EMU) — symmetric margin
 
@@ -92,8 +109,15 @@ def _geom(el: dict, defaults=(CONTENT_X, 2.0, 11.5, 4.0)):
 # ── Builder ────────────────────────────────────────────────────────────────────
 
 class PptxBuilder:
-    def __init__(self, template_bytes: bytes):
+    def __init__(self, template_bytes: bytes, palette: dict | None = None, font: str | None = None):
         self.prs = Presentation(io.BytesIO(template_bytes))
+        # Per-build palette/font: defaults to PANDO's own colors, but a profiled
+        # template's theme (see template_profiler.py) overrides them so decks built
+        # from a different uploaded template use THAT template's real colors/font
+        # instead of Pando's, as long as the profile mapped at least the core keys.
+        self.PALETTE = {**PALETTE, **{k: v for k, v in (palette or {}).items() if v}}
+        self.DEFAULT_FONT = font or DEFAULT_FONT
+        self.warnings: list[str] = []
         self._save_template_covers()
         self._clear_slides()
 
@@ -178,7 +202,10 @@ class PptxBuilder:
         if not title and not subtitle:
             return
 
-        shapes_by_size = []
+        # Rank by known run font size when the placeholder already has text (e.g.
+        # a restored slide with sample copy); most templates' cover placeholders
+        # are empty until now, so fall back to shape area (bigger box == title).
+        candidates = []
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
@@ -188,9 +215,10 @@ class PptxBuilder:
                     sz = run.font.size or 0
                     if sz > max_sz:
                         max_sz = sz
-            if max_sz > 0:
-                shapes_by_size.append((max_sz, shape))
-        shapes_by_size.sort(reverse=True)
+            area = (shape.width or 0) * (shape.height or 0)
+            candidates.append((max_sz, area, shape))
+        candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+        shapes_by_size = [(sz, shape) for sz, _area, shape in candidates]
 
         def _replace_text(shape, new_text: str):
             tf = shape.text_frame
@@ -211,7 +239,7 @@ class PptxBuilder:
             else:
                 r = p.add_run()
                 r.text = new_text
-                r.font.color.rgb = _rgb(PALETTE["WHT"])
+                r.font.color.rgb = _rgb(self.PALETTE["WHT"])
 
         if title and shapes_by_size:
             _replace_text(shapes_by_size[0][1], title)
@@ -243,8 +271,62 @@ class PptxBuilder:
                 for el in elements:
                     el["y"] = _num(el.get("y"), min_y) - shift
 
+        # Tables have a physical minimum row height (font size + padding) that
+        # PowerPoint enforces regardless of the "h" the plan declared — a table
+        # with more rows than the declared h assumed will silently grow taller
+        # than the plan says, overlapping whatever sits below it. Recompute the
+        # real height from the row count up front so QA and layout both see it.
+        for el in elements:
+            if _str(el.get("type")) == "table":
+                el["h"] = self._table_height(el)
+
+        self._qa_check_slide(sd, elements)
+
         for el in elements:
             self._element(slide, el)
+
+    # ── Geometry-based QA (no rendering required) ──────────────────────────────
+    # Catches the two most common AI-generated-deck defects — elements placed
+    # off the printable canvas, and two visual elements overlapping — by pure
+    # bounding-box math over the plan's own x/y/w/h. This can't catch text
+    # overflow inside a shape (that needs an actual renderer), but it runs on
+    # every build with no external dependency and reliably flags layout bugs
+    # before they reach the user.
+    _VISUAL_TYPES = {
+        "bar", "line", "line_multi", "hbar_float", "donut", "scatter", "quadrant",
+        "table", "stat_row", "icon_row", "comparison_cards", "timeline", "waterfall",
+    }
+
+    def _qa_check_slide(self, sd: dict, elements: list[dict]):
+        title = _str(sd.get("title"), "(untitled slide)")
+        canvas = (CONTENT_X - 0.05, 1.95, CONTENT_RIGHT + 0.05, 7.15)
+
+        boxes = []
+        for el in elements:
+            t = _str(el.get("type"))
+            x, y, w, h = _geom(el)
+            if x < canvas[0] - 0.02 or y < canvas[1] - 0.02 or (x + w) > canvas[2] + 0.02 or (y + h) > canvas[3] + 0.02:
+                self.warnings.append(
+                    f'Slide "{title}": {t} element at ({x:.2f},{y:.2f},{w:.2f}x{h:.2f}) extends outside the printable canvas.'
+                )
+            if t in self._VISUAL_TYPES:
+                boxes.append((t, x, y, w, h))
+
+        for i in range(len(boxes)):
+            t1, x1, y1, w1, h1 = boxes[i]
+            for j in range(i + 1, len(boxes)):
+                t2, x2, y2, w2, h2 = boxes[j]
+                ox = min(x1 + w1, x2 + w2) - max(x1, x2)
+                oy = min(y1 + h1, y2 + h2) - max(y1, y2)
+                if ox <= 0 or oy <= 0:
+                    continue
+                overlap_area = ox * oy
+                smaller_area = min(w1 * h1, w2 * h2)
+                if smaller_area > 0 and overlap_area / smaller_area > 0.15:
+                    self.warnings.append(
+                        f'Slide "{title}": {t1} and {t2} elements overlap by '
+                        f'{overlap_area / smaller_area * 100:.0f}% of the smaller element\'s area.'
+                    )
 
     def _fill_phs(self, slide, sd: dict):
         layout_key = _str(sd.get("layout"), "takeaway")
@@ -302,13 +384,13 @@ class PptxBuilder:
     def _draw_cover(self, slide, sd: dict):
         W, H = 13.33, 7.5
 
-        def _txt(text, x, y, w, h, size, bold=False, italic=False, fg=PALETTE["NKB"], align="l", wrap=True):
+        def _txt(text, x, y, w, h, size, bold=False, italic=False, fg=self.PALETTE["NKB"], align="l", wrap=True):
             box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
             tf = box.text_frame; tf.word_wrap = wrap
             p = tf.paragraphs[0]
             p.alignment = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
             r = p.add_run(); r.text = _str(text)
-            r.font.name = DEFAULT_FONT; r.font.size = Pt(size)
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
             r.font.bold = bold; r.font.italic = italic
             r.font.color.rgb = _rgb(fg)
 
@@ -317,13 +399,13 @@ class PptxBuilder:
             sh.fill.solid(); sh.fill.fore_color.rgb = _rgb(color)
             sh.line.fill.background()
 
-        _rect(0, 0, 0.40, H, PALETTE["DKG"])
-        _rect(0.40, H * 0.6, W - 0.40, 0.04, PALETTE["OLV"])
-        _txt(sd.get("title", sd.get("company", "")), 0.75, 2.20, W - 1.2, 1.40, 44, bold=True, fg=PALETTE["NKB"])
-        _txt(sd.get("subtitle", "Investment Overview"),  0.75, 3.80, W - 1.2, 0.60, 20, fg=PALETTE["TEL"])
-        _rect(0.75, 3.70, W - 1.5, 0.025, PALETTE["DKG"])
+        _rect(0, 0, 0.40, H, self.PALETTE["DKG"])
+        _rect(0.40, H * 0.6, W - 0.40, 0.04, self.PALETTE["OLV"])
+        _txt(sd.get("title", sd.get("company", "")), 0.75, 2.20, W - 1.2, 1.40, 44, bold=True, fg=self.PALETTE["NKB"])
+        _txt(sd.get("subtitle", "Investment Overview"),  0.75, 3.80, W - 1.2, 0.60, 20, fg=self.PALETTE["TEL"])
+        _rect(0.75, 3.70, W - 1.5, 0.025, self.PALETTE["DKG"])
         _txt("Private & Confidential", 0.75, H - 0.65, 6, 0.35, 8, italic=True, fg="999999")
-        _txt("STRICTLY CONFIDENTIAL", 0.02, 2.5, 0.28, 3.5, 6.5, fg=PALETTE["WHT"], align="c", wrap=True)
+        _txt("STRICTLY CONFIDENTIAL", 0.02, 2.5, 0.28, 3.5, 6.5, fg=self.PALETTE["WHT"], align="c", wrap=True)
 
     def _draw_back_cover(self, slide, sd: dict):
         W, H = 13.33, 7.5
@@ -333,18 +415,18 @@ class PptxBuilder:
             sh.fill.solid(); sh.fill.fore_color.rgb = _rgb(color)
             sh.line.fill.background()
 
-        def _txt(text, x, y, w, h, size, bold=False, italic=False, fg=PALETTE["WHT"], align="c"):
+        def _txt(text, x, y, w, h, size, bold=False, italic=False, fg=self.PALETTE["WHT"], align="c"):
             box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
             tf = box.text_frame; tf.word_wrap = True
             p = tf.paragraphs[0]
             p.alignment = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
             r = p.add_run(); r.text = _str(text)
-            r.font.name = DEFAULT_FONT; r.font.size = Pt(size)
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
             r.font.bold = bold; r.font.italic = italic
             r.font.color.rgb = _rgb(fg)
 
-        _rect(0, 0, W, H, PALETTE["DKG"])
-        _rect(0, H * 0.75, W, 0.05, PALETTE["OLV"])
+        _rect(0, 0, W, H, self.PALETTE["DKG"])
+        _rect(0, H * 0.75, W, 0.05, self.PALETTE["OLV"])
         _txt(sd.get("title", "Preguntas"), 1, H / 2 - 0.8, W - 2, 1.4, 48, bold=True)
         subtitle = _str(sd.get("subtitle"))
         if subtitle:
@@ -387,6 +469,16 @@ class PptxBuilder:
             return
         if t == "table" and not el.get("headers"):
             return
+        if t == "stat_row" and not el.get("items"):
+            return
+        if t == "icon_row" and not el.get("items"):
+            return
+        if t == "comparison_cards" and not el.get("cards"):
+            return
+        if t == "timeline" and not el.get("steps"):
+            return
+        if t == "waterfall" and not el.get("labels"):
+            return
 
         dispatch = {
             "panel_hdr":  self._panel_hdr,
@@ -400,6 +492,11 @@ class PptxBuilder:
             "scatter":    self._scatter,
             "quadrant":   self._quadrant,
             "table":      self._table,
+            "stat_row":         self._stat_row,
+            "icon_row":         self._icon_row,
+            "comparison_cards": self._comparison_cards,
+            "timeline":         self._timeline,
+            "waterfall":        self._waterfall,
         }
         fn = dispatch.get(t)
         if not fn:
@@ -413,15 +510,15 @@ class PptxBuilder:
     def _panel_hdr(self, slide, el: dict):
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 0.27))
         h = max(_num(el.get("h"), 0.27), 0.1)
-        bg = el.get("bg", PALETTE["DKG"])
+        bg = el.get("bg", self.PALETTE["DKG"])
         sh = slide.shapes.add_shape(1, Inches(x), Inches(y), Inches(w), Inches(h))
         sh.fill.solid(); sh.fill.fore_color.rgb = _rgb(bg)
         sh.line.fill.background()
         tf = sh.text_frame; tf.word_wrap = False
         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.LEFT
         r = p.add_run(); r.text = _str(el.get("text"))
-        r.font.name = DEFAULT_FONT; r.font.size = Pt(_num(el.get("size"), 7.5))
-        r.font.bold = True; r.font.color.rgb = _rgb(PALETTE["WHT"])
+        r.font.name = self.DEFAULT_FONT; r.font.size = Pt(_num(el.get("size"), 7.5))
+        r.font.bold = True; r.font.color.rgb = _rgb(self.PALETTE["WHT"])
 
     def _textbox(self, slide, el: dict):
         x, y, w, h = _geom(el, (0.85, 1.78, 5.0, 0.25))
@@ -432,7 +529,7 @@ class PptxBuilder:
         font_size  = Pt(_num(el.get("size"), 7.5))
         font_bold  = bool(el.get("bold", False))
         font_ital  = bool(el.get("italic", False))
-        font_color = _rgb(el.get("fg", PALETTE["NKB"]))
+        font_color = _rgb(el.get("fg", self.PALETTE["NKB"]))
         align      = align_map.get(_str(el.get("align"), "l"), PP_ALIGN.LEFT)
         lines = _str(el.get("text")).split("\n")
         for i, line in enumerate(lines):
@@ -440,7 +537,7 @@ class PptxBuilder:
             p.alignment = align
             r = p.add_run()
             r.text = line
-            r.font.name = DEFAULT_FONT; r.font.size = font_size
+            r.font.name = self.DEFAULT_FONT; r.font.size = font_size
             r.font.bold = font_bold; r.font.italic = font_ital
             r.font.color.rgb = font_color
 
@@ -464,13 +561,13 @@ class PptxBuilder:
             tf = sh.text_frame; tf.word_wrap = True
             font_size  = Pt(_num(el.get("size"), 8))
             font_bold  = bool(el.get("bold", False))
-            font_color = _rgb(el.get("fg", PALETTE["WHT"]))
+            font_color = _rgb(el.get("fg", self.PALETTE["WHT"]))
             lines = text.split("\n")
             for i, line in enumerate(lines):
                 p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                 p.alignment = PP_ALIGN.CENTER
                 r = p.add_run(); r.text = line
-                r.font.name = DEFAULT_FONT; r.font.size = font_size
+                r.font.name = self.DEFAULT_FONT; r.font.size = font_size
                 r.font.bold = font_bold; r.font.color.rgb = font_color
 
     # ── Charts: shared helpers ─────────────────────────────────────────────────
@@ -550,7 +647,7 @@ class PptxBuilder:
             return  # can't determine insertion point — skip coloring
         idx = list(series._element).index(cat_el)
         for i in range(n):
-            col = _str(colors[i % len(colors)], PALETTE["DKG"]) if colors else PALETTE["DKG"]
+            col = _str(colors[i % len(colors)], self.PALETTE["DKG"]) if colors else self.PALETTE["DKG"]
             series._element.insert(idx + i, parse_xml(
                 f'<c:dPt {NS}><c:idx val="{i}"/>'
                 f'<c:invertIfNegative val="0"/>'
@@ -581,7 +678,7 @@ class PptxBuilder:
         sp.format.fill.background()
         sp.format.line.fill.background()
 
-        colors = el.get("colors") or [PALETTE["DKG"], PALETTE["MDG"], PALETTE["OLV"], PALETTE["TEL"], PALETTE["LBL"], PALETTE["GRG"]]
+        colors = el.get("colors") or [self.PALETTE["DKG"], self.PALETTE["MDG"], self.PALETTE["OLV"], self.PALETTE["TEL"], self.PALETTE["LBL"], self.PALETTE["GRG"]]
         rng = ch.series[1]
         self._color_bar_points(rng, colors, len(series_defs))
 
@@ -611,7 +708,7 @@ class PptxBuilder:
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
         cf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
-        self._set_line_style(ch.series[0], el.get("color", PALETTE["MDG"]), _num(el.get("width"), 1.8))
+        self._set_line_style(ch.series[0], el.get("color", self.PALETTE["MDG"]), _num(el.get("width"), 1.8))
         self._smooth_all(ch)
         self._style_axes(ch, ymin=el.get("ymin"), ymax=el.get("ymax"),
                          num_fmt=_str(el.get("num_fmt"), "#,##0"),
@@ -636,7 +733,7 @@ class PptxBuilder:
         ch = cf.chart; ch.has_title = False
         for i, s in enumerate(series_list):
             if i < len(ch.series):
-                self._set_line_style(ch.series[i], s.get("color", PALETTE["DKG"]),
+                self._set_line_style(ch.series[i], s.get("color", self.PALETTE["DKG"]),
                                      _num(s.get("width"), 1.4), dashed=bool(s.get("dashed")))
         self._smooth_all(ch)
         self._style_axes(ch, ymin=_num(el.get("ymin"), 0), ymax=el.get("ymax"),
@@ -664,11 +761,11 @@ class PptxBuilder:
             if i >= len(ch.series):
                 break
             ser = ch.series[i]
-            col = s.get("color", PALETTE["DKG"])
+            col = s.get("color", self.PALETTE["DKG"])
             ser.format.fill.solid(); ser.format.fill.fore_color.rgb = _rgb(col)
             ser.format.line.fill.background()
             if s.get("hatched"):
-                self._set_hatch(ser, _str(col, PALETTE["DKG"]))
+                self._set_hatch(ser, _str(col, self.PALETTE["DKG"]))
             if s.get("data_labels"):
                 try:
                     ser.has_data_labels = True
@@ -718,6 +815,16 @@ class PptxBuilder:
         except Exception: pass
 
     # ── Table ─────────────────────────────────────────────────────────────────
+    def _table_height(self, el: dict) -> float:
+        """The true rendered height of a table, driven by row count — PowerPoint
+        enforces a minimum row height, so the plan's declared "h" is only ever a
+        floor, never a ceiling. Always trust this over the plan's own value."""
+        rows = el.get("rows") or []
+        header_h = max(_num(el.get("header_h"), 0.32), 0.1)
+        row_h    = max(_num(el.get("row_h"),    0.28), 0.1)
+        computed = header_h + row_h * len(rows)
+        return max(computed, _num(el.get("h"), computed), 0.2)
+
     def _table(self, slide, el: dict):
         headers = el.get("headers") or []
         rows    = el.get("rows")    or []
@@ -728,7 +835,7 @@ class PptxBuilder:
         x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 3.0))
         header_h = max(_num(el.get("header_h"), 0.32), 0.1)
         row_h    = max(_num(el.get("row_h"),    0.28), 0.1)
-        h = max(_num(el.get("h"), header_h + row_h * len(rows)), 0.2)
+        h = self._table_height(el)
 
         gframe = slide.shapes.add_table(n_rows, n_cols, Inches(x), Inches(y), Inches(w), Inches(h))
         table = gframe.table
@@ -758,12 +865,12 @@ class PptxBuilder:
                 p = tf.paragraphs[0]
                 p.alignment = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}.get(align, PP_ALIGN.LEFT)
                 r = p.add_run(); r.text = _str(text)
-                r.font.name = DEFAULT_FONT; r.font.size = Pt(size)
+                r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
                 r.font.bold = bold; r.font.color.rgb = _rgb(fg)
             except Exception: pass
 
         for c, htext in enumerate(headers):
-            _style_cell(table.cell(0, c), htext, True, PALETTE["WHT"], PALETTE["DKG"],
+            _style_cell(table.cell(0, c), htext, True, self.PALETTE["WHT"], self.PALETTE["DKG"],
                         "l" if c == 0 else "c")
         try: table.rows[0].height = Inches(header_h)
         except Exception: pass
@@ -771,12 +878,12 @@ class PptxBuilder:
         zebra           = el.get("zebra", True)
         bold_first_col  = el.get("bold_first_col", False)
         for ridx, row in enumerate(rows):
-            bg = PALETTE["GRG"] if (zebra and ridx % 2 == 1) else PALETTE["WHT"]
+            bg = self.PALETTE["GRG"] if (zebra and ridx % 2 == 1) else self.PALETTE["WHT"]
             row_vals = list(row) if isinstance(row, (list, tuple)) else []
             for c in range(n_cols):
                 val = row_vals[c] if c < len(row_vals) else ""
                 _style_cell(table.cell(ridx + 1, c), val, bold_first_col and c == 0,
-                            PALETTE["NKB"], bg, "l" if c == 0 else "c")
+                            self.PALETTE["NKB"], bg, "l" if c == 0 else "c")
             try: table.rows[ridx + 1].height = Inches(row_h)
             except Exception: pass
 
@@ -799,7 +906,7 @@ class PptxBuilder:
         if cat_el is not None:
             idx = list(ser._element).index(cat_el)
             for i, s in enumerate(slices):
-                col = _str(s.get("color"), PALETTE["GRG"])
+                col = _str(s.get("color"), self.PALETTE["GRG"])
                 ser._element.insert(idx + i, parse_xml(
                     f'<c:dPt {NS}><c:idx val="{i}"/>'
                     f'<c:spPr><a:solidFill><a:srgbClr val="{col}"/></a:solidFill>'
@@ -830,15 +937,17 @@ class PptxBuilder:
                 s = ch.series[i]
                 s.format.line.fill.background()
                 s.marker.format.fill.solid()
-                s.marker.format.fill.fore_color.rgb = _rgb(pt.get("color", PALETTE["DKG"]))
+                s.marker.format.fill.fore_color.rgb = _rgb(pt.get("color", self.PALETTE["DKG"]))
                 s.marker.format.line.fill.background()
                 s.marker.size = int(_num(pt.get("size"), 10))
             except Exception: pass
         try:
             ch.value_axis.tick_labels.font.size = Pt(6)
-            ch.value_axis.tick_labels.number_format = "0%"
+            ch.value_axis.tick_labels.number_format = _str(el.get("y_fmt"), "#,##0")
+            ch.value_axis.tick_labels.number_format_is_linked = False
             ch.category_axis.tick_labels.font.size = Pt(6)
-            ch.category_axis.tick_labels.number_format = "0%"
+            ch.category_axis.tick_labels.number_format = _str(el.get("x_fmt"), "#,##0")
+            ch.category_axis.tick_labels.number_format_is_linked = False
         except Exception: pass
 
     # ── Quadrant map ───────────────────────────────────────────────────────────
@@ -859,7 +968,7 @@ class PptxBuilder:
                 tf = box.text_frame; p = tf.paragraphs[0]
                 p.alignment = PP_ALIGN.CENTER if align == "c" else PP_ALIGN.LEFT
                 r = p.add_run(); r.text = _str(text)
-                r.font.name = DEFAULT_FONT; r.font.size = Pt(size)
+                r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
                 r.font.color.rgb = _rgb(fg)
             except Exception: pass
 
@@ -872,13 +981,232 @@ class PptxBuilder:
             try:
                 bx = x + _num(brand.get("px")) * w
                 by = y + (1 - _num(brand.get("py"))) * h
-                col = _str(brand.get("color"), PALETTE["DKG"])
+                col = _str(brand.get("color"), self.PALETTE["DKG"])
                 dot = slide.shapes.add_shape(9, Inches(bx - 0.08), Inches(by - 0.08), Inches(0.16), Inches(0.16))
                 dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
                 dot.line.fill.background()
                 box = slide.shapes.add_textbox(Inches(bx - 0.5), Inches(by + 0.10), Inches(1.0), Inches(0.20))
                 tf = box.text_frame; p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                 r = p.add_run(); r.text = _str(brand.get("label"))
-                r.font.name = DEFAULT_FONT; r.font.size = Pt(6.5)
+                r.font.name = self.DEFAULT_FONT; r.font.size = Pt(6.5)
                 r.font.color.rgb = _rgb(col)
             except Exception: pass
+
+    # ── Shared text/bullet helpers for the new content elements ────────────────
+    def _txt_box(self, slide, text, x, y, w, h, size, bold=False, italic=False,
+                 fg="0A231F", align="l", anchor=None, wrap=True):
+        box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+        tf = box.text_frame; tf.word_wrap = wrap
+        if anchor is not None:
+            try: tf.vertical_anchor = anchor
+            except Exception: pass
+        align_map = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}
+        lines = _str(text).split("\n")
+        for i, line in enumerate(lines):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.alignment = align_map.get(align, PP_ALIGN.LEFT)
+            r = p.add_run(); r.text = line
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
+            r.font.bold = bold; r.font.italic = italic
+            r.font.color.rgb = _rgb(fg)
+        return box
+
+    def _bullet_list(self, slide, items, x, y, w, h, size=8.5, fg="0A231F", bullet_color=None, space_after_pt=3):
+        box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+        tf = box.text_frame; tf.word_wrap = True
+        bcol = bullet_color or self.PALETTE["DKG"]
+        for i, item in enumerate(items):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.space_after = Pt(space_after_pt)
+            pPr = p._p.get_or_add_pPr()
+            pPr.set("indent", "-137160"); pPr.set("marL", "137160")
+            buFont = parse_xml(f'<a:buFont xmlns:a="{A_NS}" typeface="Arial"/>')
+            buChar = parse_xml(f'<a:buChar xmlns:a="{A_NS}" char="&#8226;"/>')
+            buClr = parse_xml(f'<a:buClr xmlns:a="{A_NS}"><a:srgbClr val="{bcol}"/></a:buClr>')
+            pPr.append(buClr); pPr.append(buFont); pPr.append(buChar)
+            r = p.add_run(); r.text = _str(item)
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(size)
+            r.font.color.rgb = _rgb(fg)
+        return box
+
+    # ── Stat row: large-number KPI callouts (no icons, just number + label) ────
+    def _stat_row(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 1.6))
+        items = [it for it in (el.get("items") or []) if isinstance(it, dict)]
+        if not items:
+            return
+        n = len(items)
+        gap = 0.35
+        cell_w = (w - gap * (n - 1)) / n
+        value_size = _num(el.get("value_size"), 32)
+        label_size = _num(el.get("label_size"), 9)
+        for i, it in enumerate(items):
+            cx = x + i * (cell_w + gap)
+            col = _str(it.get("color"), self.PALETTE["DKG"])
+            self._txt_box(slide, _str(it.get("value")), cx, y, cell_w, h * 0.62,
+                          value_size, bold=True, fg=col, align="l")
+            sub = _str(it.get("delta"))
+            label_y = y + h * 0.62
+            self._txt_box(slide, _str(it.get("label")), cx, label_y, cell_w, h * 0.30,
+                          label_size, fg="555555", align="l")
+            if sub:
+                self._txt_box(slide, sub, cx, y + h * 0.05, cell_w, 0.24,
+                              label_size - 0.5, italic=True, fg=col, align="r")
+            if i < n - 1:
+                try:
+                    ln = slide.shapes.add_connector(1, Inches(cx + cell_w + gap / 2), Inches(y + 0.05),
+                                                    Inches(cx + cell_w + gap / 2), Inches(y + h - 0.05))
+                    ln.line.color.rgb = _rgb(self.PALETTE["GRG"]); ln.line.width = Pt(0.5)
+                except Exception: pass
+
+    # ── Icon row: colored glyph circle + bold header + description ─────────────
+    def _icon_row(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 3.5))
+        items = [it for it in (el.get("items") or []) if isinstance(it, dict)]
+        if not items:
+            return
+        direction = _str(el.get("direction"), "col")
+        n = len(items)
+        circle_d = _num(el.get("circle_size"), 0.42)
+
+        def _one(ix, iy, iw, ih, it):
+            col = _str(it.get("color"), self.PALETTE["DKG"])
+            dot = slide.shapes.add_shape(9, Inches(ix), Inches(iy), Inches(circle_d), Inches(circle_d))
+            dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
+            dot.line.fill.background()
+            tf = dot.text_frame; tf.word_wrap = False
+            p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+            r = p.add_run(); r.text = _str(it.get("glyph"), "•")
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(_num(it.get("glyph_size"), 13))
+            r.font.bold = True; r.font.color.rgb = _rgb(self.PALETTE["WHT"])
+            text_x = ix + circle_d + 0.15
+            text_w = iw - circle_d - 0.15
+            self._txt_box(slide, _str(it.get("title")), text_x, iy - 0.03, text_w, 0.24,
+                          _num(it.get("title_size"), 10.5), bold=True, fg=self.PALETTE["NKB"])
+            body = _str(it.get("text"))
+            if body:
+                self._txt_box(slide, body, text_x, iy + 0.22, text_w, ih - 0.22,
+                              _num(it.get("text_size"), 8), fg="555555")
+
+        if direction == "row":
+            gap = 0.3
+            cell_w = (w - gap * (n - 1)) / n
+            for i, it in enumerate(items):
+                _one(x + i * (cell_w + gap), y, cell_w, h, it)
+        else:
+            row_h = h / n
+            for i, it in enumerate(items):
+                _one(x, y + i * row_h, w, row_h - 0.08, it)
+
+    # ── Comparison cards: 2-4 subtly-tinted panels with a header + bullets ─────
+    def _comparison_cards(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        cards = [c for c in (el.get("cards") or []) if isinstance(c, dict)]
+        if not cards:
+            return
+        n = len(cards)
+        gap = 0.28
+        card_w = (w - gap * (n - 1)) / n
+        pad = 0.18
+        for i, card in enumerate(cards):
+            cx = x + i * (card_w + gap)
+            col = _str(card.get("color"), self.PALETTE["DKG"])
+            tint = _tint(col, 0.90)
+            panel = slide.shapes.add_shape(1, Inches(cx), Inches(y), Inches(card_w), Inches(h))
+            panel.fill.solid(); panel.fill.fore_color.rgb = _rgb(tint)
+            panel.line.color.rgb = _rgb(self.PALETTE["GRG"]); panel.line.width = Pt(0.5)
+            self._txt_box(slide, _str(card.get("title")), cx + pad, y + 0.14, card_w - pad * 2, 0.32,
+                          _num(card.get("title_size"), 11), bold=True, fg=col)
+            bullets = card.get("bullets") or []
+            if bullets:
+                self._bullet_list(slide, bullets, cx + pad, y + 0.55, card_w - pad * 2, h - 0.7,
+                                  size=_num(card.get("text_size"), 8.5), fg=self.PALETTE["NKB"], bullet_color=col)
+
+    # ── Timeline: numbered milestones connected by a horizontal line ───────────
+    def _timeline(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 3.0))
+        steps = [s for s in (el.get("steps") or []) if isinstance(s, dict)]
+        n = len(steps)
+        if not n:
+            return
+        dot_d = _num(el.get("dot_size"), 0.32)
+        line_y = y + dot_d / 2
+        try:
+            ln = slide.shapes.add_connector(1, Inches(x + dot_d / 2), Inches(line_y),
+                                            Inches(x + w - dot_d / 2), Inches(line_y))
+            ln.line.color.rgb = _rgb(self.PALETTE["GRG"]); ln.line.width = Pt(1.5)
+        except Exception: pass
+
+        cycle = [self.PALETTE["DKG"], self.PALETTE["MDG"], self.PALETTE["OLV"],
+                 self.PALETTE["TEL"], self.PALETTE["LBL"]]
+        slot_w = w / n if n > 1 else w
+        for i, step in enumerate(steps):
+            cx = x + slot_w * i + (slot_w - dot_d) / 2 if n > 1 else x
+            col = _str(step.get("color"), cycle[i % len(cycle)])
+            dot = slide.shapes.add_shape(9, Inches(cx), Inches(y), Inches(dot_d), Inches(dot_d))
+            dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(col)
+            dot.line.color.rgb = _rgb(self.PALETTE["WHT"]); dot.line.width = Pt(1.25)
+            tf = dot.text_frame; p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+            r = p.add_run(); r.text = _str(step.get("num"), str(i + 1))
+            r.font.name = self.DEFAULT_FONT; r.font.size = Pt(_num(step.get("num_size"), 10))
+            r.font.bold = True; r.font.color.rgb = _rgb(self.PALETTE["WHT"])
+
+            label_w = slot_w - 0.15
+            label_x = x + slot_w * i + 0.075 if n > 1 else x
+            self._txt_box(slide, _str(step.get("label")), label_x, y + dot_d + 0.10, label_w, 0.24,
+                          _num(step.get("label_size"), 9), bold=True, align="c", fg=self.PALETTE["NKB"])
+            body = _str(step.get("text"))
+            if body:
+                self._txt_box(slide, body, label_x, y + dot_d + 0.36, label_w, h - dot_d - 0.36,
+                              _num(step.get("text_size"), 7.5), align="c", fg="666666")
+
+    # ── Waterfall / bridge chart (e.g. Revenue → EBITDA walk) ───────────────────
+    def _waterfall(self, slide, el: dict):
+        labels = [_str(l) for l in (el.get("labels") or [])]
+        values = [_num(v) for v in (el.get("values") or [])]
+        if not labels or not values or len(labels) != len(values):
+            return
+        totals_flags = el.get("totals") or []
+        is_total = [bool(totals_flags[i]) if i < len(totals_flags) else (i == 0 or i == len(values) - 1)
+                    for i in range(len(values))]
+
+        bases, tops, colors = [], [], []
+        up_color    = _str(el.get("up_color"),    self.PALETTE["MDG"])
+        down_color  = _str(el.get("down_color"),  self.PALETTE["TEL"])
+        total_color = _str(el.get("total_color"), self.PALETTE["DKG"])
+        cum = 0.0
+        for v, tot in zip(values, is_total):
+            if tot:
+                bases.append(0.0); tops.append(v); colors.append(total_color)
+                cum = v
+            elif v >= 0:
+                bases.append(cum); tops.append(v); colors.append(up_color)
+                cum += v
+            else:
+                cum += v
+                bases.append(cum); tops.append(-v); colors.append(down_color)
+
+        cd = ChartData()
+        cd.categories = labels
+        cd.add_series("base", bases)
+        cd.add_series("delta", tops)
+
+        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        cf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_STACKED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
+        ch = cf.chart
+        ch.has_title = False; ch.has_legend = False
+
+        base_series = ch.series[0]
+        base_series.format.fill.background()
+        base_series.format.line.fill.background()
+
+        delta_series = ch.series[1]
+        self._color_bar_points(delta_series, colors, len(values))
+
+        try:
+            ch.plot_area.gap_width = int(_num(el.get("gap_width"), 45))
+        except Exception: pass
+
+        self._style_axes(ch, ymin=_num(el.get("ymin"), 0), ymax=el.get("ymax"),
+                         num_fmt=_str(el.get("num_fmt"), "#,##0"),
+                         skip=1, csize=6.5)

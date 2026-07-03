@@ -112,6 +112,7 @@ export default function DocumentosPage() {
   const [buildErr, setBuildErr]       = useState<string | null>(null);
   const [buildProgress, setBuildProgress] = useState<{ message: string; current: number; total: number } | null>(null);
   const [lastDownload, setLastDownload] = useState<{ url: string; filename: string } | null>(null);
+  const [qaWarnings, setQaWarnings] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const [planning, setPlanning]         = useState(false);
   const [planErr, setPlanErr]           = useState<string | null>(null);
@@ -151,7 +152,7 @@ export default function DocumentosPage() {
     setDocType(t);
     setGenSuccess(false); setGenErr(null); setBuildErr(null); setPlanErr(null);
     setPlan(null); setPlanFeedback(""); setContextFiles([]); setContextBlobUrls([]);
-    setGenResult(null); setLastDownload(null);
+    setGenResult(null); setLastDownload(null); setQaWarnings([]);
   }
   function backToLanding() {
     setDocType(null);
@@ -369,7 +370,7 @@ export default function DocumentosPage() {
       try { rawText = await res.text(); j = JSON.parse(rawText); } catch { /* ignore */ }
       if (!res.ok || !j.success) {
         const detail = j.error ?? (rawText.length < 200 ? rawText : `HTTP ${res.status}`);
-        setPlanErr(detail || `Error HTTP ${res.status}`);
+        setPlanErr(j.raw ? `${detail} — Claude said: "${j.raw.slice(0, 200)}"` : (detail || `Error HTTP ${res.status}`));
       } else {
         setPlan(j.plan!);
         setPlanFeedback("");
@@ -430,13 +431,15 @@ export default function DocumentosPage() {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
           if (!raw) continue;
-          let event: { type: string; message?: string; current?: number; total?: number; index?: number; data?: string; filename?: string; slide_count?: number };
+          let event: { type: string; message?: string; current?: number; total?: number; index?: number; data?: string; filename?: string; slide_count?: number; warnings?: string[] };
           try { event = JSON.parse(raw); } catch { continue; }
 
           if (event.type === "progress") {
             setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
           } else if (event.type === "chunk") {
             if (event.index !== undefined) pptxChunks[event.index] = event.data ?? "";
+          } else if (event.type === "qa_warnings") {
+            setQaWarnings(event.warnings ?? []);
           } else if (event.type === "done") {
             const base64 = pptxChunks.join("");
             const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -908,6 +911,14 @@ export default function DocumentosPage() {
                   <a href={lastDownload.url} download={lastDownload.filename} className="font-semibold underline underline-offset-2 hover:text-[#002a24]">
                     Download again
                   </a>
+                </div>
+              )}
+              {qaWarnings.length > 0 && (
+                <div className="mb-4 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-[8px] p-3">
+                  <div className="font-semibold mb-1">{qaWarnings.length} layout warning{qaWarnings.length !== 1 ? "s" : ""} detected — review these slides:</div>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {qaWarnings.slice(0, 8).map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
                 </div>
               )}
 

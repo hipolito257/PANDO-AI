@@ -5,6 +5,7 @@ import { documentTemplates, companies, compSets, publicComps, userSettings, fina
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
+import { extractPlainText } from "@/lib/extractDocumentText";
 
 export const maxDuration = 300;
 
@@ -13,8 +14,17 @@ function getPptxEndpoint(): string {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/pptx_build`;
   return "http://127.0.0.1:5053/build/pptx";
 }
+function getProfileEndpoint(): string {
+  if (process.env.PPTX_SERVICE_URL) return `${process.env.PPTX_SERVICE_URL}/profile/template`;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/pptx_profile`;
+  return "http://127.0.0.1:5053/profile/template";
+}
 
 // ── PANDO template profile ────────────────────────────────────────────────────
+// Default profile for PANDO's own template. When a different template is
+// uploaded, buildSystemPrompt merges in real colors/font read from that
+// template's theme (see getTemplateProfile below + template_profiler.py) so
+// generated decks always match the ACTUAL uploaded template, not just PANDO's.
 const PANDO_TEMPLATE_PROFILE = {
   font: "Work Sans Light",
   colors: {
@@ -36,18 +46,27 @@ const PANDO_TEMPLATE_PROFILE = {
     line:       "Single-series line chart (time series). Props: x, y, w, h, labels[], values[], color, ymin, ymax, num_fmt, skip.",
     line_multi: "Multi-series line chart. Props: x, y, w, h, labels[], series:[{name,values[],color,dashed?}], ymin, ymax.",
     donut:      "Doughnut market share chart. Props: x, y, w, h, slices:[{label,value,color}], hole (default 55).",
-    scatter:    "XY scatter. Props: x, y, w, h, points:[{label,x,y,color,size}].",
+    scatter:    "XY scatter. Props: x, y, w, h, points:[{label,x,y,color,size}], x_fmt?, y_fmt? (axis number formats, default plain '#,##0' — only set to '0%' the axis that is actually a percentage; do not format a €M/revenue axis as a percentage).",
     quadrant:   "2×2 positioning matrix. Props: x, y, w, h, axis_labels:{top,bottom,left,right}, brands:[{label,px,py,color}].",
-    table:      "Native PPTX table. Props: x, y, w, headers:[string], rows:[[string|number,...]], col_widths?:[inches], size, zebra, bold_first_col, header_h, row_h.",
+    table:      "Native PPTX table. Props: x, y, w, headers:[string], rows:[[string|number,...]], col_widths?:[inches], size, zebra, bold_first_col, header_h, row_h. Height is driven entirely by row count (header_h + row_h × rows) — do not pass h, and leave at least 0.15in extra clearance below a table before placing another element, since a table with many rows renders taller than a quick mental estimate suggests.",
     panel_hdr:  "RARELY USED. A colored full-width header bar. Do not use as chart title.",
+    stat_row:   "Row of large-number KPI callouts (e.g. '$42M' bold 32pt over a small grey label 'ARR', with an optional italic delta badge like '+18% YoY' in the corner). Use for a summary/highlights slide instead of a chart when the story IS the numbers. Props: x, y, w, h, items:[{value, label, delta?, color?}]. 2-5 items looks best.",
+    icon_row:   "Colored circle with a bold 1-2 char glyph (a letter or number ONLY — never an emoji, emoji don't render reliably in PowerPoint) next to a bold header and a description line below it — the 'icon + text row' pattern. Use for narrative points (thesis pillars, risk factors, value-creation levers) that aren't data at all. Props: x, y, w, h, direction:'row'|'col' (default col), items:[{glyph, title, text, color?}].",
+    comparison_cards: "2-4 side-by-side cards, each with a subtly tinted background (derived from its color), a bold colored header, and a bullet list. Use for before/after, pros/cons, or options comparison — never build this out of a table. Props: x, y, w, h, cards:[{title, bullets:[string], color?}].",
+    timeline:   "Horizontal numbered milestones connected by a thin line — numbered circles with a bold label under each and optional detail text. Use for roadmaps, process flows, deal timelines, or historical milestones — never as a bulleted list. Props: x, y, w, h, steps:[{num?, label, text?, color?}].",
+    waterfall:  "Bridge/waterfall chart for financial walks (e.g. Revenue → COGS → Opex → EBITDA, or a valuation bridge). First and last bars are anchored totals by default; middle bars float from the running cumulative total, colored green for increases and a darker tone for decreases. THIS is the correct element for any 'walk' or 'bridge' data — never fake it with a regular bar chart. Props: x, y, w, h, labels[], values[] (deltas; anchor/total bars pass their absolute value), totals?:[bool] (defaults to true only for first/last), up_color?, down_color?, total_color?.",
   },
 };
 
-function buildSystemPrompt(companyData: string, peersData: string): string {
+function buildSystemPrompt(
+  companyData: string,
+  peersData: string,
+  profile: Omit<typeof PANDO_TEMPLATE_PROFILE, "colors"> & { colors: Record<string, string> } = PANDO_TEMPLATE_PROFILE,
+): string {
   return `You are a senior investment banking analyst at PANDO, a private equity firm, building a real investor-facing presentation. You have full creative and analytical control.
 
 TEMPLATE PROFILE (colors, fonts, layouts, element types you can place):
-${JSON.stringify(PANDO_TEMPLATE_PROFILE, null, 2)}
+${JSON.stringify(profile, null, 2)}
 
 HOW REAL PANDO SLIDES LOOK:
 A real PANDO data slide has, top to bottom:
@@ -70,6 +89,16 @@ LAYOUT RULES:
 - Cover slide: layout "cover" with fields: title (company name), subtitle (e.g. "Investment Overview | June 2026"). No elements.
 - Back cover: layout "back_cover" with fields: title ("Preguntas" or "Gracias"), subtitle (optional tagline). No elements.
 
+LAYOUT VARIETY — DO NOT REPEAT THE SAME SLIDE SHAPE OVER AND OVER:
+A deck where every content slide is "two chart panels side by side" reads as templated and lazy. Vary the shape slide to slide based on what the content actually is:
+- A slide whose story IS a handful of headline numbers → stat_row, full-width, no chart at all.
+- A slide about qualitative pillars (thesis, risks, value-creation levers, team strengths) → icon_row, not a chart forced onto text.
+- A slide comparing two or more options/scenarios/before-after → comparison_cards, not a table.
+- A slide about a roadmap, process, or sequence of milestones/deal history → timeline, not a bulleted textbox.
+- A slide about a financial walk (revenue to EBITDA, valuation build-up, cost bridge) → waterfall, never a regular bar chart pretending to be one.
+- Single full-bleed chart taking the whole content area is often stronger than two cramped panels — use it when one chart deserves the whole slide.
+- Across a section of 4-6 slides, aim for at least 3 different element types/layouts, not the same panel formula every time.
+
 CHART/ELEMENT SELECTION:
 - Comparing groups across categories → bar (clustered columns).
 - Trend over time, one series → line. Multiple series → line_multi.
@@ -77,12 +106,18 @@ CHART/ELEMENT SELECTION:
 - Ranges per category → hbar_float.
 - Two continuous metrics for many entities → scatter. Strategic zones → quadrant.
 - 3+ columns of mixed text/numeric data → table.
+- Headline KPIs with no need for a chart → stat_row.
+- Qualitative pillars/narrative points → icon_row.
+- Options/before-after comparison → comparison_cards.
+- Roadmap/process/milestones → timeline.
+- Financial bridge/walk (start → deltas → end) → waterfall. Always use the "waterfall" element type for this — never fake a bridge with a "bar" chart that has one series per category, since those bars all start at 0 instead of floating and the legend ends up listing every category name.
 
 PANDO STYLE:
 - Colors: DKG for primary emphasis, MDG for secondary, OLV for tertiary, TEL for quaternary.
 - For series with 4+ items cycle: DKG, MDG, OLV, TEL, LBL, GRG.
 - Vintage/cohort charts: 2021→LBL, 2022→TEL, 2023→OLV, 2024→DKG, 2025→MDG.
 - Never use colors outside the PANDO palette.
+- Never use emoji characters anywhere (titles, bullets, shape text, icon_row glyphs) — they render inconsistently in PowerPoint. Use icon_row's glyph (a letter/number) for iconography instead.
 - Notes format: "Source  [source name]" (two spaces).
 
 COMPANY DATA:
@@ -211,6 +246,30 @@ export async function POST(req: NextRequest) {
           send({ type: "error", message: "PPTX templates only" }); controller.close(); return;
         }
 
+        // ── Profile the actual uploaded template (colors/font) ──────────────
+        // Falls back to PANDO's own hardcoded profile if this isn't PANDO's
+        // template, or profiling fails/returns too little to trust.
+        let templatePalette: Record<string, string> | null = null;
+        let templateFont: string | null = null;
+        try {
+          const profResp = await fetch(getProfileEndpoint(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ template_url: template.filePath }),
+          });
+          if (profResp.ok) {
+            const prof = await profResp.json();
+            if (prof?.palette && Object.keys(prof.palette).length >= 6) templatePalette = prof.palette;
+            if (prof?.fonts?.minorFont) templateFont = prof.fonts.minorFont;
+          }
+        } catch { /* profiling is best-effort — PANDO defaults still apply */ }
+
+        const templateProfile = {
+          ...PANDO_TEMPLATE_PROFILE,
+          font: templateFont || PANDO_TEMPLATE_PROFILE.font,
+          colors: templatePalette || PANDO_TEMPLATE_PROFILE.colors,
+        };
+
         // ── Load company + peers ─────────────────────────────────────────────
         let companyData = "No company was selected.";
         let peersData   = "No comparables available.";
@@ -271,6 +330,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
             const r = await fetch(bf.url);
             const buf = Buffer.from(await r.arrayBuffer());
             const mime = bf.type || "application/octet-stream";
+            const ext = bf.name.split(".").pop()?.toLowerCase();
             if (mime === "application/pdf") {
               contextParts.push({
                 type: "document",
@@ -281,6 +341,14 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
                 type: "image",
                 source: { type: "base64", media_type: mime as "image/png", data: buf.toString("base64") },
               });
+            } else if (ext === "docx" || ext === "pptx" || ext === "xlsx") {
+              const text = await extractPlainText(buf, ext);
+              if (text) {
+                contextParts.push({
+                  type: "text",
+                  text: `--- CONTENT OF ATTACHED FILE "${bf.name}" ---\n${text}\n--- END OF "${bf.name}" ---`,
+                });
+              }
             }
           } catch { /* skip unreadable files */ }
         }
@@ -355,26 +423,31 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
               slidesOutline,
               "",
               userPrompt ? `ADDITIONAL INSTRUCTIONS: ${userPrompt}` : null,
-              blobUrls.length ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")}` : null,
+              blobUrls.length
+                ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")} — their actual content is included above as document/image/text blocks. These are the primary, authoritative source for company facts, numbers, and narrative — use the real figures, names, and claims from them instead of inventing plausible-sounding but fictional data.`
+                : null,
               "",
               section.divider
                 ? `Generate the slide JSON for THIS SECTION ONLY. Start with a "divider" slide for "${section.name}" with a takeaway that introduces the section; then the ${section.slides.length} content slides.`
                 : `Generate the JSON for the ${section.slides.length} content slides.`,
+              "Reply with the JSON object only — no preamble or commentary, even to reference the attached documents.",
             ].filter((l): l is string => l != null).join("\n");
 
             // Retry up to 2 times on transient Claude errors
             let rawText = "";
+            let stopReason = "";
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const claudeResp = await claude.messages.create({
                   model: "claude-sonnet-4-6",
-                  max_tokens: 8000,
-                  system: buildSystemPrompt(companyData, peersData),
+                  max_tokens: 16000,
+                  system: buildSystemPrompt(companyData, peersData, templateProfile),
                   messages: [{ role: "user", content: [...contextParts, { type: "text", text: sectionUserText }] }],
                 });
                 rawText = claudeResp.content
                   .filter((b): b is Anthropic.TextBlock => b.type === "text")
                   .map(b => b.text).join("");
+                stopReason = claudeResp.stop_reason ?? "";
                 break;
               } catch (e) {
                 if (attempt === 2) throw e;
@@ -383,7 +456,14 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
             }
 
             const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\})/);
-            if (!jsonMatch) throw new Error(`Section "${section.name}" did not return valid JSON`);
+            if (!jsonMatch) {
+              console.error(`[build] Section "${section.name}" returned no JSON. stop_reason: ${stopReason}. raw:`, rawText.slice(0, 2000));
+              throw new Error(
+                stopReason === "max_tokens"
+                  ? `Section "${section.name}" was cut off before producing JSON (too much input to digest in one reply).`
+                  : `Section "${section.name}" did not return valid JSON: "${rawText.slice(0, 150)}"`
+              );
+            }
 
             const parsed = JSON.parse(repairJson(jsonMatch[1]));
             const slides: object[] = Array.isArray(parsed.slides) ? parsed.slides : [];
@@ -435,7 +515,12 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
           buildResp = await fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ template_url: template.filePath, slide_plan: fullSlidePlan }),
+            body: JSON.stringify({
+              template_url: template.filePath,
+              slide_plan: fullSlidePlan,
+              palette: templatePalette ?? undefined,
+              font: templateFont ?? undefined,
+            }),
           });
         } catch (fetchErr) {
           send({ type: "error", message: `Could not connect to the PPTX service (${endpoint}): ${(fetchErr as Error).message}` });
@@ -443,7 +528,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
         }
 
         const rawBody = await buildResp.text();
-        let buildJson: { data?: string; slide_count?: number; error?: string; detail?: string } = {};
+        let buildJson: { data?: string; slide_count?: number; warnings?: string[]; error?: string; detail?: string } = {};
         try { buildJson = JSON.parse(rawBody); }
         catch {
           send({ type: "error", message: `Invalid response from the PPTX service (HTTP ${buildResp.status}): ${rawBody.slice(0, 200)}` });
@@ -464,6 +549,9 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
         const totalChunks = Math.ceil(base64.length / CHUNK);
         for (let i = 0; i < totalChunks; i++) {
           send({ type: "chunk", index: i, total: totalChunks, data: base64.slice(i * CHUNK, (i + 1) * CHUNK) });
+        }
+        if (buildJson.warnings?.length) {
+          send({ type: "qa_warnings", warnings: buildJson.warnings });
         }
         send({ type: "done", filename, slide_count: slideCount });
         controller.close();

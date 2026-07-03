@@ -19,13 +19,41 @@ class TemplateProfiler:
         self.raw = template_bytes
 
     def extract(self) -> dict:
+        colors = self._colors()
         return {
-            "colors":  self._colors(),
+            "colors":  colors,
+            "palette": self._map_palette(colors),
             "fonts":   self._fonts(),
             "layouts": self._layouts(),
             "slide_width_in":  round(self.prs.slide_width  / 914400, 2),
             "slide_height_in": round(self.prs.slide_height / 914400, 2),
         }
+
+    def _map_palette(self, colors: dict) -> dict:
+        """Map raw OOXML theme scheme colors (dk1/lt1/dk2/lt2/accent1-6) onto the
+        semantic palette keys PptxBuilder actually draws with (DKG/MDG/OLV/TEL/
+        LBL/GRG/NKB/WHT). This is what lets a non-PANDO uploaded template drive
+        real chart/shape colors instead of always falling back to PANDO's own
+        hardcoded palette. Returns {} (meaning: use PANDO defaults) if the theme
+        doesn't have enough accent colors to make a confident mapping."""
+        accents = [colors.get(f"accent{i}") for i in range(1, 7)]
+        accents = [c for c in accents if c]
+        if len(accents) < 4:
+            return {}
+        dark_neutral  = colors.get("dk1") or colors.get("tx1") or "0A231F"
+        light_neutral = colors.get("lt2") or colors.get("bg2") or "D9DBD4"
+        white         = colors.get("lt1") or colors.get("bg1") or "FFFFFF"
+        mapped = {
+            "DKG": accents[0],
+            "MDG": accents[1],
+            "OLV": accents[2],
+            "TEL": accents[3],
+            "LBL": accents[4] if len(accents) > 4 else light_neutral,
+            "GRG": light_neutral,
+            "NKB": dark_neutral,
+            "WHT": white,
+        }
+        return {k: v for k, v in mapped.items() if v}
 
     def _colors(self) -> dict:
         """Extract theme color hex codes from theme1.xml inside the PPTX zip."""

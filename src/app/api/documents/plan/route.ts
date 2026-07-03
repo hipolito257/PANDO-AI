@@ -5,6 +5,7 @@ import { companies, compSets, publicComps, userSettings, financialSnapshots } fr
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
+import { extractPlainText } from "@/lib/extractDocumentText";
 
 export const maxDuration = 120;
 
@@ -78,20 +79,25 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
         const r = await fetch(bf.url);
         const buf = Buffer.from(await r.arrayBuffer());
         const mime = bf.type || "application/octet-stream";
+        const ext = bf.name.split(".").pop()?.toLowerCase();
         if (mime === "application/pdf") {
           msgContent.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") } } as never);
         } else if (mime.startsWith("image/")) {
           msgContent.push({ type: "image", source: { type: "base64", media_type: mime as "image/png", data: buf.toString("base64") } });
+        } else if (ext === "docx" || ext === "pptx" || ext === "xlsx") {
+          const text = await extractPlainText(buf, ext);
+          if (text) msgContent.push({ type: "text", text: `--- CONTENT OF ATTACHED FILE "${bf.name}" ---\n${text}\n--- END OF "${bf.name}" ---` });
         }
-        // xlsx/docx/pptx: skip binary, just note file name (Claude can't read them)
       } catch { /* skip unreadable files */ }
     }
 
     const userText = [
       userPrompt ? `USER INSTRUCTIONS:\n${userPrompt}` : null,
-      blobUrls.length ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")}` : null,
+      blobUrls.length
+        ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")} — their actual content is included above as document/image/text blocks. These are the primary, authoritative source for company facts, numbers, and narrative. Base the plan on THEM, not on any prior knowledge or assumption about the company name. If a file's content could not be extracted, say so rather than inventing facts.`
+        : null,
       feedback   ? `FEEDBACK ON THE PREVIOUS PLAN:\n${feedback}` : null,
-      "Generate the presentation plan.",
+      "Generate the presentation plan. Reply with the JSON object only — no preamble or commentary, even to reference the attached document.",
     ].filter(Boolean).join("\n\n");
 
     msgContent.push({ type: "text", text: userText });
@@ -99,7 +105,7 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 8192,
+      max_tokens: 16000,
       system: `You are a senior analyst at PANDO, a private equity fund. Your task is to plan an investment presentation (NOT build it yet — just the plan).
 
 COMPANY DATA:
@@ -118,18 +124,22 @@ INSTRUCTIONS:
 - Use real data. If you don't have a data point, pick a different angle.
 - Typical: 10-16 total slides including cover, back cover, and dividers.
 
-ELEMENT TYPES (to indicate in the plan):
+ELEMENT TYPES (to indicate in the plan) — vary these across the deck, don't reuse the same one every slide:
 - bar chart: comparing 2+ series by category
 - line chart: trend over time
 - line_multi: multiple series over time
 - donut: parts of a whole (market share, mix)
-- hbar_float: ranges or waterfall (e.g. valuation)
+- hbar_float: ranges by category (e.g. valuation football field)
+- waterfall: a financial bridge/walk with a start, deltas, and an end (e.g. Revenue → EBITDA, valuation build-up) — use this instead of hbar_float when it's actually a bridge, not just ranges
 - scatter: XY positioning (e.g. growth vs margin)
 - quadrant: 2x2 matrix
 - table: tabular data (comparables, financials)
-- textboxes: text/key statistics (for overview or thesis)
+- stat_row: a row of headline KPI numbers when the slide's story IS the numbers, no chart needed
+- icon_row: qualitative narrative points (thesis pillars, risks, value-creation levers) as icon + header + description
+- comparison_cards: before/after or options comparison as 2-4 cards, not a table
+- timeline: roadmap, process, or deal milestones as numbered steps
 
-RESPONSE FORMAT — return ONLY this JSON (no extra text, no markdown):
+RESPONSE FORMAT — your entire reply must be ONLY this JSON object and nothing else: no preamble, no summary of the attached document, no analysis, no markdown code fences. The first character of your reply must be "{".
 {
   "deck_title": "Company Name — Investment Overview",
   "deck_subtitle": "Private & Confidential | ${today}",
@@ -137,14 +147,14 @@ RESPONSE FORMAT — return ONLY this JSON (no extra text, no markdown):
   "slides": [
     { "index": 0, "type": "cover", "title": "Company Name", "subtitle": "Investment Overview | ${today}" },
     { "index": 1, "type": "divider", "section": "THE COMPANY" },
-    { "index": 2, "type": "slide", "section": "THE COMPANY", "title": "COMPANY OVERVIEW", "takeaway": "Specific key message with real data", "chart": "textboxes: key metrics (Revenue, EBITDA, employees, founded)" },
+    { "index": 2, "type": "slide", "section": "THE COMPANY", "title": "COMPANY OVERVIEW", "takeaway": "Specific key message with real data", "chart": "stat_row: Revenue, EBITDA, employees, founded" },
     { "index": 3, "type": "slide", "section": "THE COMPANY", "title": "BRAND POSITIONING", "takeaway": "...", "chart": "bar: perception vs experience + table: NPS vs peers" },
     { "index": 4, "type": "divider", "section": "THE MARKET" },
     { "index": 5, "type": "slide", "section": "THE MARKET", "title": "MARKET SIZE AND GROWTH", "takeaway": "...", "chart": "line: TAM evolution 2020-2025" },
     { "index": 6, "type": "divider", "section": "FINANCIALS" },
     { "index": 7, "type": "slide", "section": "FINANCIALS", "title": "FINANCIAL EVOLUTION", "takeaway": "...", "chart": "line_multi: revenue and EBITDA 2021-2025" },
     { "index": 8, "type": "divider", "section": "INVESTMENT" },
-    { "index": 9, "type": "slide", "section": "INVESTMENT", "title": "INVESTMENT THESIS", "takeaway": "...", "chart": "textboxes: 4 investment pillars" },
+    { "index": 9, "type": "slide", "section": "INVESTMENT", "title": "INVESTMENT THESIS", "takeaway": "...", "chart": "icon_row: 4 investment pillars" },
     { "index": 10, "type": "slide", "section": "INVESTMENT", "title": "VALUATION", "takeaway": "...", "chart": "hbar_float: valuation ranges by methodology" },
     { "index": 11, "type": "back_cover" }
   ]
@@ -157,7 +167,15 @@ RESPONSE FORMAT — return ONLY this JSON (no extra text, no markdown):
     // Extract JSON — strip markdown fences if present
     const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
     const jsonStr = fenced ? fenced[1] : (raw.match(/\{[\s\S]*\}/) ?? [null])[0];
-    if (!jsonStr) return NextResponse.json({ error: "Claude did not return a valid plan", raw: raw.slice(0, 300) }, { status: 500 });
+    if (!jsonStr) {
+      console.error("[plan] Claude returned no JSON. stop_reason:", resp.stop_reason, "raw:", raw.slice(0, 2000));
+      return NextResponse.json({
+        error: resp.stop_reason === "max_tokens"
+          ? "Claude's response was cut off before producing the plan (too much input to digest in one reply). Try again, or split large attachments."
+          : "Claude did not return a valid plan",
+        raw: raw.slice(0, 500),
+      }, { status: 500 });
+    }
 
     // Repair common Claude JSON issues using jsonrepair
     const pre = jsonStr
