@@ -143,6 +143,8 @@ ELEMENT TYPES (to indicate in the plan) — vary these across the deck, don't re
 - process_flow: value chain or step sequence as arrowed boxes with descriptions (use for BUSINESS MODEL slides)
 - pill_row: 3-5 rounded KPI proof-point callouts, usually under a diagram
 - multiple donuts side by side with center KPI text: customer/segment mix comparison across brands
+- band_scatter: dot plot over shaded range bands with a brand-color legend (use for PAYBACK PERIOD / cohort-timing slides — many individual deals/stores plotted over time)
+- bar with hatched perception vs solid experience series + pps-delta call-outs: stated PERCEPTION vs measured EXPERIENCE comparison across attributes
 
 RESPONSE FORMAT — your entire reply must be ONLY this JSON object and nothing else: no preamble, no summary of the attached document, no analysis, no markdown code fences. The first character of your reply must be "{".
 {

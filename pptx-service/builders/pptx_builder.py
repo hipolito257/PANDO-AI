@@ -488,6 +488,8 @@ class PptxBuilder:
             return
         if t == "pill_row" and not el.get("items"):
             return
+        if t == "band_scatter" and not el.get("points"):
+            return
 
         dispatch = {
             "panel_hdr":  self._panel_hdr,
@@ -510,6 +512,7 @@ class PptxBuilder:
             "org_chart":        self._org_chart,
             "process_flow":     self._process_flow,
             "pill_row":         self._pill_row,
+            "band_scatter":     self._band_scatter,
         }
         fn = dispatch.get(t)
         if not fn:
@@ -637,6 +640,35 @@ class PptxBuilder:
             self._fix_catax(ch, skip)
         except Exception: pass
 
+    def _plot_rect(self, x: float, y: float, w: float, h: float,
+                  left: float = 0.42, right: float = 0.08, top: float = 0.05, bottom: float = 0.32):
+        """Approximate the plotted data area inside a chart's outer box (reserving
+        margin for axis tick labels) — used to position manually-drawn overlay
+        annotations (pps-delta call-outs, category highlights) that native
+        chart XML can't express, without needing pixel-exact chart internals."""
+        return x + left, y + top, max(w - left - right, 0.1), max(h - top - bottom, 0.1)
+
+    def _box_data_labels(self, ser, border_color: str = "444444", fill_color: str = "FFFFFF"):
+        """Give a series' data labels a thin-bordered white box behind the number —
+        the signature PANDO chart callout (e.g. '1,727', '80%', '37%' boxed above
+        each bar/point) instead of PowerPoint's plain floating label text."""
+        try:
+            dLbls = ser.data_labels._element
+            if dLbls.find(qn("c:spPr")) is not None:
+                return
+            spPr = parse_xml(
+                f'<c:spPr xmlns:c="{C_NS}" xmlns:a="{A_NS}">'
+                f'<a:solidFill><a:srgbClr val="{fill_color}"/></a:solidFill>'
+                f'<a:ln w="{int(Pt(0.75))}"><a:solidFill><a:srgbClr val="{border_color}"/></a:solidFill></a:ln>'
+                f'</c:spPr>'
+            )
+            numFmt = dLbls.find(qn("c:numFmt"))
+            if numFmt is not None:
+                numFmt.addnext(spPr)
+            else:
+                dLbls.insert(0, spPr)
+        except Exception: pass
+
     def _style_legend(self, ch):
         """Small bottom legend — PowerPoint's default legend text is huge (~18pt)
         next to our 6-7pt axis labels, so always shrink it to match the deck."""
@@ -736,11 +768,29 @@ class PptxBuilder:
         y += hdr; h = max(h - hdr, 0.8)
         cf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(x), Inches(y), Inches(w), Inches(h), cd)
         ch = cf.chart; ch.has_title = False; ch.has_legend = False
-        self._set_line_style(ch.series[0], el.get("color", self.PALETTE["MDG"]), _num(el.get("width"), 1.8))
+        ser = ch.series[0]
+        self._set_line_style(ser, el.get("color", self.PALETTE["MDG"]), _num(el.get("width"), 1.8))
         self._smooth_all(ch)
+        if el.get("data_labels"):
+            self._line_point_labels(ser, el, self.PALETTE["MDG"])
         self._style_axes(ch, ymin=el.get("ymin"), ymax=el.get("ymax"),
                          num_fmt=_str(el.get("num_fmt"), "#,##0"),
                          skip=int(_num(el.get("skip"), 6)), csize=5.5)
+
+    def _line_point_labels(self, ser, el: dict, color: str):
+        """Boxed value callout above each point (the 'Historical Performance'
+        pattern — every year's revenue/margin number in a thin-bordered box)."""
+        try:
+            dl = ser.data_labels
+            dl.show_value = True
+            dl.number_format = _str(el.get("num_fmt"), "#,##0")
+            dl.number_format_is_linked = False
+            dl.font.size = Pt(7); dl.font.bold = True
+            dl.font.color.rgb = _rgb("333333")
+            dl.position = XL_LABEL_POSITION.ABOVE
+            if el.get("box_labels", True):
+                self._box_data_labels(ser, border_color=color)
+        except Exception: pass
 
     # ── Multi-series line chart ────────────────────────────────────────────────
     def _line_multi(self, slide, el: dict):
@@ -763,8 +813,10 @@ class PptxBuilder:
         ch = cf.chart; ch.has_title = False
         for i, s in enumerate(series_list):
             if i < len(ch.series):
-                self._set_line_style(ch.series[i], s.get("color", self.PALETTE["DKG"]),
-                                     _num(s.get("width"), 1.4), dashed=bool(s.get("dashed")))
+                col = s.get("color", self.PALETTE["DKG"])
+                self._set_line_style(ch.series[i], col, _num(s.get("width"), 1.4), dashed=bool(s.get("dashed")))
+                if s.get("data_labels"):
+                    self._line_point_labels(ch.series[i], el, col)
         self._smooth_all(ch)
         self._style_axes(ch, ymin=_num(el.get("ymin"), 0), ymax=el.get("ymax"),
                          num_fmt=_str(el.get("num_fmt"), "#,##0"),
@@ -805,6 +857,10 @@ class PptxBuilder:
                     dl.font.size = Pt(7); dl.font.bold = False
                     dl.font.color.rgb = _rgb("444444")
                     dl.position = XL_LABEL_POSITION.OUTSIDE_END
+                    # Boxed value callouts are the PANDO default (e.g. "1,727", "37%"
+                    # in a thin-bordered box above the bar) — opt out with box_labels:false.
+                    if el.get("box_labels", True):
+                        self._box_data_labels(ser)
                 except Exception: pass
 
         try:
@@ -821,6 +877,39 @@ class PptxBuilder:
         else:
             ch.has_legend = False
 
+        # pps-delta annotations + category highlight — the "Brand Perception"
+        # pattern: a striped 'perception' bar next to a solid 'experience' bar,
+        # with a thin underline + "+Npps" spread call-out above each pair, and
+        # an optional dashed box drawing attention to one category.
+        if el.get("pair_deltas") and len(series_list) == 2:
+            plot_x, plot_y, plot_w, _plot_h = self._plot_rect(x, y, w, h)
+            n = len(labels)
+            cat_w = plot_w / max(n, 1)
+            v0 = [_num(v) for v in (series_list[0].get("values") or [])]
+            v1 = [_num(v) for v in (series_list[1].get("values") or [])]
+            for i in range(n):
+                a = v0[i] if i < len(v0) else 0
+                b = v1[i] if i < len(v1) else 0
+                cx = plot_x + (i + 0.5) * cat_w
+                delta = abs(b - a)
+                fmt_val = f"{delta * 100:.0f}pps" if _str(el.get("num_fmt"), "0%").endswith("%") else f"{delta:,.0f}"
+                self._txt_box(slide, f"+{fmt_val}", cx - cat_w / 2, plot_y - 0.02, cat_w, 0.18,
+                              6.5, align="c", fg="333333")
+                try:
+                    ln = slide.shapes.add_connector(1, Inches(cx - cat_w * 0.32), Inches(plot_y + 0.16),
+                                                    Inches(cx + cat_w * 0.32), Inches(plot_y + 0.16))
+                    ln.line.color.rgb = _rgb("333333"); ln.line.width = Pt(0.5)
+                except Exception: pass
+            hi = el.get("highlight_category")
+            if isinstance(hi, int) and 0 <= hi < n:
+                hx = plot_x + hi * cat_w
+                box = slide.shapes.add_shape(1, Inches(hx + cat_w * 0.05), Inches(plot_y - 0.02),
+                                             Inches(cat_w * 0.9), Inches(_plot_h * 0.92))
+                box.fill.background()
+                box.line.color.rgb = _rgb(el.get("highlight_color", self.PALETTE["OLV"]))
+                box.line.width = Pt(0.75)
+                self._dash(box)
+
     def _set_hatch(self, series, color: str):
         try:
             ser_el = series._element
@@ -830,7 +919,11 @@ class PptxBuilder:
             if solidFill is not None:
                 spPr.remove(solidFill)
             pattFill = parse_xml(
-                f'<a:pattFill xmlns:a="{A_NS}" prst="lgDnDiag">'
+                # NOTE: "lgDnDiag" is NOT a valid ST_PresetPatternVal (a past bug here
+                # silently produced a corrupt .pptx that real PowerPoint refused to
+                # open, though python-pptx/LibreOffice didn't complain). "ltDnDiag"
+                # is the real value for a fine diagonal-stripe hatch.
+                f'<a:pattFill xmlns:a="{A_NS}" prst="ltDnDiag">'
                 f'<a:fgClr><a:srgbClr val="{color}"/></a:fgClr>'
                 f'<a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr>'
                 f'</a:pattFill>'
@@ -1064,6 +1157,82 @@ class PptxBuilder:
                 r.font.name = self.DEFAULT_FONT; r.font.size = Pt(6.5)
                 r.font.color.rgb = _rgb(col)
             except Exception: pass
+
+    # ── Band scatter: shaded range bands + dot plot + brand legend ─────────────
+    # The "Store Payback" pattern — points positioned by fractional px/py (same
+    # convention as _quadrant) over shaded horizontal bands with boxed bucket-%
+    # labels on the left, plus a bottom row of colored-dot brand legend.
+    def _band_scatter(self, slide, el: dict):
+        x, y, w, h = _geom(el, (0.85, 1.78, 12.18, 4.0))
+        hdr = self._chart_header(slide, el, x, y, w)
+        y += hdr; h = max(h - hdr, 0.8)
+
+        legend = [g for g in (el.get("legend") or []) if isinstance(g, dict)]
+        legend_h = 0.22 if legend else 0.0
+        x_ticks = el.get("x_ticks") or []
+        xtick_h = 0.20 if x_ticks else 0.0
+        plot_x, plot_w = x + 0.42, w - 0.42 - 0.08
+        plot_y, plot_h = y, h - legend_h - xtick_h - 0.03
+
+        for band in (el.get("bands") or []):
+            y0 = max(0.0, min(1.0, _num(band.get("y0"), 0)))
+            y1 = max(0.0, min(1.0, _num(band.get("y1"), 1)))
+            by = plot_y + (1 - y1) * plot_h
+            bh = max((y1 - y0) * plot_h, 0.01)
+            rect = slide.shapes.add_shape(1, Inches(plot_x), Inches(by), Inches(plot_w), Inches(bh))
+            rect.fill.solid(); rect.fill.fore_color.rgb = _rgb(band.get("color", "F2F2F2"))
+            rect.line.fill.background()
+            lbl = _str(band.get("label"))
+            if lbl:
+                tb = slide.shapes.add_shape(1, Inches(plot_x + 0.06), Inches(by + bh / 2 - 0.11),
+                                            Inches(1.15), Inches(0.22))
+                tb.fill.solid(); tb.fill.fore_color.rgb = _rgb("FFFFFF")
+                tb.line.color.rgb = _rgb("999999"); tb.line.width = Pt(0.5)
+                tf = tb.text_frame; tf.word_wrap = False
+                p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+                r = p.add_run(); r.text = lbl
+                r.font.name = self.DEFAULT_FONT; r.font.size = Pt(6.5); r.font.color.rgb = _rgb("444444")
+
+        try:
+            ax = slide.shapes.add_connector(1, Inches(plot_x), Inches(plot_y), Inches(plot_x), Inches(plot_y + plot_h))
+            ax.line.color.rgb = _rgb("CCCCCC"); ax.line.width = Pt(0.75)
+            axx = slide.shapes.add_connector(1, Inches(plot_x), Inches(plot_y + plot_h),
+                                             Inches(plot_x + plot_w), Inches(plot_y + plot_h))
+            axx.line.color.rgb = _rgb("CCCCCC"); axx.line.width = Pt(0.75)
+        except Exception: pass
+
+        for t in (el.get("y_ticks") or []):
+            py = max(0.0, min(1.0, _num(t.get("py"), 0)))
+            ty = plot_y + (1 - py) * plot_h
+            self._txt_box(slide, _str(t.get("label")), x, ty - 0.08, 0.36, 0.16, 6, align="r", fg="999999")
+
+        n = len(x_ticks)
+        if n:
+            ty = plot_y + plot_h + 0.03
+            for i, lbl in enumerate(x_ticks):
+                px = i / (n - 1) if n > 1 else 0.5
+                tx = plot_x + px * plot_w
+                self._txt_box(slide, _str(lbl), tx - 0.4, ty, 0.8, 0.18, 6.5, align="c", fg="999999")
+
+        for pt in (el.get("points") or []):
+            px = max(0.0, min(1.0, _num(pt.get("px"))))
+            py = max(0.0, min(1.0, _num(pt.get("py"))))
+            cx = plot_x + px * plot_w
+            cy = plot_y + (1 - py) * plot_h
+            d = _num(pt.get("size"), 0.09)
+            dot = slide.shapes.add_shape(9, Inches(cx - d / 2), Inches(cy - d / 2), Inches(d), Inches(d))
+            dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(pt.get("color", self.PALETTE["DKG"]))
+            dot.line.fill.background()
+
+        if legend:
+            slot_w = w / len(legend)
+            ly = y + h - legend_h
+            for i, g in enumerate(legend):
+                lx = x + i * slot_w
+                dot = slide.shapes.add_shape(9, Inches(lx), Inches(ly + 0.03), Inches(0.09), Inches(0.09))
+                dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(g.get("color", self.PALETTE["DKG"]))
+                dot.line.fill.background()
+                self._txt_box(slide, _str(g.get("label")), lx + 0.14, ly, slot_w - 0.16, 0.18, 7, fg="444444")
 
     # ── Shared text/bullet helpers for the new content elements ────────────────
     def _txt_box(self, slide, text, x, y, w, h, size, bold=False, italic=False,
