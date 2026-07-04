@@ -46,3 +46,17 @@ export function deltaColor(n: number | null | undefined) {
 export function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
+
+// Claude reaches for em-dashes constantly regardless of prompt wording, and
+// generated presentations must never contain one — strips every em-dash out
+// of an arbitrary JSON value (plan/slide objects) as a hard guarantee.
+export function stripEmDashes(value: unknown): unknown {
+  if (typeof value === "string") return value.replace(/\s*—\s*/g, ", ").replace(/—/g, "-");
+  if (Array.isArray(value)) return value.map(stripEmDashes);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = stripEmDashes(v);
+    return out;
+  }
+  return value;
+}

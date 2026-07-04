@@ -6,6 +6,7 @@ import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
+import { stripEmDashes } from "@/lib/utils";
 
 export const maxDuration = 120;
 
@@ -146,9 +147,11 @@ ELEMENT TYPES (to indicate in the plan) — vary these across the deck, don't re
 - band_scatter: dot plot over shaded range bands with a brand-color legend (use for PAYBACK PERIOD / cohort-timing slides — many individual deals/stores plotted over time)
 - bar with hatched perception vs solid experience series + pps-delta call-outs: stated PERCEPTION vs measured EXPERIENCE comparison across attributes
 
+NEVER use em-dashes (—) anywhere in any field — not in deck_title, titles, takeaways, or section names. Use a comma, colon, or period instead.
+
 RESPONSE FORMAT — your entire reply must be ONLY this JSON object and nothing else: no preamble, no summary of the attached document, no analysis, no markdown code fences. The first character of your reply must be "{".
 {
-  "deck_title": "Company Name — Investment Overview",
+  "deck_title": "Company Name, Investment Overview",
   "deck_subtitle": "Private & Confidential | ${today}",
   "company": "${companyName}",
   "slides": [
@@ -200,7 +203,7 @@ RESPONSE FORMAT — your entire reply must be ONLY this JSON object and nothing 
         raw: jsonStr.slice(0, 400),
       }, { status: 500 });
     }
-    return NextResponse.json({ success: true, plan });
+    return NextResponse.json({ success: true, plan: stripEmDashes(plan) });
 
   } catch (err) {
     console.error("[plan]", err);

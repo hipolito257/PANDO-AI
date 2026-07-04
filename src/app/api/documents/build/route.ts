@@ -6,6 +6,7 @@ import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
+import { stripEmDashes } from "@/lib/utils";
 
 export const maxDuration = 300;
 
@@ -109,6 +110,8 @@ A deck where every content slide is "two chart panels side by side" reads as tem
 - A slide comparing stated perception vs measured reality on several attributes → bar with hatched:true on the perception series + pair_deltas:true (the striped-vs-solid pps-delta pattern), not two separate charts.
 - Single full-bleed chart taking the whole content area is often stronger than two cramped panels — use it when one chart deserves the whole slide.
 - Across a section of 4-6 slides, aim for at least 3 different element types/layouts, not the same panel formula every time.
+- HARD RULE: never place icon_row (numbered/lettered circle + title + text, repeated in a row) on two slides in a row, even if both slides are qualitative/narrative. A deck with 4 consecutive "circle badges + description" slides (regulatory pillars, strategic reasons, risks, obligations) reads as one slide copy-pasted four times — this is the single most common failure mode, actively avoid it. When the previous slide already used icon_row, the next qualitative/narrative slide MUST use a different shape even though the content is similarly "a handful of pillars/reasons/points": process_flow (arrowed boxed steps) if there's any sequence/order to the points, org_chart if it's about entities/relationships, alt_timeline if it's chronological, pill_row alone (no circles, just tinted one-line callouts) for a lighter compact treatment, or comparison_cards if the points naturally group into 2-4 named buckets.
+- The tinted-card row underneath the main element (comparison_cards, or a manual row of colored callout boxes) is itself a recurring visual crutch — do not put one under every single slide. At least a third of content slides should end with just the main element and a "note" footer, no card row below.
 
 DENSITY — REAL DECKS ARE RICH, NOT SPARSE:
 Reference-quality PANDO slides are DENSE: a full-width diagram plus a pill_row of KPIs, or two charts each with headers and data labels, or a 6-row comparison matrix. A slide with one small chart floating in white space reads as unfinished. Fill the content area (y=2.0 to ~6.5): if the main element only needs 3 inches of height, add a complementary element below it (pill_row of proof points, a small table, a stat_row) that reinforces the takeaway with real numbers from the source material.
@@ -133,6 +136,7 @@ PANDO STYLE:
 - Never use colors outside the PANDO palette.
 - Never use emoji characters anywhere (titles, bullets, shape text, icon_row glyphs) — they render inconsistently in PowerPoint. Use icon_row's glyph (a letter/number) for iconography instead.
 - Notes format: "Source  [source name]" (two spaces).
+- NEVER use em-dashes (—) anywhere — not in titles, takeaways, body copy, bullets, or element text. Use a comma, colon, period, or parentheses instead. Write "X, which drove Y" or "X: Y" or two sentences, not "X — Y".
 
 COMPANY DATA:
 ${companyData}
@@ -514,7 +518,9 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
           subtitle: backCoverSlide?.subtitle || "",
         };
 
-        const fullSlidePlan = { slides: [coverJson, ...allContentSlides, backCoverJson] };
+        const fullSlidePlan = stripEmDashes({ slides: [coverJson, ...allContentSlides, backCoverJson] }) as {
+          slides: object[];
+        };
         const slideCount = fullSlidePlan.slides.length;
 
         send({
