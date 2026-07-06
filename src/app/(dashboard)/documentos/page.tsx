@@ -38,13 +38,14 @@ interface DeckPlan {
   slides: DeckSlide[];
 }
 
-type DocType = "pptx" | "docx";
+type DocType = "pptx" | "docx" | "twopager";
 
 // The template a user picks here is never chosen by them — it's a single
 // fixed asset per document type, managed by us. We key it off a reserved
 // template name so no schema change is needed: whichever DocumentTemplate
 // row has this exact name+type is "the" hardcoded template for that type.
-const DEFAULT_TEMPLATE_NAME: Record<DocType, string> = {
+// "twopager" has no uploaded template at all — it's generated from scratch.
+const DEFAULT_TEMPLATE_NAME: Record<"pptx" | "docx", string> = {
   pptx: "PANDO Default PowerPoint Template",
   docx: "PANDO Default Word Template",
 };
@@ -57,11 +58,24 @@ const DOC_TYPE_META: Record<DocType, { label: string; blurb: string; icon: (s: n
   },
   docx: {
     label: "Word",
-    blurb: "Build a written document — memo, 2-pager, report.",
+    blurb: "Build a written document — memo, report, template-based.",
     icon: (s) => <FileText size={s} className="text-blue-600" />,
     color: "bg-blue-500/10 text-blue-600 border-blue-400/30",
   },
+  twopager: {
+    label: "Company 2-Pager",
+    blurb: "A short investment brief with a customizable outline and length.",
+    icon: (s) => <Flag size={s} className="text-[#004F46]" />,
+    color: "bg-[#004F46]/10 text-[#004F46] border-[#004F46]/30",
+  },
 };
+
+interface TwoPagerSectionUI { id: string; title: string; guidance: string; included: boolean }
+interface TwoPagerPlan {
+  title?: string;
+  subtitle?: string;
+  sections: { heading: string; paragraphs: string[] }[];
+}
 
 const TYPE_COLOR: Record<string, string> = {
   pptx: "bg-orange/10 text-orange border-orange/30",
@@ -128,6 +142,127 @@ export default function DocumentosPage() {
   const templateFileRef = useRef<HTMLInputElement>(null);
   const contextFileRef  = useRef<HTMLInputElement>(null);
 
+  // ── 2-Pager specific state ────────────────────────────────────────────────
+  const [pageCount, setPageCount] = useState(2);
+  const [tpSections, setTpSections] = useState<TwoPagerSectionUI[]>([]);
+  const [tpSectionsLoaded, setTpSectionsLoaded] = useState(false);
+  const [tpPlan, setTpPlan] = useState<TwoPagerPlan | null>(null);
+  const [tpEdits, setTpEdits] = useState<Record<number, string>>({});
+  const [tpFeedback, setTpFeedback] = useState("");
+  const [tpPlanning, setTpPlanning] = useState(false);
+  const [tpPlanErr, setTpPlanErr] = useState<string | null>(null);
+  const [tpBuilding, setTpBuilding] = useState(false);
+  const [tpBuildErr, setTpBuildErr] = useState<string | null>(null);
+  const [tpLastDownload, setTpLastDownload] = useState<{ url: string; filename: string } | null>(null);
+
+  useEffect(() => {
+    if (docType !== "twopager" || tpSectionsLoaded) return;
+    (async () => {
+      const r = await fetch("/api/admin/twopager-sections");
+      if (r.ok) {
+        const d = await r.json();
+        setTpSections((d.sections as { id: string; title: string; guidance: string }[]).map(s => ({ ...s, included: true })));
+      }
+      setTpSectionsLoaded(true);
+    })();
+  }, [docType, tpSectionsLoaded]);
+
+  function updateTpSection(idx: number, patch: Partial<TwoPagerSectionUI>) {
+    setTpSections(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s));
+  }
+  function removeTpSection(idx: number) {
+    setTpSections(prev => prev.filter((_, i) => i !== idx));
+  }
+  function moveTpSection(idx: number, dir: -1 | 1) {
+    setTpSections(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+  function addTpSection() {
+    setTpSections(prev => [...prev, { id: crypto.randomUUID(), title: "New Section", guidance: "", included: true }]);
+  }
+
+  async function handleTwoPagerPlan(feedback?: string) {
+    const included = tpSections.filter(s => s.included);
+    if (included.length === 0) {
+      setTpPlanErr("Include at least one section");
+      return;
+    }
+    setTpPlanning(true); setTpPlanErr(null);
+    let blobUrls: { name: string; url: string; type: string }[] = [];
+    try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
+      setTpPlanErr("Error uploading files: " + (e instanceof Error ? e.message : String(e)));
+      setTpPlanning(false); return;
+    }
+    const fd = new FormData();
+    if (companyId) fd.append("companyId", companyId);
+    if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
+    if (feedback?.trim()) fd.append("feedback", feedback.trim());
+    fd.append("pageCount", String(pageCount));
+    fd.append("sections", JSON.stringify(included.map(s => ({ id: s.id, title: s.title, guidance: s.guidance }))));
+    if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
+
+    try {
+      const res = await fetch("/api/documents/twopager/plan", { method: "POST", body: fd });
+      let j: { success?: boolean; plan?: TwoPagerPlan; companyName?: string; error?: string; raw?: string } = {};
+      let rawText = "";
+      try { rawText = await res.text(); j = JSON.parse(rawText); } catch { /* ignore */ }
+      if (!res.ok || !j.success) {
+        const detail = j.error ?? (rawText.length < 200 ? rawText : `HTTP ${res.status}`);
+        setTpPlanErr(j.raw ? `${detail} — Claude said: "${j.raw.slice(0, 200)}"` : (detail || `Error HTTP ${res.status}`));
+      } else {
+        setTpPlan(j.plan!);
+        setTpEdits({});
+        setTpFeedback("");
+      }
+    } catch (err: unknown) {
+      setTpPlanErr((err as Error)?.message ?? "Network error");
+    }
+    setTpPlanning(false);
+  }
+
+  async function handleTwoPagerBuild() {
+    if (!tpPlan) return;
+    setTpBuilding(true); setTpBuildErr(null);
+
+    const finalPlan: TwoPagerPlan = {
+      title: tpPlan.title,
+      subtitle: tpPlan.subtitle,
+      sections: tpPlan.sections.map((s, i) => ({
+        heading: s.heading,
+        paragraphs: (tpEdits[i] ?? s.paragraphs.join("\n\n")).split(/\n\s*\n/).map(p => p.trim()).filter(Boolean),
+      })),
+    };
+    const selectedCompany = companies.find(c => c.id === companyId);
+
+    try {
+      const res = await fetch("/api/documents/twopager/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvedPlan: finalPlan, companyName: selectedCompany?.name ?? tpPlan.title }),
+      });
+      const j = await res.json().catch(() => ({})) as { file?: string; filename?: string; error?: string };
+      if (!res.ok || !j.file) {
+        setTpBuildErr(j.error ?? "Error building document");
+      } else {
+        const bytes = Uint8Array.from(atob(j.file), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = j.filename!; a.click();
+        setTpLastDownload({ url, filename: j.filename! });
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
+    } catch (err: unknown) {
+      setTpBuildErr((err as Error)?.message ?? "Network error");
+    }
+    setTpBuilding(false);
+  }
+
   const loadTemplates = useCallback(async () => {
     const r = await fetch("/api/templates");
     if (r.ok) setTemplates(await r.json());
@@ -144,7 +279,8 @@ export default function DocumentosPage() {
   useEffect(() => { loadTemplates(); loadCompanies(); checkApiKey(); }, [loadTemplates, loadCompanies, checkApiKey]);
 
   // The one hardcoded template for the currently chosen document type.
-  const selected: DocTemplate | null = docType
+  // "twopager" has no uploaded template — it's generated from scratch.
+  const selected: DocTemplate | null = docType && docType !== "twopager"
     ? templates.find(t => t.type === docType && t.name === DEFAULT_TEMPLATE_NAME[docType]) ?? null
     : null;
 
@@ -153,6 +289,7 @@ export default function DocumentosPage() {
     setGenSuccess(false); setGenErr(null); setBuildErr(null); setPlanErr(null);
     setPlan(null); setPlanFeedback(""); setContextFiles([]); setContextBlobUrls([]);
     setGenResult(null); setLastDownload(null); setQaWarnings([]);
+    setTpPlan(null); setTpEdits({}); setTpFeedback(""); setTpPlanErr(null); setTpBuildErr(null); setTpLastDownload(null);
   }
   function backToLanding() {
     setDocType(null);
@@ -181,7 +318,7 @@ export default function DocumentosPage() {
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
-    if (!pendingFile || !docType) return;
+    if (!pendingFile || !docType || docType === "twopager") return;
     if (pendingFile.size > MAX_UPLOAD_BYTES) {
       setUploadErr(`File too large (${fmtSize(pendingFile.size)}). Maximum size is 25 MB.`);
       return;
@@ -679,7 +816,7 @@ export default function DocumentosPage() {
               Choose what you want to build. Attach backup files (PDFs, Excels with data, reports)
               and AI extracts the relevant information to fill in the document.
             </p>
-            <div className="grid grid-cols-2 gap-4 w-full max-w-md">
+            <div className="grid grid-cols-3 gap-4 w-full max-w-2xl">
               {(Object.keys(DOC_TYPE_META) as DocType[]).map(t => (
                 <button key={t} onClick={() => chooseDocType(t)}
                   className={`rounded-[12px] border-2 p-6 text-center transition-transform hover:scale-[1.02] ${DOC_TYPE_META[t].color}`}>
@@ -693,7 +830,7 @@ export default function DocumentosPage() {
         )}
 
         {/* ── Default template not configured yet ──────────────────────── */}
-        {docType && !selected && (
+        {docType && docType !== "twopager" && !selected && (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <button onClick={backToLanding} className="flex items-center gap-1 text-[12px] text-slate hover:text-carbon mb-6">
               <ChevronLeft size={14} /> Change document type
@@ -1195,6 +1332,289 @@ export default function DocumentosPage() {
                           Approve and build presentation
                         </>
                       )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* ── Company 2-Pager flow ─────────────────────────────────────── */}
+        {docType === "twopager" && (
+          <div className="py-10 px-6 space-y-4 max-w-3xl mx-auto">
+
+            <button onClick={backToLanding} className="flex items-center gap-1 text-[12px] text-slate hover:text-carbon">
+              <ChevronLeft size={14} /> Change document type
+            </button>
+
+            <div className="flex items-center gap-4">
+              <div className="shrink-0"><Flag size={44} className="text-[#004F46]" /></div>
+              <div className="flex-1">
+                <h1 className="text-[20px] font-semibold text-carbon">New Company 2-Pager</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border bg-[#004F46]/10 text-[#004F46] border-[#004F46]/30">Word</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-medium"><Sparkles size={11} />AI</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 1 — Company */}
+            <div className="bg-white border border-chalk rounded-[12px] p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-5 h-5 rounded-full bg-[#004F46] text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+                <div>
+                  <div className="text-[13px] font-semibold text-carbon">Company <span className="text-[11px] font-normal text-slate">(Optional)</span></div>
+                  <div className="text-[10px] text-slate">If selected, AI uses its financial data.</div>
+                </div>
+              </div>
+              <select value={companyId} onChange={e => setCompanyId(e.target.value)}
+                className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
+                <option value="">— No specific company —</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Step 2 — Context files */}
+            <div className="bg-white border border-chalk rounded-[12px] p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-[#004F46] text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+                  <div>
+                    <div className="text-[13px] font-semibold text-carbon">Backup files</div>
+                    <div className="text-[10px] text-slate">Optional — AI reads them to enrich the brief</div>
+                  </div>
+                </div>
+                <button onClick={() => contextFileRef.current?.click()}
+                  className="text-[11px] font-medium text-carbon border border-chalk px-3 py-1.5 rounded-[7px] hover:bg-fog transition-colors">
+                  + Add
+                </button>
+              </div>
+              <input ref={contextFileRef} type="file" multiple
+                accept=".pdf,.docx,.xlsx,.pptx,.txt,.csv,.png,.jpg,.jpeg"
+                className="hidden"
+                onChange={e => { if (e.target.files) addContextFiles(e.target.files); e.target.value = ""; }}/>
+
+              <div
+                onDragOver={e => { e.preventDefault(); setCtxDragOver(true); }}
+                onDragLeave={() => setCtxDragOver(false)}
+                onDrop={e => { e.preventDefault(); setCtxDragOver(false); addContextFiles(e.dataTransfer.files); }}
+                onClick={() => contextFileRef.current?.click()}
+                className={`rounded-[8px] border-2 border-dashed p-4 text-center cursor-pointer transition-colors ${
+                  ctxDragOver ? "border-[#004F46] bg-fog" : contextFiles.length === 0 ? "border-chalk hover:border-graphite/40 hover:bg-fog/50" : "border-chalk/40"}`}>
+                {contextFiles.length === 0 ? (
+                  <div>
+                    <div className="flex justify-center mb-1"><Paperclip size={22} className="text-chalk" /></div>
+                    <div className="text-[12px] text-slate">Drag or click to add files</div>
+                    <div className="text-[10px] text-slate/60 mt-0.5">PDF · Word · Excel · PowerPoint · TXT · Images</div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate">+ Add more files</div>
+                )}
+              </div>
+
+              {contextFiles.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {contextFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2.5 bg-fog rounded-[8px] px-3 py-2">
+                      <span className="shrink-0"><FileTypeIcon name={f.name} size={16} /></span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-medium text-carbon truncate">{f.name}</div>
+                        <div className="text-[10px] text-slate">{fmtSize(f.size)}</div>
+                      </div>
+                      <button onClick={() => removeContextFile(i)} className="text-slate hover:text-carbon p-1 rounded hover:bg-chalk transition-colors">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                          <line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                          <line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {contextFiles.length > 0 && !hasApiKey && (
+                <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-[8px] p-3">
+                  <div className="text-[11px] text-yellow-800 font-medium mb-1">⚠ API key required</div>
+                  <a href="/settings" className="text-[10px] font-semibold text-yellow-700 underline hover:text-yellow-900">Go to Settings →</a>
+                </div>
+              )}
+            </div>
+
+            {/* Step 3 — Instructions + length */}
+            <div className="bg-white border border-chalk rounded-[12px] p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-5 h-5 rounded-full bg-[#004F46] text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                <div>
+                  <div className="text-[13px] font-semibold text-carbon">Instructions and length</div>
+                  <div className="text-[10px] text-slate">Length is a target, not an exact guarantee</div>
+                </div>
+              </div>
+              <textarea
+                value={userPrompt}
+                onChange={e => setUserPrompt(e.target.value)}
+                rows={3}
+                placeholder="Optional — e.g. Emphasize the go-to-market angle. Keep the tone conservative for a lender audience."
+                className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-[#004F46] resize-none leading-relaxed mb-3"
+              />
+              <label className="block text-[11px] font-medium text-graphite mb-1.5">Length: {pageCount} page{pageCount !== 1 ? "s" : ""}</label>
+              <input type="range" min={1} max={10} value={pageCount} onChange={e => setPageCount(Number(e.target.value))}
+                className="w-full accent-[#004F46]" />
+            </div>
+
+            {/* Step 4 — Section outline */}
+            <div className="bg-white border border-chalk rounded-[12px] p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-5 h-5 rounded-full bg-[#004F46] text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
+                <div>
+                  <div className="text-[13px] font-semibold text-carbon">Section outline</div>
+                  <div className="text-[10px] text-slate">Starts from the firm default — edit freely for this document only</div>
+                </div>
+              </div>
+
+              {!tpSectionsLoaded ? (
+                <div className="text-center py-6 text-slate text-[12px]">Loading outline...</div>
+              ) : (
+                <div className="space-y-2">
+                  {tpSections.map((s, idx) => (
+                    <div key={s.id} className={`border rounded-[8px] p-3 space-y-2 ${s.included ? "border-chalk" : "border-chalk/40 opacity-50"}`}>
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" checked={s.included} onChange={e => updateTpSection(idx, { included: e.target.checked })}
+                          className="shrink-0 accent-[#004F46]" />
+                        <input
+                          type="text"
+                          value={s.title}
+                          onChange={e => updateTpSection(idx, { title: e.target.value })}
+                          className="flex-1 px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-[#004F46]"
+                        />
+                        <button onClick={() => moveTpSection(idx, -1)} disabled={idx === 0} className="px-1.5 py-1 text-slate hover:text-carbon disabled:opacity-30 text-[12px]">↑</button>
+                        <button onClick={() => moveTpSection(idx, 1)} disabled={idx === tpSections.length - 1} className="px-1.5 py-1 text-slate hover:text-carbon disabled:opacity-30 text-[12px]">↓</button>
+                        <button onClick={() => removeTpSection(idx)} className="px-1.5 py-1 text-red-500 hover:text-red-700 text-[12px]">✕</button>
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={addTpSection}
+                    className="w-full py-2 border border-dashed border-chalk rounded-[8px] text-[12px] text-slate hover:text-carbon hover:border-graphite/40 transition-colors">
+                    + Add Section
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Step 5 — Draft */}
+            <div className="bg-white border border-chalk rounded-[12px] p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-5 h-5 rounded-full bg-[#004F46] text-white text-[10px] font-bold flex items-center justify-center shrink-0">5</span>
+                <div className="text-[13px] font-semibold text-carbon">Draft content</div>
+              </div>
+
+              {tpPlanErr && (
+                <div className="mb-3 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[7px] p-2.5">{tpPlanErr}</div>
+              )}
+              {tpLastDownload && !tpPlan && (
+                <div className="mb-3 flex items-center gap-2 text-[12px] text-[#004F46] bg-[#004F46]/5 border border-[#004F46]/20 rounded-[8px] p-3">
+                  <span className="flex-1">Last generated 2-pager</span>
+                  <a href={tpLastDownload.url} download={tpLastDownload.filename} className="font-semibold underline underline-offset-2 hover:text-[#002a24]">
+                    Download again
+                  </a>
+                </div>
+              )}
+
+              <button onClick={() => handleTwoPagerPlan()} disabled={tpPlanning || uploadingCtx || !tpSectionsLoaded}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-[#004F46] text-white rounded-[10px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                {uploadingCtx ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                    </svg>
+                    Uploading files…
+                  </>
+                ) : tpPlanning ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                    </svg>
+                    Drafting content…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={15} />
+                    Draft content with AI
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Review card */}
+            {tpPlan && (
+              <div className="bg-white border border-[#004F46]/30 rounded-[12px] overflow-hidden">
+                <div className="bg-[#004F46] px-5 py-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-white text-[14px] font-semibold">{tpPlan.title}</div>
+                    {tpPlan.subtitle && <div className="text-[#A5C8D1] text-[11px] mt-0.5">{tpPlan.subtitle}</div>}
+                  </div>
+                  <button onClick={() => { setTpPlan(null); setTpEdits({}); setTpFeedback(""); setTpBuildErr(null); }}
+                    className="text-white/60 hover:text-white p-1 rounded transition-colors">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="px-5 py-4 space-y-4 max-h-[420px] overflow-y-auto">
+                  {tpPlan.sections.map((s, idx) => (
+                    <div key={idx}>
+                      <label className="block text-[12px] font-semibold text-[#004F46] mb-1.5">{s.heading}</label>
+                      <textarea
+                        value={tpEdits[idx] ?? s.paragraphs.join("\n\n")}
+                        onChange={e => setTpEdits(prev => ({ ...prev, [idx]: e.target.value }))}
+                        rows={Math.max(3, Math.min(10, s.paragraphs.join(" ").length / 90))}
+                        className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[12px] text-carbon focus:outline-none focus:border-[#004F46] resize-y leading-relaxed"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="px-5 pb-5 pt-3 border-t border-chalk space-y-3">
+                  {tpBuildErr && (
+                    <div className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[8px] p-3">{tpBuildErr}</div>
+                  )}
+                  {tpPlanErr && (
+                    <div className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-[8px] p-3">{tpPlanErr}</div>
+                  )}
+
+                  <div>
+                    <label className="text-[11px] font-medium text-graphite block mb-1.5">Want to adjust the draft?</label>
+                    <textarea
+                      value={tpFeedback}
+                      onChange={e => setTpFeedback(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. Make the financial highlights section more detailed and add the peer comparables."
+                      className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[12px] text-carbon placeholder:text-slate/40 focus:outline-none focus:border-[#004F46] resize-none leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => handleTwoPagerPlan(tpFeedback || undefined)}
+                      disabled={tpPlanning || tpBuilding}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-[#004F46] text-[#004F46] rounded-[9px] text-[12px] font-medium hover:bg-[#004F46]/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      {tpPlanning ? "Regenerating…" : "Regenerate"}
+                    </button>
+                    <button onClick={handleTwoPagerBuild}
+                      disabled={tpPlanning || tpBuilding}
+                      className="flex-[2] flex items-center justify-center gap-1.5 py-2.5 bg-[#004F46] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#00403A] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      {tpBuilding ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="32" strokeDashoffset="10"/>
+                          </svg>
+                          Building…
+                        </>
+                      ) : "Build Word document"}
                     </button>
                   </div>
                 </div>

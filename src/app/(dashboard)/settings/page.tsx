@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 
 type Member = { id: string; name: string; email: string; role: string; createdAt: string | null };
 type PendingUser = { id: string; name: string; email: string; createdAt: string | null };
+type TwoPagerSection = { id: string; title: string; guidance: string };
 
 export default function SettingsPage() {
   const { data: session, update: updateSession } = useSession();
@@ -36,6 +37,16 @@ export default function SettingsPage() {
   const [thesisLoading, setThesisLoading] = useState(true);
   const [thesisSaving, setThesisSaving] = useState(false);
   const [thesisMessage, setThesisMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [policy, setPolicy] = useState("");
+  const [policyLoading, setPolicyLoading] = useState(true);
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policyMessage, setPolicyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [sections, setSections] = useState<TwoPagerSection[]>([]);
+  const [sectionsLoading, setSectionsLoading] = useState(true);
+  const [sectionsSaving, setSectionsSaving] = useState(false);
+  const [sectionsMessage, setSectionsMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -80,7 +91,90 @@ export default function SettingsPage() {
       setThesisLoading(false);
     }
     loadThesis();
+
+    async function loadPolicy() {
+      const res = await fetch("/api/admin/twopager-policy");
+      if (res.ok) {
+        const data = await res.json();
+        setPolicy(data.policy);
+      }
+      setPolicyLoading(false);
+    }
+    loadPolicy();
+
+    async function loadSections() {
+      const res = await fetch("/api/admin/twopager-sections");
+      if (res.ok) {
+        const data = await res.json();
+        setSections(data.sections);
+      }
+      setSectionsLoading(false);
+    }
+    loadSections();
   }, [isAdmin]);
+
+  async function handlePolicySave() {
+    setPolicyMessage(null);
+    if (!policy.trim()) {
+      setPolicyMessage({ type: "error", text: "Policy text cannot be empty" });
+      return;
+    }
+    setPolicySaving(true);
+    const res = await fetch("/api/admin/twopager-policy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ policy }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setPolicy(data.policy);
+      setPolicyMessage({ type: "success", text: "2-Pager policy updated" });
+    } else {
+      setPolicyMessage({ type: "error", text: data.error ?? "Could not save policy" });
+    }
+    setPolicySaving(false);
+  }
+
+  function updateSection(idx: number, patch: Partial<TwoPagerSection>) {
+    setSections(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s));
+  }
+  function removeSection(idx: number) {
+    setSections(prev => prev.filter((_, i) => i !== idx));
+  }
+  function moveSection(idx: number, dir: -1 | 1) {
+    setSections(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+  function addSection() {
+    setSections(prev => [...prev, { id: crypto.randomUUID(), title: "New Section", guidance: "" }]);
+  }
+
+  async function handleSectionsSave() {
+    setSectionsMessage(null);
+    if (sections.length === 0 || sections.some(s => !s.title.trim())) {
+      setSectionsMessage({ type: "error", text: "Every section needs a title" });
+      return;
+    }
+    setSectionsSaving(true);
+    const res = await fetch("/api/admin/twopager-sections", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sections }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setSections(data.sections);
+      setSectionsMessage({ type: "success", text: "2-Pager default structure updated" });
+    } else {
+      setSectionsMessage({ type: "error", text: data.error ?? "Could not save structure" });
+    }
+    setSectionsSaving(false);
+  }
 
   async function handleThesisSave() {
     setThesisMessage(null);
@@ -363,6 +457,136 @@ export default function SettingsPage() {
               className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {thesisSaving ? "Saving…" : "Save Thesis"}
+            </button>
+          </div>
+        )}
+
+        {/* 2-Pager Investment Policy (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+            <div>
+              <h2 className="text-[16px] font-semibold text-carbon">2-Pager Investment Policy</h2>
+              <p className="text-[12px] text-slate mt-1">
+                Tone, emphasis, and formatting guidance for the Company 2-Pager document type
+                (separate from the Investment Thesis used for company scoring).
+              </p>
+            </div>
+
+            {policyLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : (
+              <textarea
+                value={policy}
+                onChange={e => setPolicy(e.target.value)}
+                rows={12}
+                className="w-full px-3 py-2.5 text-[12px] leading-relaxed bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange font-mono"
+              />
+            )}
+
+            {policyMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border ${
+                policyMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {policyMessage.text}
+              </div>
+            )}
+
+            <button
+              onClick={handlePolicySave}
+              disabled={policySaving || policyLoading}
+              className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {policySaving ? "Saving…" : "Save Policy"}
+            </button>
+          </div>
+        )}
+
+        {/* 2-Pager Default Structure (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+            <div>
+              <h2 className="text-[16px] font-semibold text-carbon">2-Pager Default Structure</h2>
+              <p className="text-[12px] text-slate mt-1">
+                Default section outline for the Company 2-Pager. Each user can still edit their own copy
+                of this outline when building a specific document.
+              </p>
+            </div>
+
+            {sectionsLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : (
+              <div className="space-y-3">
+                {sections.map((s, idx) => (
+                  <div key={s.id} className="border border-chalk rounded-[8px] p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={s.title}
+                        onChange={e => updateSection(idx, { title: e.target.value })}
+                        placeholder="Section title"
+                        className="flex-1 px-3 py-2 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-orange"
+                      />
+                      <button
+                        onClick={() => moveSection(idx, -1)}
+                        disabled={idx === 0}
+                        className="px-2 py-2 text-slate hover:text-carbon disabled:opacity-30 text-[12px]"
+                        title="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => moveSection(idx, 1)}
+                        disabled={idx === sections.length - 1}
+                        className="px-2 py-2 text-slate hover:text-carbon disabled:opacity-30 text-[12px]"
+                        title="Move down"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() => removeSection(idx)}
+                        className="px-2 py-2 text-red-500 hover:text-red-700 text-[12px]"
+                        title="Remove section"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <textarea
+                      value={s.guidance}
+                      onChange={e => updateSection(idx, { guidance: e.target.value })}
+                      placeholder="Guidance for what this section should cover"
+                      rows={2}
+                      className="w-full px-3 py-2 text-[11px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange"
+                    />
+                  </div>
+                ))}
+
+                <button
+                  onClick={addSection}
+                  className="w-full py-2 border border-dashed border-chalk rounded-[8px] text-[12px] text-slate hover:text-carbon hover:border-graphite transition-colors"
+                >
+                  + Add Section
+                </button>
+              </div>
+            )}
+
+            {sectionsMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border ${
+                sectionsMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {sectionsMessage.text}
+              </div>
+            )}
+
+            <button
+              onClick={handleSectionsSave}
+              disabled={sectionsSaving || sectionsLoading}
+              className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {sectionsSaving ? "Saving…" : "Save Structure"}
             </button>
           </div>
         )}

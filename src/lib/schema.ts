@@ -198,8 +198,20 @@ export const mandateMatches = pgTable("MandateMatch", {
 export const firmSettings = pgTable("FirmSettings", {
   id:                text("id").primaryKey(),
   investmentThesis:  text("investmentThesis"),
+  twoPagerPolicy:    text("twoPagerPolicy"),
   updatedAt:         text("updatedAt").default(sql`now()`),
   updatedBy:         text("updatedBy"),
+});
+
+// ── 2-Pager Section Structure (singleton row, id = "default") ─────────────────
+// Admin-defined default outline for the "Company 2-Pager" document type.
+// Each user can further edit this list per-build; only the admin default lives here.
+
+export const twoPagerSectionsConfig = pgTable("TwoPagerSectionsConfig", {
+  id:        text("id").primaryKey(),
+  sections:  text("sections").notNull(), // JSON array of { id, title, guidance }
+  updatedAt: text("updatedAt").default(sql`now()`),
+  updatedBy: text("updatedBy"),
 });
 
 // ── Document Templates ────────────────────────────────────────────────────────
