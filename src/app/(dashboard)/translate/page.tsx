@@ -151,13 +151,22 @@ export default function TranslatePage() {
         done = !!batchJson.done;
       }
 
-      // 4. Finalize — reassemble and download
+      // 4. Finalize — reassemble and download. The job blob can briefly lag
+      //    behind the last batch write (CDN propagation), so finalize itself
+      //    retries server-side — but retry here too in case that's still not
+      //    enough, rather than surfacing a transient "not finished yet" as a
+      //    hard failure to the user.
       setPhase("finalizing");
-      const finalizeRes = await fetch("/api/documents/translate/finalize", {
+      const attemptFinalize = () => fetch("/api/documents/translate/finalize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId, jobUrl }),
       });
+      let finalizeRes = await attemptFinalize();
+      for (let attempt = 0; finalizeRes.status === 409 && attempt < 2; attempt++) {
+        await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+        finalizeRes = await attemptFinalize();
+      }
       if (!finalizeRes.ok) {
         const j = await finalizeRes.json().catch(() => ({}));
         throw new Error(j.message ?? j.error ?? "Could not finalize the translated document");
