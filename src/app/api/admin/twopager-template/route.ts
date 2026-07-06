@@ -27,13 +27,18 @@ export async function PATCH(req: NextRequest) {
   const url = typeof body?.url === "string" ? body.url.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
 
-  await db
-    .insert(firmSettings)
-    .values({ id: FIRM_SETTINGS_ID, twoPagerTemplateUrl: url || null, twoPagerTemplateName: name || null, updatedBy: session.user.id })
-    .onConflictDoUpdate({
-      target: firmSettings.id,
-      set: { twoPagerTemplateUrl: url || null, twoPagerTemplateName: name || null, updatedBy: session.user.id, updatedAt: new Date().toISOString() },
-    });
+  try {
+    await db
+      .insert(firmSettings)
+      .values({ id: FIRM_SETTINGS_ID, twoPagerTemplateUrl: url || null, twoPagerTemplateName: name || null, updatedBy: session.user.id })
+      .onConflictDoUpdate({
+        target: firmSettings.id,
+        set: { twoPagerTemplateUrl: url || null, twoPagerTemplateName: name || null, updatedBy: session.user.id, updatedAt: new Date().toISOString() },
+      });
+  } catch (e) {
+    console.error("[twopager-template PATCH]", e);
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Database error saving template" }, { status: 500 });
+  }
 
   return NextResponse.json({ url: url || null, name: name || null });
 }
