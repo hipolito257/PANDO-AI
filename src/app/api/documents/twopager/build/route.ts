@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { firmSettings } from "@/lib/schema";
+import { FIRM_SETTINGS_ID } from "@/lib/firmThesis";
+import { eq } from "drizzle-orm";
 import { buildTwoPagerDocx, TwoPagerSectionContent } from "@/lib/twoPagerBuilder";
+import { buildTwoPagerFromTemplate } from "@/lib/twoPagerTemplateBuilder";
 import { stripEmDashes } from "@/lib/utils";
 
 export const maxDuration = 60;
@@ -28,7 +33,18 @@ export async function POST(req: NextRequest) {
     const title = clean.title || companyName;
     const subtitle = clean.subtitle || "Investment Overview";
 
-    const buffer = await buildTwoPagerDocx(title, subtitle, clean.sections);
+    const settingsRow = await db.query.firmSettings.findFirst({ where: eq(firmSettings.id, FIRM_SETTINGS_ID) }).catch(() => null);
+    const templateUrl = settingsRow?.twoPagerTemplateUrl;
+
+    let buffer: Buffer;
+    if (templateUrl) {
+      const templateRes = await fetch(templateUrl);
+      if (!templateRes.ok) throw new Error("Could not download the admin-configured 2-pager template");
+      const templateBuffer = Buffer.from(await templateRes.arrayBuffer());
+      buffer = await buildTwoPagerFromTemplate(templateBuffer, { title, subtitle, sections: clean.sections });
+    } else {
+      buffer = await buildTwoPagerDocx(title, subtitle, clean.sections);
+    }
     const filename = `${companyName.replace(/[^a-zA-Z0-9_-]/g, "_")}_2Pager_${new Date().toISOString().slice(0, 10)}.docx`;
 
     return NextResponse.json({

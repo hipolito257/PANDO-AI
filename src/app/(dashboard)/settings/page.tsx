@@ -48,6 +48,11 @@ export default function SettingsPage() {
   const [sectionsSaving, setSectionsSaving] = useState(false);
   const [sectionsMessage, setSectionsMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  const [templateName, setTemplateName] = useState<string | null>(null);
+  const [templateLoading, setTemplateLoading] = useState(true);
+  const [templateUploading, setTemplateUploading] = useState(false);
+  const [templateMessage, setTemplateMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   useEffect(() => {
     async function load() {
       const res = await fetch("/api/user/api-key");
@@ -111,6 +116,16 @@ export default function SettingsPage() {
       setSectionsLoading(false);
     }
     loadSections();
+
+    async function loadTemplate() {
+      const res = await fetch("/api/admin/twopager-template");
+      if (res.ok) {
+        const data = await res.json();
+        setTemplateName(data.name);
+      }
+      setTemplateLoading(false);
+    }
+    loadTemplate();
   }, [isAdmin]);
 
   async function handlePolicySave() {
@@ -174,6 +189,60 @@ export default function SettingsPage() {
       setSectionsMessage({ type: "error", text: data.error ?? "Could not save structure" });
     }
     setSectionsSaving(false);
+  }
+
+  async function handleTemplateUpload(file: File) {
+    setTemplateMessage(null);
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "docx") {
+      setTemplateMessage({ type: "error", text: "Please upload a .docx file" });
+      return;
+    }
+    setTemplateUploading(true);
+    try {
+      const CHUNK_SIZE = 3 * 1024 * 1024;
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const chunkUrls: string[] = [];
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const fd = new FormData();
+        fd.append("chunk", chunk);
+        fd.append("uploadId", uploadId);
+        fd.append("chunkIndex", String(i));
+        fd.append("filename", file.name);
+        const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`Part ${i + 1}/${totalChunks} failed (HTTP ${res.status})`);
+        const { chunkUrl } = await res.json();
+        chunkUrls.push(chunkUrl);
+      }
+
+      const finalRes = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: file.name }),
+      });
+      if (!finalRes.ok) {
+        const j = await finalRes.json().catch(() => ({}));
+        throw new Error(j.error ?? "Error assembling file");
+      }
+      const { blobUrl } = await finalRes.json();
+
+      const regRes = await fetch("/api/admin/twopager-template", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: blobUrl, name: file.name }),
+      });
+      const data = await regRes.json().catch(() => ({}));
+      if (!regRes.ok) throw new Error(data.error ?? "Error saving template");
+
+      setTemplateName(data.name);
+      setTemplateMessage({ type: "success", text: "2-Pager template updated" });
+    } catch (e) {
+      setTemplateMessage({ type: "error", text: e instanceof Error ? e.message : "Upload failed" });
+    }
+    setTemplateUploading(false);
   }
 
   async function handleThesisSave() {
@@ -588,6 +657,55 @@ export default function SettingsPage() {
             >
               {sectionsSaving ? "Saving…" : "Save Structure"}
             </button>
+          </div>
+        )}
+
+        {/* 2-Pager Template (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+            <div>
+              <h2 className="text-[16px] font-semibold text-carbon">2-Pager Template</h2>
+              <p className="text-[12px] text-slate mt-1">
+                Upload a reference .docx and every generated Company 2-Pager will match its exact
+                fonts, colors, and page structure (margins, header, footer). Only the content is
+                replaced with AI-generated text — the content of this file is never used as source
+                material, only its visual styling.
+              </p>
+            </div>
+
+            {templateLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="flex-1 px-3 py-2.5 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon truncate">
+                  {templateName ?? "No template uploaded — using PANDO default styling"}
+                </div>
+                <label className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 cursor-pointer transition-colors disabled:opacity-40">
+                  {templateUploading ? "Uploading…" : templateName ? "Replace" : "Upload"}
+                  <input
+                    type="file"
+                    accept=".docx"
+                    disabled={templateUploading}
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) handleTemplateUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+
+            {templateMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border ${
+                templateMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {templateMessage.text}
+              </div>
+            )}
           </div>
         )}
 
