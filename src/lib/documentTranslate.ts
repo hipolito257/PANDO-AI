@@ -36,7 +36,8 @@ export async function callTranslateBatch(texts: string[], apiKey: string, direct
 
 RULES:
 - Preserve meaning, tone, and register exactly — these may be formal business, financial, or legal documents.
-- Translate everything into ${targetLang}, including abbreviations, acronyms, units, and job titles — give the standard ${targetLang} form where one exists (e.g. an acronym that expands to a translatable phrase should have its expansion translated, even if the acronym letters themselves stay the same).
+- Translate everything into ${targetLang}, including abbreviations, acronyms, units, and job titles — give the standard ${targetLang} form where one exists (e.g. an acronym that expands to a translatable phrase should have its expansion translated, even if the acronym letters themselves stay the same).${targetLang === "Spanish" ? `
+- Use correct, fully-accented Spanish orthography: written accent marks (á, é, í, ó, ú) and the ñ/Ñ wherever standard spelling requires them (e.g. "año" not "ano", "años" not "anos", "compañía" not "compania", "según" not "segun"). Never drop an accent or tilde to produce plain ASCII.` : ""}
 - The ONLY things that must stay unchanged are proper names: company names, people's names, brand names, and product names. Do not translate these even if they look like ordinary words.
 - Keep numbers, dates, currency symbols, and percentages unchanged (format only, not surrounding words).
 - Preserve any placeholder tokens exactly as-is (e.g. "{{name}}", "%s", "{0}").
