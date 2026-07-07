@@ -281,13 +281,42 @@ function textRun(text: string, rPrNode: XNode | null): XNode {
   };
 }
 
-function paragraph(styleId: string, text: string, rPrNode: XNode | null): XNode {
+function paragraph(styleId: string, text: string, rPrNode: XNode | null, sectionBreak?: XNode): XNode {
+  const pPrChildren: XNode[] = [{ "w:pStyle": [], ":@": { "@_w:val": styleId } }];
+  // A section-break sectPr must be the last child of pPr (schema-ordered
+  // after pStyle et al.) — safe here since we never add other pPr children.
+  if (sectionBreak) pPrChildren.push(sectionBreak);
   return {
     "w:p": [
-      { "w:pPr": [{ "w:pStyle": [], ":@": { "@_w:val": styleId } }] },
+      { "w:pPr": pPrChildren },
       textRun(text, rPrNode),
     ],
   };
+}
+
+// Word documents commonly split a "2-pager" into a single-column title/header
+// banner section followed by a multi-column body section (a continuous
+// section break in between). That break is a <w:sectPr> nested inside a
+// paragraph's <w:pPr>, not a direct child of <w:body> — only the FINAL
+// section's sectPr is a direct body child. Collecting every sectPr in
+// document order lets us reproduce that same section structure instead of
+// collapsing the whole document into a single section (which silently drops
+// the header/logo reference and/or the column layout).
+function collectOrderedSectPrs(bodyNodes: XNode[]): XNode[] {
+  const out: XNode[] = [];
+  for (const node of bodyNodes) {
+    const tag = tagOf(node);
+    if (tag === "w:sectPr") { out.push(node); continue; }
+    if (tag === "w:p") {
+      const children = (node["w:p"] as XNode[]) ?? [];
+      const pPrNode = findFirst(children, "w:pPr");
+      if (pPrNode) {
+        const nested = findFirst((pPrNode["w:pPr"] as XNode[]) ?? [], "w:sectPr");
+        if (nested) out.push(nested);
+      }
+    }
+  }
+  return out;
 }
 
 interface TemplatePlan {
@@ -326,11 +355,15 @@ export async function buildTwoPagerFromTemplate(
   if (!bodyNode) throw new Error("Template document.xml has no <w:body>");
 
   const originalBody = bodyNode["w:body"] as XNode[];
-  // The page setup (margins, size, headers/footers refs) lives in the trailing
-  // w:sectPr — a direct child of w:body, not wrapped in a paragraph. Keep the
-  // last one found (covers the common single-section-per-document case).
-  let sectPr: XNode | null = null;
-  for (const node of originalBody) if (tagOf(node) === "w:sectPr") sectPr = node;
+  // Reproduce the template's section structure: if it has more than one
+  // section (e.g. a single-column title banner followed by a multi-column
+  // body), put the first section's break right after our title/subtitle
+  // (the natural analog of a template's front-matter section) and use the
+  // last section's page setup for everything else, instead of collapsing
+  // the whole document into a single section.
+  const sectPrs = collectOrderedSectPrs(originalBody);
+  const finalSectPr = sectPrs.length ? sectPrs[sectPrs.length - 1] : null;
+  const frontSectionBreak = sectPrs.length > 1 ? sectPrs[0] : undefined;
 
   // Resolve what each role actually looks like in THIS template, from real
   // paragraphs where possible, before we discard the original body content.
@@ -349,7 +382,7 @@ export async function buildTwoPagerFromTemplate(
 
   const newBody: XNode[] = [
     paragraph(titleStyle, plan.title, titleRPr),
-    paragraph(subtitleStyle, plan.subtitle, subtitleRPr),
+    paragraph(subtitleStyle, plan.subtitle, subtitleRPr, frontSectionBreak),
   ];
 
   for (const section of plan.sections) {
@@ -357,7 +390,7 @@ export async function buildTwoPagerFromTemplate(
     for (const p of section.paragraphs) newBody.push(paragraph(bodyStyle, p, bodyRPr));
   }
 
-  if (sectPr) newBody.push(sectPr);
+  if (finalSectPr) newBody.push(finalSectPr);
 
   bodyNode["w:body"] = newBody;
 
