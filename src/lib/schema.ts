@@ -196,13 +196,13 @@ export const mandateMatches = pgTable("MandateMatch", {
 // ── Firm Settings (singleton row, id = "default") ──────────────────────────────
 
 export const firmSettings = pgTable("FirmSettings", {
-  id:                   text("id").primaryKey(),
-  investmentThesis:     text("investmentThesis"),
-  twoPagerPolicy:       text("twoPagerPolicy"),
-  twoPagerTemplateUrl:  text("twoPagerTemplateUrl"),
-  twoPagerTemplateName: text("twoPagerTemplateName"),
-  updatedAt:            text("updatedAt").default(sql`now()`),
-  updatedBy:            text("updatedBy"),
+  id:                     text("id").primaryKey(),
+  investmentThesis:       text("investmentThesis"),
+  investmentThesisFileName: text("investmentThesisFileName"),
+  twoPagerTemplateUrl:    text("twoPagerTemplateUrl"),
+  twoPagerTemplateName:   text("twoPagerTemplateName"),
+  updatedAt:              text("updatedAt").default(sql`now()`),
+  updatedBy:              text("updatedBy"),
 });
 
 // ── 2-Pager Section Structure (singleton row, id = "default") ─────────────────

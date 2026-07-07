@@ -34,14 +34,10 @@ export default function SettingsPage() {
   const [resetMessage, setResetMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [thesis, setThesis] = useState("");
+  const [thesisFileName, setThesisFileName] = useState<string | null>(null);
   const [thesisLoading, setThesisLoading] = useState(true);
-  const [thesisSaving, setThesisSaving] = useState(false);
+  const [thesisUploading, setThesisUploading] = useState(false);
   const [thesisMessage, setThesisMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
-  const [policy, setPolicy] = useState("");
-  const [policyLoading, setPolicyLoading] = useState(true);
-  const [policySaving, setPolicySaving] = useState(false);
-  const [policyMessage, setPolicyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [sections, setSections] = useState<TwoPagerSection[]>([]);
   const [sectionsLoading, setSectionsLoading] = useState(true);
@@ -92,20 +88,11 @@ export default function SettingsPage() {
       if (res.ok) {
         const data = await res.json();
         setThesis(data.thesis);
+        setThesisFileName(data.fileName);
       }
       setThesisLoading(false);
     }
     loadThesis();
-
-    async function loadPolicy() {
-      const res = await fetch("/api/admin/twopager-policy");
-      if (res.ok) {
-        const data = await res.json();
-        setPolicy(data.policy);
-      }
-      setPolicyLoading(false);
-    }
-    loadPolicy();
 
     async function loadSections() {
       const res = await fetch("/api/admin/twopager-sections");
@@ -127,28 +114,6 @@ export default function SettingsPage() {
     }
     loadTemplate();
   }, [isAdmin]);
-
-  async function handlePolicySave() {
-    setPolicyMessage(null);
-    if (!policy.trim()) {
-      setPolicyMessage({ type: "error", text: "Policy text cannot be empty" });
-      return;
-    }
-    setPolicySaving(true);
-    const res = await fetch("/api/admin/twopager-policy", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ policy }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      setPolicy(data.policy);
-      setPolicyMessage({ type: "success", text: "2-Pager policy updated" });
-    } else {
-      setPolicyMessage({ type: "error", text: data.error ?? "Could not save policy" });
-    }
-    setPolicySaving(false);
-  }
 
   function updateSection(idx: number, patch: Partial<TwoPagerSection>) {
     setSections(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s));
@@ -245,26 +210,59 @@ export default function SettingsPage() {
     setTemplateUploading(false);
   }
 
-  async function handleThesisSave() {
+  async function handleThesisUpload(file: File) {
     setThesisMessage(null);
-    if (!thesis.trim()) {
-      setThesisMessage({ type: "error", text: "Thesis text cannot be empty" });
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "docx") {
+      setThesisMessage({ type: "error", text: "Please upload a .docx file" });
       return;
     }
-    setThesisSaving(true);
-    const res = await fetch("/api/admin/firm-thesis", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ thesis }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
+    setThesisUploading(true);
+    try {
+      const CHUNK_SIZE = 3 * 1024 * 1024;
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const chunkUrls: string[] = [];
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const fd = new FormData();
+        fd.append("chunk", chunk);
+        fd.append("uploadId", uploadId);
+        fd.append("chunkIndex", String(i));
+        fd.append("filename", file.name);
+        const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`Part ${i + 1}/${totalChunks} failed (HTTP ${res.status})`);
+        const { chunkUrl } = await res.json();
+        chunkUrls.push(chunkUrl);
+      }
+
+      const finalRes = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: file.name }),
+      });
+      if (!finalRes.ok) {
+        const j = await finalRes.json().catch(() => ({}));
+        throw new Error(j.error ?? "Error assembling file");
+      }
+      const { blobUrl } = await finalRes.json();
+
+      const regRes = await fetch("/api/admin/firm-thesis", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: blobUrl, name: file.name }),
+      });
+      const data = await regRes.json().catch(() => ({}));
+      if (!regRes.ok) throw new Error(data.error ?? "Error saving thesis");
+
       setThesis(data.thesis);
-      setThesisMessage({ type: "success", text: "Investment thesis updated — used by the scan cron and document scanner" });
-    } else {
-      setThesisMessage({ type: "error", text: data.error ?? "Could not save thesis" });
+      setThesisFileName(data.fileName);
+      setThesisMessage({ type: "success", text: "Investment thesis updated — used by the scan cron, document scanner, and Company 2-Pager" });
+    } catch (e) {
+      setThesisMessage({ type: "error", text: e instanceof Error ? e.message : "Upload failed" });
     }
-    setThesisSaving(false);
+    setThesisUploading(false);
   }
 
   async function handlePendingAction(id: string, action: "approve" | "decline") {
@@ -494,20 +492,44 @@ export default function SettingsPage() {
             <div>
               <h2 className="text-[16px] font-semibold text-carbon">Investment Thesis</h2>
               <p className="text-[12px] text-slate mt-1">
-                Pando's investment policy, used by the discovery cron and the "Scan document with AI" feature
-                to score how well a company fits the fund's mandate.
+                Pando's investment policy, used by the discovery cron, the "Scan document with AI" feature,
+                and the Company 2-Pager to ground scoring and generated content in the fund's mandate.
+                Upload a reference .docx to replace it, the text is extracted automatically and there is
+                no word-by-word editing here.
               </p>
             </div>
 
             {thesisLoading ? (
               <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
             ) : (
-              <textarea
-                value={thesis}
-                onChange={e => setThesis(e.target.value)}
-                rows={16}
-                className="w-full px-3 py-2.5 text-[12px] leading-relaxed bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange font-mono"
-              />
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 px-3 py-2.5 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon truncate">
+                    {thesisFileName ?? "No file uploaded — using PANDO default thesis"}
+                  </div>
+                  <label className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 cursor-pointer transition-colors disabled:opacity-40">
+                    {thesisUploading ? "Uploading…" : thesisFileName ? "Replace" : "Upload"}
+                    <input
+                      type="file"
+                      accept=".docx"
+                      className="hidden"
+                      disabled={thesisUploading}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) handleThesisUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <textarea
+                  value={thesis}
+                  readOnly
+                  rows={14}
+                  className="w-full px-3 py-2.5 text-[12px] leading-relaxed bg-fog border border-chalk rounded-[8px] text-slate placeholder:text-slate/60 focus:outline-none font-mono cursor-not-allowed"
+                />
+              </>
             )}
 
             {thesisMessage && (
@@ -519,56 +541,6 @@ export default function SettingsPage() {
                 {thesisMessage.text}
               </div>
             )}
-
-            <button
-              onClick={handleThesisSave}
-              disabled={thesisSaving || thesisLoading}
-              className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {thesisSaving ? "Saving…" : "Save Thesis"}
-            </button>
-          </div>
-        )}
-
-        {/* 2-Pager Investment Policy (admin only) */}
-        {isAdmin && (
-          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
-            <div>
-              <h2 className="text-[16px] font-semibold text-carbon">2-Pager Investment Policy</h2>
-              <p className="text-[12px] text-slate mt-1">
-                Tone, emphasis, and formatting guidance for the Company 2-Pager document type
-                (separate from the Investment Thesis used for company scoring).
-              </p>
-            </div>
-
-            {policyLoading ? (
-              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
-            ) : (
-              <textarea
-                value={policy}
-                onChange={e => setPolicy(e.target.value)}
-                rows={12}
-                className="w-full px-3 py-2.5 text-[12px] leading-relaxed bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange font-mono"
-              />
-            )}
-
-            {policyMessage && (
-              <div className={`rounded-[8px] p-3 text-[12px] border ${
-                policyMessage.type === "success"
-                  ? "bg-green-50 text-green-700 border-green-200"
-                  : "bg-red-50 text-red-700 border-red-200"
-              }`}>
-                {policyMessage.text}
-              </div>
-            )}
-
-            <button
-              onClick={handlePolicySave}
-              disabled={policySaving || policyLoading}
-              className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {policySaving ? "Saving…" : "Save Policy"}
-            </button>
           </div>
         )}
 

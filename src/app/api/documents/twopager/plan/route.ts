@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
 import { stripEmDashes } from "@/lib/utils";
-import { getTwoPagerPolicy } from "@/lib/twoPagerPolicy";
+import { getFirmThesis } from "@/lib/firmThesis";
 
 export const maxDuration = 120;
 
@@ -83,7 +83,7 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
       }
     }
 
-    const policy = await getTwoPagerPolicy();
+    const policy = await getFirmThesis();
     const today = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
     const totalWords = pageCount * WORDS_PER_PAGE;
     const wordsPerSection = Math.round(totalWords / sections.length);
@@ -126,7 +126,7 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
       max_tokens: 8000,
       system: `You are a senior analyst at PANDO, a private equity fund, writing a Company 2-Pager: a short, external-facing investment brief.
 
-PANDO 2-PAGER POLICY (tone, what to emphasize/avoid, formatting):
+PANDO INVESTMENT THESIS (the fund's mandate and underwriting policy; ground the brief's framing in this):
 ${policy}
 
 COMPANY DATA:
