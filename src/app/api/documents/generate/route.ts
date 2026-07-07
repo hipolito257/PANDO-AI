@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { documentTemplates, companies, compSets, publicComps } from "@/lib/schema";
 import path from "path";
 import fs from "fs";
+import { fmtMoneyDoc } from "@/lib/utils";
 
 export const maxDuration = 300;
 
@@ -13,11 +14,7 @@ const UPLOADS_DIR = path.join(process.cwd(), "uploads", "templates");
 function fmtB(n: unknown): string {
   if (n == null) return "N/D";
   const v = Number(n);
-  if (isNaN(v)) return "N/D";
-  if (Math.abs(v) >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
-  if (Math.abs(v) >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
-  if (Math.abs(v) >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-  return `$${v.toFixed(0)}`;
+  return isNaN(v) ? "N/D" : fmtMoneyDoc(v);
 }
 function fmtPct(n: unknown): string {
   if (n == null) return "N/D";
@@ -378,6 +375,8 @@ ${userPrompt ? `\nUSER INSTRUCTIONS:\n${userPrompt}` : ""}
 
 LANGUAGE — CRITICAL: Write every sheet name, header, and cell value in English, even if the reference documents or company data are in Spanish or another language. Translate anything you pull from those sources into English. Never mix languages in the output.
 
+MONEY FORMAT: Write every money figure exactly like this: "USD $200 m" (millions), "USD $850 k" (thousands), "USD $1.2 bn" (billions) — currency code, then symbol+number, then a space and lowercase suffix (k/m/bn). Use "MXN $" or "EUR €" instead of "USD $" when the figure is explicitly in pesos or euros. Never write "$200M", "200 million dollars", or similar.
+
 RESPONSE FORMAT — return ONLY this JSON (no extra text, no markdown):
 {
   "sheets": [
@@ -543,6 +542,7 @@ MODIFICATION RULES:
 4. Keep UNCHANGED (in content): generic section titles, column labels, structural headers — do not remove or restructure them.
 5. LANGUAGE — CRITICAL: The final document must be entirely in English, with no mixed languages. This applies to every piece of text you write in "replace", INCLUDING generic section titles/column labels/structural headers if they are not already in English — translate them to English as part of your replacements rather than leaving them unchanged. Never output Spanish (or any other language) text anywhere in "replace".
 6. CRITICAL: The "find" field must be the EXACT text as it appears in the document (including "&amp;" if "&amp;" appears), even if that text is in a non-English language.
+7. MONEY FORMAT: Write every money figure exactly like this: "USD $200 m" (millions), "USD $850 k" (thousands), "USD $1.2 bn" (billions) — currency code, then symbol+number, then a space and lowercase suffix (k/m/bn). Use "MXN $" or "EUR €" instead of "USD $" when the figure is explicitly in pesos or euros. Never write "$200M", "200 million dollars", or similar.
 
 Respond ONLY with a JSON array (no text, no markdown):
 [{"find": "exact text from the document", "replace": "new content"}, ...]

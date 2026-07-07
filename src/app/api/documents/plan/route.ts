@@ -6,7 +6,7 @@ import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
-import { stripEmDashes } from "@/lib/utils";
+import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
 
 export const maxDuration = 120;
 
@@ -16,13 +16,10 @@ function median(arr: number[]): number | null {
   const m = Math.floor(s.length / 2);
   return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
 }
-function fmt(n: unknown, suffix = ""): string {
+function fmt(n: unknown): string {
   if (n == null) return "N/D";
   const v = Number(n);
-  if (isNaN(v)) return "N/D";
-  if (Math.abs(v) >= 1e9) return `$${(v / 1e9).toFixed(1)}B${suffix}`;
-  if (Math.abs(v) >= 1e6) return `$${(v / 1e6).toFixed(0)}M${suffix}`;
-  return `$${v.toFixed(0)}${suffix}`;
+  return isNaN(v) ? "N/D" : fmtMoneyDoc(v);
 }
 
 export async function POST(req: NextRequest) {
@@ -148,6 +145,8 @@ ELEMENT TYPES (to indicate in the plan) — vary these across the deck, don't re
 - bar with hatched perception vs solid experience series + pps-delta call-outs: stated PERCEPTION vs measured EXPERIENCE comparison across attributes
 
 NEVER use em-dashes (—) anywhere in any field — not in deck_title, titles, takeaways, or section names. Use a comma, colon, or period instead.
+
+Format every money figure exactly like this: "USD $200 m" (millions), "USD $850 k" (thousands), "USD $1.2 bn" (billions) — currency code, then symbol+number, then a space and lowercase suffix (k/m/bn). Use "MXN $" or "EUR €" instead of "USD $" when the figure is explicitly in pesos or euros. Never write "$200M", "200 million dollars", or similar.
 
 RESPONSE FORMAT — your entire reply must be ONLY this JSON object and nothing else: no preamble, no summary of the attached document, no analysis, no markdown code fences. The first character of your reply must be "{".
 {

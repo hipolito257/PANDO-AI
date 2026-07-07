@@ -25,6 +25,27 @@ export function fmtM(n: number | null | undefined) {
   return `$${n.toFixed(0)}K`;
 }
 
+const DOC_CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", MXN: "$", EUR: "€", GBP: "£" };
+
+// Shared money format for AI-generated documents (2-pager, PPTX, docx/xlsx
+// templates) — always "{CODE} {symbol}{number} {k|m|bn}", e.g. "USD $200 m",
+// "MXN $200 m", "EUR €200 m". Distinct from the dashboard's compact fmtM
+// (no currency code, used in tight on-screen company cards) — this one is
+// specifically for document generation, where the source currency should
+// always be explicit rather than assumed.
+export function fmtMoneyDoc(n: number | null | undefined, currency: string = "USD"): string {
+  if (n == null || isNaN(n)) return "N/D";
+  const symbol = DOC_CURRENCY_SYMBOLS[currency] ?? "";
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  let value: string;
+  if (abs >= 1e9) value = `${(abs / 1e9).toFixed(1)} bn`;
+  else if (abs >= 1e6) value = `${(abs / 1e6).toFixed(0)} m`;
+  else if (abs >= 1e3) value = `${(abs / 1e3).toFixed(0)} k`;
+  else value = abs.toFixed(0);
+  return `${currency} ${sign}${symbol}${value}`;
+}
+
 export function fmtPct(n: number | null | undefined) {
   if (n == null) return "—";
   const sign = n > 0 ? "+" : "";

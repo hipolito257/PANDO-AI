@@ -6,7 +6,7 @@ import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
-import { stripEmDashes } from "@/lib/utils";
+import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
 
 export const maxDuration = 300;
 
@@ -137,6 +137,7 @@ PANDO STYLE:
 - Never use emoji characters anywhere (titles, bullets, shape text, icon_row glyphs) — they render inconsistently in PowerPoint. Use icon_row's glyph (a letter/number) for iconography instead.
 - Notes format: "Source  [source name]" (two spaces).
 - NEVER use em-dashes (—) anywhere — not in titles, takeaways, body copy, bullets, or element text. Use a comma, colon, period, or parentheses instead. Write "X, which drove Y" or "X: Y" or two sentences, not "X — Y".
+- Format every money figure exactly like this: "USD $200 m" (millions), "USD $850 k" (thousands), "USD $1.2 bn" (billions) — currency code, then symbol+number, then a space and lowercase suffix (k/m/bn). Use "MXN $" or "EUR €" instead of "USD $" when the figure is explicitly in pesos or euros. Never write "$200M", "200 million dollars", or similar.
 
 COMPANY DATA:
 ${companyData}
@@ -171,10 +172,7 @@ function median(arr: number[]): number | null {
 function fmtNum(n: unknown): string {
   if (n == null) return "N/D";
   const v = Number(n);
-  if (isNaN(v)) return "N/D";
-  if (Math.abs(v) >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
-  if (Math.abs(v) >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
-  return `$${v.toFixed(0)}`;
+  return isNaN(v) ? "N/D" : fmtMoneyDoc(v);
 }
 
 function repairJson(s: string): string {
