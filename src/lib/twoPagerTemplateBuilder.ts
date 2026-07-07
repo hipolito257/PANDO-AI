@@ -50,7 +50,7 @@ function findFirst(nodes: XNode[], tag: string): XNode | null {
   return null;
 }
 
-// ── Resolved run formatting (font/size/color/bold/italic) ───────────────────
+// ── Resolved run formatting (font/size/color/bold/italic/underline) ─────────
 interface RunFormat {
   asciiFont?: string;
   hAnsiFont?: string;
@@ -60,6 +60,7 @@ interface RunFormat {
   color?: string;
   bold?: boolean;
   italic?: boolean;
+  underline?: boolean;
 }
 
 function parseRPrChildren(children: XNode[]): RunFormat {
@@ -89,6 +90,9 @@ function parseRPrChildren(children: XNode[]): RunFormat {
         break;
       case "w:i":
         fmt.italic = !isOff;
+        break;
+      case "w:u":
+        fmt.underline = attrs["@_w:val"] !== undefined && attrs["@_w:val"] !== "none";
         break;
     }
   }
@@ -158,11 +162,6 @@ function pickStyle(available: Set<string>, chain: string[]): string {
   return chain[chain.length - 1];
 }
 
-const HEADING_STYLE_PATTERN = /^(Title|Subtitle|Heading\d?)$/i;
-function isHeadingStyle(styleId: string): boolean {
-  return HEADING_STYLE_PATTERN.test(styleId);
-}
-
 interface ParagraphExample {
   styleId: string;
   format: RunFormat;
@@ -228,24 +227,56 @@ function formatForStyle(
   return fullResolve(styleId, styles, docDefaults, {});
 }
 
-// Word's styles.xml always defines stock Title/Heading1-9/Subtitle entries
-// even when the author never used them — so their mere presence in the
-// style list isn't evidence the template actually looks like that (they
-// often resolve to a generic default font like Times New Roman via
-// docDefaults). If no real paragraph in the template uses a given heading
-// style, derive its look from the template's actual body font instead of
-// trusting the unused stock style definition, so headings never end up in
-// a font foreign to the document.
-function headingFormat(
-  styleId: string,
-  examples: ParagraphExample[],
-  bodyFormat: RunFormat,
-  scale: number,
-): RunFormat {
-  const example = examples.find(e => e.styleId === styleId);
-  if (example) return example.format;
-  const baseSz = bodyFormat.sz ? parseInt(bodyFormat.sz, 10) : 22; // default ~11pt in half-points
-  return { ...bodyFormat, bold: true, sz: String(Math.round(baseSz * scale)) };
+function szNum(f: RunFormat): number {
+  return f.sz ? parseInt(f.sz, 10) : 22; // default ~11pt body text, in half-points
+}
+
+// Most real-world templates never apply Word's named heading styles at all
+// (everything is "Normal"), and simply distinguish headings from body text
+// with direct formatting — a bigger size, bold, and/or underline. Word's
+// styles.xml also always defines stock Title/Heading1-9 entries whether or
+// not the author ever used them, so their mere presence isn't evidence the
+// template actually looks like that. Detect the real heading look by finding
+// the most common formatting that is BOTH distinct from body text and
+// visually heading-like (larger / bolder / underlined), rather than trusting
+// style names.
+// A bigger score means "more visually distinct from body, the way a
+// standalone section heading would be" — a document can have several bold
+// treatments (e.g. inline bold lead-in labels within a body paragraph, like
+// "Group I:"), and those are usually more numerous (one per paragraph) than
+// genuine standalone headings, so ranking candidates by raw frequency alone
+// picks the wrong one. Weighting a real size bump above mere bold/underline
+// favors the format actually used for whole standalone heading paragraphs.
+function headingScore(candidate: RunFormat, body: RunFormat): number {
+  let score = 0;
+  if (szNum(candidate) > szNum(body)) score += 2;
+  if (candidate.underline && !body.underline) score += 1;
+  if (candidate.bold && !body.bold) score += 1;
+  return score;
+}
+
+function findHeadingFormat(examples: ParagraphExample[], bodyFormat: RunFormat): RunFormat | null {
+  const bodyKey = JSON.stringify(bodyFormat);
+  const counts = new Map<string, { count: number; format: RunFormat }>();
+  for (const e of examples) {
+    const key = JSON.stringify(e.format);
+    if (key === bodyKey) continue;
+    const entry = counts.get(key);
+    if (entry) entry.count++;
+    else counts.set(key, { count: 1, format: e.format });
+  }
+  const candidates = [...counts.values()]
+    .map(v => ({ ...v, score: headingScore(v.format, bodyFormat) }))
+    .filter(v => v.score > 0)
+    .sort((a, b) => b.score - a.score || b.count - a.count);
+  return candidates.length ? candidates[0].format : null;
+}
+
+// Last-resort fallback for templates with literally no visual distinction
+// between headings and body text — synthesize one from the real body font
+// rather than falling back to a foreign default font.
+function deriveHeadingFromBody(bodyFormat: RunFormat, scale: number): RunFormat {
+  return { ...bodyFormat, bold: true, sz: String(Math.round(szNum(bodyFormat) * scale)) };
 }
 
 function buildRPrNode(format: RunFormat, forceItalic?: boolean): XNode | null {
@@ -263,6 +294,7 @@ function buildRPrNode(format: RunFormat, forceItalic?: boolean): XNode | null {
   if (format.bold) children.push({ "w:b": [] });
   const italic = forceItalic !== undefined ? forceItalic : format.italic;
   if (italic) children.push({ "w:i": [] });
+  if (format.underline) children.push({ "w:u": [], ":@": { "@_w:val": "single" } });
   if (format.sz) children.push({ "w:sz": [], ":@": { "@_w:val": format.sz } });
   if (format.szCs) children.push({ "w:szCs": [], ":@": { "@_w:val": format.szCs } });
   return children.length ? { "w:rPr": children } : null;
@@ -334,13 +366,11 @@ export async function buildTwoPagerFromTemplate(
   const zip = new PizZip(templateBuffer);
 
   const { styles, docDefaults, styleIds } = parseStylesXml(zip);
+  // These style ID picks only govern the w:pStyle reference (paragraph-level
+  // properties like spacing/outline level) — visual formatting is resolved
+  // separately below from the template's actual paragraphs.
   const titleStyle = pickStyle(styleIds, ["Title", "Heading1", "Normal"]);
-  // Prefer a style distinct from the section-heading style below so the
-  // subtitle doesn't visually collide with section headings; if the template
-  // defines no dedicated "Subtitle"/"Heading3" style, fall back to italicizing
-  // the body style instead of reusing Heading2.
   const subtitleStyle = pickStyle(styleIds, ["Subtitle", "Heading3", "Normal", "Body Text"]);
-  const subtitleItalic = !styleIds.has("Subtitle") && !styleIds.has("Heading3");
   const sectionHeadingStyle = pickStyle(styleIds, ["Heading2", "Heading1", "Heading3", "Normal"]);
   const bodyStyle = pickStyle(styleIds, ["Normal", "BodyText", "Body Text"]);
 
@@ -367,13 +397,18 @@ export async function buildTwoPagerFromTemplate(
 
   // Resolve what each role actually looks like in THIS template, from real
   // paragraphs where possible, before we discard the original body content.
+  // Body/heading roles are detected by actual visual formatting (size, bold,
+  // underline), not by style name — most templates never apply Word's named
+  // heading styles at all and just distinguish headings with direct
+  // formatting on otherwise-"Normal" paragraphs.
   const examples = collectParagraphExamples(originalBody, styles, docDefaults);
-  const bodyExamples = examples.filter(e => !isHeadingStyle(e.styleId));
-  const bodyFormat = modeFormat(bodyExamples.map(e => e.format)) ?? formatForStyle(bodyStyle, examples, styles, docDefaults);
+  const bodyFormat = modeFormat(examples.map(e => e.format)) ?? formatForStyle(bodyStyle, examples, styles, docDefaults);
+  const detectedHeadingFormat = findHeadingFormat(examples, bodyFormat);
 
-  const titleFormat = headingFormat(titleStyle, examples, bodyFormat, 1.7);
-  const subtitleFormat = subtitleItalic ? bodyFormat : headingFormat(subtitleStyle, examples, bodyFormat, 1.0);
-  const sectionHeadingFormat = headingFormat(sectionHeadingStyle, examples, bodyFormat, 1.25);
+  const titleFormat = examples.length ? examples[0].format : (detectedHeadingFormat ?? deriveHeadingFromBody(bodyFormat, 1.7));
+  const sectionHeadingFormat = detectedHeadingFormat ?? deriveHeadingFromBody(bodyFormat, 1.25);
+  const subtitleFormat = detectedHeadingFormat ? sectionHeadingFormat : bodyFormat;
+  const subtitleItalic = !detectedHeadingFormat;
 
   const titleRPr = buildRPrNode(titleFormat);
   const subtitleRPr = buildRPrNode(subtitleFormat, subtitleItalic || undefined);
