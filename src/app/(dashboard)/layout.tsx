@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SessionProvider } from "next-auth/react";
 import { db } from "@/lib/db";
+import { DocJobsProvider } from "./DocJobsContext";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   let badges = { radar: 0, exit: 0 };
@@ -18,12 +19,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <SessionProvider>
-      <div className="flex h-screen overflow-hidden bg-mist">
-        <Sidebar badges={badges} />
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
-      </div>
+      <DocJobsProvider>
+        <div className="flex h-screen overflow-hidden bg-mist">
+          <Sidebar badges={badges} />
+          <main className="flex-1 overflow-y-auto">
+            {children}
+          </main>
+        </div>
+      </DocJobsProvider>
     </SessionProvider>
   );
 }

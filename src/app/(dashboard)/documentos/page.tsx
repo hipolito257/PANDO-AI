@@ -5,6 +5,7 @@ import {
   Paperclip, Sparkles, Target, Flag, Lock, FileCode, ChevronLeft,
 } from "lucide-react";
 import { usePersistentState } from "@/lib/usePersistentState";
+import { useDocJobs } from "../DocJobsContext";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -109,6 +110,7 @@ function fmtSize(b: number | null): string {
 }
 
 export default function DocumentosPage() {
+  const { jobs, runJob, clearJob } = useDocJobs();
   const [templates, setTemplates]     = useState<DocTemplate[]>([]);
   const [companies, setCompanies]     = useState<Company[]>([]);
   // Persisted to sessionStorage (not plain useState) so navigating to another
@@ -193,48 +195,70 @@ export default function DocumentosPage() {
     setTpSections(prev => [...prev, { id: crypto.randomUUID(), title: "New Section", guidance: "", included: true }]);
   }
 
+  // These jobs run inside DocJobsContext (mounted once at the dashboard-layout
+  // level), not this page component — so if the user navigates away (e.g. to
+  // Settings) while a plan/build is in flight, the request keeps running and
+  // still lands correctly instead of updating a component that no longer
+  // exists. The effects below re-sync local UI state from the job whenever it
+  // changes, including immediately on mount if it finished while away.
+  useEffect(() => {
+    const job = jobs.tpPlan;
+    if (!job) return;
+    setTpPlanning(job.status === "running");
+    if (job.status === "error") setTpPlanErr(job.error ?? "Unknown error");
+    if (job.status === "done") {
+      setTpPlanErr(null);
+      setTpPlan(job.result as TwoPagerPlan);
+      setTpEdits({});
+      setTpFeedback("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.tpPlan]);
+
+  useEffect(() => {
+    const job = jobs.tpBuild;
+    if (!job) return;
+    setTpBuilding(job.status === "running");
+    if (job.status === "error") setTpBuildErr(job.error ?? "Unknown error");
+    if (job.status === "done") {
+      setTpBuildErr(null);
+      setTpLastDownload(job.result as { url: string; filename: string });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.tpBuild]);
+
   async function handleTwoPagerPlan(feedback?: string) {
     const included = tpSections.filter(s => s.included);
     if (included.length === 0) {
       setTpPlanErr("Include at least one section");
       return;
     }
-    setTpPlanning(true); setTpPlanErr(null);
-    let blobUrls: { name: string; url: string; type: string }[] = [];
-    try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
-      setTpPlanErr("Error uploading files: " + (e instanceof Error ? e.message : String(e)));
-      setTpPlanning(false); return;
-    }
-    const fd = new FormData();
-    if (companyId) fd.append("companyId", companyId);
-    if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
-    if (feedback?.trim()) fd.append("feedback", feedback.trim());
-    fd.append("pageCount", String(pageCount));
-    fd.append("sections", JSON.stringify(included.map(s => ({ id: s.id, title: s.title, guidance: s.guidance }))));
-    if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
+    setTpPlanErr(null);
+    await runJob("tpPlan", async () => {
+      const blobUrls = await ensureContextBlobsUploaded();
+      const fd = new FormData();
+      if (companyId) fd.append("companyId", companyId);
+      if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
+      if (feedback?.trim()) fd.append("feedback", feedback.trim());
+      fd.append("pageCount", String(pageCount));
+      fd.append("sections", JSON.stringify(included.map(s => ({ id: s.id, title: s.title, guidance: s.guidance }))));
+      if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
 
-    try {
       const res = await fetch("/api/documents/twopager/plan", { method: "POST", body: fd });
       let j: { success?: boolean; plan?: TwoPagerPlan; companyName?: string; error?: string; raw?: string } = {};
       let rawText = "";
       try { rawText = await res.text(); j = JSON.parse(rawText); } catch { /* ignore */ }
       if (!res.ok || !j.success) {
         const detail = j.error ?? (rawText.length < 200 ? rawText : `HTTP ${res.status}`);
-        setTpPlanErr(j.raw ? `${detail} — Claude said: "${j.raw.slice(0, 200)}"` : (detail || `Error HTTP ${res.status}`));
-      } else {
-        setTpPlan(j.plan!);
-        setTpEdits({});
-        setTpFeedback("");
+        throw new Error(j.raw ? `${detail} — Claude said: "${j.raw.slice(0, 200)}"` : (detail || `Error HTTP ${res.status}`));
       }
-    } catch (err: unknown) {
-      setTpPlanErr((err as Error)?.message ?? "Network error");
-    }
-    setTpPlanning(false);
+      return j.plan!;
+    });
   }
 
   async function handleTwoPagerBuild() {
     if (!tpPlan) return;
-    setTpBuilding(true); setTpBuildErr(null);
+    setTpBuildErr(null);
 
     const finalPlan: TwoPagerPlan = {
       title: tpPlan.title,
@@ -246,28 +270,23 @@ export default function DocumentosPage() {
     };
     const selectedCompany = companies.find(c => c.id === companyId);
 
-    try {
+    await runJob("tpBuild", async () => {
       const res = await fetch("/api/documents/twopager/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approvedPlan: finalPlan, companyName: selectedCompany?.name ?? tpPlan.title }),
       });
       const j = await res.json().catch(() => ({})) as { file?: string; filename?: string; error?: string };
-      if (!res.ok || !j.file) {
-        setTpBuildErr(j.error ?? "Error building document");
-      } else {
-        const bytes = Uint8Array.from(atob(j.file), c => c.charCodeAt(0));
-        const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = j.filename!; a.click();
-        setTpLastDownload({ url, filename: j.filename! });
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      }
-    } catch (err: unknown) {
-      setTpBuildErr((err as Error)?.message ?? "Network error");
-    }
-    setTpBuilding(false);
+      if (!res.ok || !j.file) throw new Error(j.error ?? "Error building document");
+
+      const bytes = Uint8Array.from(atob(j.file), c => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = j.filename!; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return { url, filename: j.filename! };
+    });
   }
 
   const loadTemplates = useCallback(async () => {
@@ -402,6 +421,15 @@ export default function DocumentosPage() {
   }
 
   // ── Generate document ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const job = jobs.generate;
+    if (!job) return;
+    setGenerating(job.status === "running");
+    if (job.status === "error") setGenErr(job.error ?? "Unknown error");
+    if (job.status === "done") { setGenErr(null); setGenResult(job.result as GenResult); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.generate]);
+
   async function handleGenerate() {
     if (!selected) return;
 
@@ -410,7 +438,7 @@ export default function DocumentosPage() {
       return;
     }
 
-    setGenerating(true); setGenErr(null); setGenSuccess(false); setGenResult(null);
+    setGenErr(null); setGenSuccess(false);
 
     const fd = new FormData();
     fd.append("templateId", selected.id);
@@ -418,23 +446,15 @@ export default function DocumentosPage() {
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     for (const f of contextFiles) fd.append("files", f);
 
-    try {
+    await runJob("generate", async () => {
       const res = await fetch("/api/documents/generate", { method: "POST", body: fd });
       const j = await res.json().catch(() => ({})) as any;
       if (!res.ok) {
-        if (j.code === "NO_API_KEY") {
-          setGenErr("⚠ " + j.error + " → Go to Settings to add it");
-        } else {
-          setGenErr((j.error ?? "Generation error") + (j.detail ? `: ${j.detail}` : ""));
-        }
-      } else {
-        setGenResult(j as GenResult);
+        if (j.code === "NO_API_KEY") throw new Error("⚠ " + j.error + " → Go to Settings to add it");
+        throw new Error((j.error ?? "Generation error") + (j.detail ? `: ${j.detail}` : ""));
       }
-    } catch (err: any) {
-      setGenErr(err?.message ?? "Network error during generation");
-    }
-
-    setGenerating(false);
+      return j as GenResult;
+    });
   }
 
   function downloadResult(result: GenResult) {
@@ -450,6 +470,7 @@ export default function DocumentosPage() {
     a.href = url; a.download = result.filename; a.click();
     URL.revokeObjectURL(url);
     setGenResult(null);
+    clearJob("generate");
     setGenSuccess(true);
     setTimeout(() => setGenSuccess(false), 5000);
   }
@@ -494,133 +515,149 @@ export default function DocumentosPage() {
   }
 
   // ── Plan-first workflow (PPTX build mode) ─────────────────────────────────
+  useEffect(() => {
+    const job = jobs.pptxPlan;
+    if (!job) return;
+    setPlanning(job.status === "running");
+    if (job.status === "error") setPlanErr(job.error ?? "Unknown error");
+    if (job.status === "done") { setPlanErr(null); setPlan(job.result as DeckPlan); setPlanFeedback(""); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.pptxPlan]);
+
   async function handlePlan(feedback?: string) {
     if (!selected || selected.type !== "pptx") return;
-    setPlanning(true); setPlanErr(null);
-    let blobUrls: { name: string; url: string; type: string }[] = [];
-    try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
-      setPlanErr("Error uploading files: " + (e instanceof Error ? e.message : String(e)));
-      setPlanning(false); return;
-    }
-    const fd = new FormData();
-    if (companyId) fd.append("companyId", companyId);
-    if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
-    if (feedback?.trim()) fd.append("feedback", feedback.trim());
-    if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
-    try {
+    setPlanErr(null);
+    await runJob("pptxPlan", async () => {
+      const blobUrls = await ensureContextBlobsUploaded();
+      const fd = new FormData();
+      if (companyId) fd.append("companyId", companyId);
+      if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
+      if (feedback?.trim()) fd.append("feedback", feedback.trim());
+      if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
+
       const res = await fetch("/api/documents/plan", { method: "POST", body: fd });
       let j: { success?: boolean; plan?: DeckPlan; error?: string; raw?: string } = {};
       let rawText = "";
       try { rawText = await res.text(); j = JSON.parse(rawText); } catch { /* ignore */ }
       if (!res.ok || !j.success) {
         const detail = j.error ?? (rawText.length < 200 ? rawText : `HTTP ${res.status}`);
-        setPlanErr(j.raw ? `${detail} — Claude said: "${j.raw.slice(0, 200)}"` : (detail || `Error HTTP ${res.status}`));
-      } else {
-        setPlan(j.plan!);
-        setPlanFeedback("");
+        throw new Error(j.raw ? `${detail} — Claude said: "${j.raw.slice(0, 200)}"` : (detail || `Error HTTP ${res.status}`));
       }
-    } catch (err: unknown) {
-      setPlanErr((err as Error)?.message ?? "Error de red");
-    }
-    setPlanning(false);
+      return j.plan!;
+    });
   }
+
+  interface PptxBuildOutcome {
+    cancelled: boolean;
+    url?: string;
+    filename?: string;
+  }
+
+  useEffect(() => {
+    const job = jobs.pptxBuild;
+    if (!job) return;
+    setBuilding(job.status === "running");
+    if (job.status === "running") return; // let in-flight progress ticks (best-effort) keep showing
+    setBuildProgress(null);
+    if (job.status === "error") { setBuildErr(job.error ?? "Unknown error"); return; }
+    if (job.status === "done") {
+      setBuildErr(null);
+      const outcome = job.result as PptxBuildOutcome;
+      if (!outcome.cancelled && outcome.url && outcome.filename) {
+        setLastDownload({ url: outcome.url, filename: outcome.filename });
+        setPlan(null); setPlanFeedback("");
+        setGenSuccess(true);
+        setTimeout(() => setGenSuccess(false), 8000);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs.pptxBuild]);
 
   async function handleBuildFromPlan() {
     if (!selected || selected.type !== "pptx") return;
     setBuildErr(null);
-    setBuilding(true);
+    setQaWarnings([]);
     setBuildProgress({ message: "Starting…", current: 0, total: 0 });
 
     const controller = new AbortController();
     abortRef.current = controller;
 
-    let blobUrls = contextBlobUrls;
-    if (contextFiles.length > 0 && blobUrls.length !== contextFiles.length) {
-      try { blobUrls = await ensureContextBlobsUploaded(); } catch (e) {
-        setBuildErr("Error uploading files: " + (e instanceof Error ? e.message : String(e)));
-        setBuilding(false); setBuildProgress(null); return;
+    await runJob("pptxBuild", async (): Promise<PptxBuildOutcome> => {
+      let blobUrls = contextBlobUrls;
+      if (contextFiles.length > 0 && blobUrls.length !== contextFiles.length) {
+        blobUrls = await ensureContextBlobsUploaded();
       }
-    }
 
-    const fd = new FormData();
-    fd.append("templateId", selected.id);
-    if (companyId) fd.append("companyId", companyId);
-    if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
-    if (plan) fd.append("approvedPlan", JSON.stringify(plan));
-    if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
+      const fd = new FormData();
+      fd.append("templateId", selected.id);
+      if (companyId) fd.append("companyId", companyId);
+      if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
+      if (plan) fd.append("approvedPlan", JSON.stringify(plan));
+      if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
 
-    try {
-      const res = await fetch("/api/documents/build", {
-        method: "POST",
-        body: fd,
-        signal: controller.signal,
-      });
+      try {
+        const res = await fetch("/api/documents/build", {
+          method: "POST",
+          body: fd,
+          signal: controller.signal,
+        });
 
-      if (!res.body) throw new Error("No response body");
+        if (!res.body) throw new Error("No response body");
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      const pptxChunks: string[] = [];
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const pptxChunks: string[] = [];
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const raw = line.slice(6).trim();
-          if (!raw) continue;
-          let event: { type: string; message?: string; current?: number; total?: number; index?: number; data?: string; filename?: string; slide_count?: number; warnings?: string[] };
-          try { event = JSON.parse(raw); } catch { continue; }
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const raw = line.slice(6).trim();
+            if (!raw) continue;
+            let event: { type: string; message?: string; current?: number; total?: number; index?: number; data?: string; filename?: string; slide_count?: number; warnings?: string[] };
+            try { event = JSON.parse(raw); } catch { continue; }
 
-          if (event.type === "progress") {
-            setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
-          } else if (event.type === "chunk") {
-            if (event.index !== undefined) pptxChunks[event.index] = event.data ?? "";
-          } else if (event.type === "qa_warnings") {
-            setQaWarnings(event.warnings ?? []);
-          } else if (event.type === "done") {
-            const base64 = pptxChunks.join("");
-            const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-            const blob = new Blob([bytes], { type: mime });
-            const url = URL.createObjectURL(blob);
-            const dlFilename = event.filename!;
-            setLastDownload({ url, filename: dlFilename });
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = dlFilename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 60_000);
-            setPlan(null); setPlanFeedback("");
-            setGenSuccess(true);
-            setTimeout(() => setGenSuccess(false), 8000);
-            setBuilding(false); setBuildProgress(null);
-            return;
-          } else if (event.type === "error") {
-            setBuildErr(event.message ?? "Unknown error");
-            setBuilding(false); setBuildProgress(null);
-            return;
-          } else if (event.type === "cancelled") {
-            setBuilding(false); setBuildProgress(null);
-            return;
+            if (event.type === "progress") {
+              setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
+            } else if (event.type === "chunk") {
+              if (event.index !== undefined) pptxChunks[event.index] = event.data ?? "";
+            } else if (event.type === "qa_warnings") {
+              setQaWarnings(event.warnings ?? []);
+            } else if (event.type === "done") {
+              const base64 = pptxChunks.join("");
+              const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+              const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+              const blob = new Blob([bytes], { type: mime });
+              const url = URL.createObjectURL(blob);
+              const dlFilename = event.filename!;
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = dlFilename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              return { cancelled: false, url, filename: dlFilename };
+            } else if (event.type === "error") {
+              throw new Error(event.message ?? "Unknown error");
+            } else if (event.type === "cancelled") {
+              return { cancelled: true };
+            }
           }
         }
+        throw new Error("Stream ended unexpectedly");
+      } catch (err: unknown) {
+        if ((err as Error).name === "AbortError") return { cancelled: true };
+        throw err;
       }
-    } catch (err: unknown) {
-      if ((err as Error).name !== "AbortError") {
-        setBuildErr((err as Error)?.message ?? "Network error");
-      }
-    } finally {
-      setBuilding(false); setBuildProgress(null);
-    }
+    });
   }
 
   function handleCancelBuild() {
