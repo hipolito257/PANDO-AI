@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { firmSettings } from "@/lib/schema";
 import { FIRM_SETTINGS_ID } from "@/lib/firmThesis";
 import { getTwoPagerPolicy } from "@/lib/twoPagerPolicy";
+import { dbErrorMessage } from "@/lib/utils";
 
 // GET /api/admin/twopager-policy — any logged-in user can view the 2-pager policy
 export async function GET() {
@@ -24,13 +25,18 @@ export async function PATCH(req: NextRequest) {
   const policy = typeof body?.policy === "string" ? body.policy.trim() : "";
   if (!policy) return NextResponse.json({ error: "Policy text is required" }, { status: 400 });
 
-  await db
-    .insert(firmSettings)
-    .values({ id: FIRM_SETTINGS_ID, twoPagerPolicy: policy, updatedBy: session.user.id })
-    .onConflictDoUpdate({
-      target: firmSettings.id,
-      set: { twoPagerPolicy: policy, updatedBy: session.user.id, updatedAt: new Date().toISOString() },
-    });
+  try {
+    await db
+      .insert(firmSettings)
+      .values({ id: FIRM_SETTINGS_ID, twoPagerPolicy: policy, updatedBy: session.user.id })
+      .onConflictDoUpdate({
+        target: firmSettings.id,
+        set: { twoPagerPolicy: policy, updatedBy: session.user.id, updatedAt: new Date().toISOString() },
+      });
+  } catch (e) {
+    console.error("[twopager-policy PATCH]", e);
+    return NextResponse.json({ error: dbErrorMessage(e) }, { status: 500 });
+  }
 
   return NextResponse.json({ policy });
 }

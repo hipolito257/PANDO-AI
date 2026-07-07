@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { firmSettings } from "@/lib/schema";
 import { FIRM_SETTINGS_ID } from "@/lib/firmThesis";
 import { eq } from "drizzle-orm";
+import { dbErrorMessage } from "@/lib/utils";
 
 // GET /api/admin/twopager-template — any logged-in user can see which template is active
 export async function GET() {
@@ -37,7 +38,7 @@ export async function PATCH(req: NextRequest) {
       });
   } catch (e) {
     console.error("[twopager-template PATCH]", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Database error saving template" }, { status: 500 });
+    return NextResponse.json({ error: dbErrorMessage(e) }, { status: 500 });
   }
 
   return NextResponse.json({ url: url || null, name: name || null });

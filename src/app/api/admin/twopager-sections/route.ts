@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { twoPagerSectionsConfig } from "@/lib/schema";
 import { TWO_PAGER_SECTIONS_ID, getTwoPagerSections, TwoPagerSection } from "@/lib/twoPagerSections";
+import { dbErrorMessage } from "@/lib/utils";
 
 // GET /api/admin/twopager-sections — any logged-in user can view the default outline
 export async function GET() {
@@ -29,13 +30,18 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "sections must be a non-empty array of { id, title, guidance }" }, { status: 400 });
   }
 
-  await db
-    .insert(twoPagerSectionsConfig)
-    .values({ id: TWO_PAGER_SECTIONS_ID, sections: JSON.stringify(sections), updatedBy: session.user.id })
-    .onConflictDoUpdate({
-      target: twoPagerSectionsConfig.id,
-      set: { sections: JSON.stringify(sections), updatedBy: session.user.id, updatedAt: new Date().toISOString() },
-    });
+  try {
+    await db
+      .insert(twoPagerSectionsConfig)
+      .values({ id: TWO_PAGER_SECTIONS_ID, sections: JSON.stringify(sections), updatedBy: session.user.id })
+      .onConflictDoUpdate({
+        target: twoPagerSectionsConfig.id,
+        set: { sections: JSON.stringify(sections), updatedBy: session.user.id, updatedAt: new Date().toISOString() },
+      });
+  } catch (e) {
+    console.error("[twopager-sections PATCH]", e);
+    return NextResponse.json({ error: dbErrorMessage(e) }, { status: 500 });
+  }
 
   return NextResponse.json({ sections });
 }

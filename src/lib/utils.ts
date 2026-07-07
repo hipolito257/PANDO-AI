@@ -4,6 +4,15 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
+// Drizzle wraps driver errors in a generic "Failed query: ..." message and
+// puts the real Postgres error (e.g. "column ... does not exist") on `.cause`.
+export function dbErrorMessage(e: unknown): string {
+  const cause = (e as { cause?: unknown })?.cause;
+  if (cause instanceof Error) return cause.message;
+  if (e instanceof Error) return e.message;
+  return "Unknown database error";
+}
+
 export function fmt(n: number | null | undefined, opts?: Intl.NumberFormatOptions) {
   if (n == null) return "—";
   return new Intl.NumberFormat("es-MX", opts).format(n);
