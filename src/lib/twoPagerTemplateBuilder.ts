@@ -165,10 +165,12 @@ function pickStyle(available: Set<string>, chain: string[]): string {
 interface ParagraphExample {
   styleId: string;
   format: RunFormat;
+  align?: string;
 }
 
 // Walks the template's ORIGINAL body (before we replace it) collecting, for
-// every non-empty paragraph, its paragraph style id and the fully-resolved
+// every non-empty paragraph, its paragraph style id, its own alignment
+// (w:jc, e.g. centered titles vs justified body), and the fully-resolved
 // format (docDefaults -> style chain -> the run's own direct formatting) of
 // its first run — i.e. what that paragraph actually looks like on screen.
 function collectParagraphExamples(bodyNodes: XNode[], styles: Map<string, StyleInfo>, docDefaults: RunFormat): ParagraphExample[] {
@@ -178,10 +180,14 @@ function collectParagraphExamples(bodyNodes: XNode[], styles: Map<string, StyleI
     const children = (node["w:p"] as XNode[]) ?? [];
     const pPrNode = findFirst(children, "w:pPr");
     let styleId = "Normal";
+    let align: string | undefined;
     if (pPrNode) {
-      const pStyleNode = findFirst(pPrNode["w:pPr"] as XNode[], "w:pStyle");
+      const pPrChildren = (pPrNode["w:pPr"] as XNode[]) ?? [];
+      const pStyleNode = findFirst(pPrChildren, "w:pStyle");
       const val = pStyleNode?.[":@"]?.["@_w:val"];
       if (val) styleId = val;
+      const jcNode = findFirst(pPrChildren, "w:jc");
+      align = jcNode?.[":@"]?.["@_w:val"];
     }
     for (const child of children) {
       if (tagOf(child) !== "w:r") continue;
@@ -191,7 +197,7 @@ function collectParagraphExamples(bodyNodes: XNode[], styles: Map<string, StyleI
       if (!text.trim()) continue;
       const rPrNode = findFirst(rChildren, "w:rPr");
       const runOwn = rPrNode ? parseRPrChildren(rPrNode["w:rPr"] as XNode[]) : {};
-      out.push({ styleId, format: fullResolve(styleId, styles, docDefaults, runOwn) });
+      out.push({ styleId, format: fullResolve(styleId, styles, docDefaults, runOwn), align });
       break; // first non-empty run is representative for the paragraph
     }
   }
@@ -279,6 +285,19 @@ function deriveHeadingFromBody(bodyFormat: RunFormat, scale: number): RunFormat 
   return { ...bodyFormat, bold: true, sz: String(Math.round(szNum(bodyFormat) * scale)) };
 }
 
+// Find the alignment used by an actual example paragraph matching this
+// resolved format (e.g. a template's title is often centered while its
+// section headings and body are justified/left) — falls back to the most
+// common alignment among all examples sharing that format.
+function alignmentForFormat(examples: ParagraphExample[], format: RunFormat): string | undefined {
+  const key = JSON.stringify(format);
+  const matches = examples.filter(e => JSON.stringify(e.format) === key && e.align);
+  if (!matches.length) return undefined;
+  const counts = new Map<string, number>();
+  for (const m of matches) counts.set(m.align!, (counts.get(m.align!) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
 function buildRPrNode(format: RunFormat, forceItalic?: boolean): XNode | null {
   const children: XNode[] = [];
   if (format.asciiFont || format.hAnsiFont || format.cs) {
@@ -290,7 +309,15 @@ function buildRPrNode(format: RunFormat, forceItalic?: boolean): XNode | null {
       },
     });
   }
-  if (format.color) children.push({ "w:color": [], ":@": { "@_w:val": format.color } });
+  // Always emit an explicit color, even when the template's real text has no
+  // explicit color of its own ("auto" = inherit the theme's normal text
+  // color). Every generated paragraph references a plain body-like pStyle,
+  // but without this, an *unstyled* run would still fall back to whatever
+  // color that style itself defines — which is fine for genuinely-used
+  // styles, but Word's stock Heading2/Heading3/Title definitions carry their
+  // own theme colors (often blue) whether or not a template ever uses them,
+  // and silently bled through when we didn't already know the true color.
+  children.push({ "w:color": [], ":@": { "@_w:val": format.color ?? "auto" } });
   if (format.bold) children.push({ "w:b": [] });
   const italic = forceItalic !== undefined ? forceItalic : format.italic;
   if (italic) children.push({ "w:i": [] });
@@ -313,17 +340,27 @@ function textRun(text: string, rPrNode: XNode | null): XNode {
   };
 }
 
-function paragraph(styleId: string, text: string, rPrNode: XNode | null, sectionBreak?: XNode): XNode {
+function paragraph(styleId: string, text: string, rPrNode: XNode | null, align?: string): XNode {
   const pPrChildren: XNode[] = [{ "w:pStyle": [], ":@": { "@_w:val": styleId } }];
-  // A section-break sectPr must be the last child of pPr (schema-ordered
-  // after pStyle et al.) — safe here since we never add other pPr children.
-  if (sectionBreak) pPrChildren.push(sectionBreak);
+  if (align) pPrChildren.push({ "w:jc": [], ":@": { "@_w:val": align } });
   return {
     "w:p": [
       { "w:pPr": pPrChildren },
       textRun(text, rPrNode),
     ],
   };
+}
+
+// Word represents a mid-document ("continuous") section break as an empty
+// paragraph whose sole purpose is to carry the outgoing section's sectPr —
+// it has no run/text of its own. Both sample templates use exactly this
+// pattern: a title paragraph, then this empty marker, then the body section
+// starts immediately with its own first heading — there is no real
+// "subtitle" paragraph in section 1. Reproducing the empty marker (instead
+// of attaching the break to our own subtitle text) keeps the subtitle in
+// the body section's margins/columns like the template's real content does.
+function sectionBreakParagraph(sectPr: XNode): XNode {
+  return { "w:p": [{ "w:pPr": [sectPr] }] };
 }
 
 // Word documents commonly split a "2-pager" into a single-column title/header
@@ -366,12 +403,15 @@ export async function buildTwoPagerFromTemplate(
   const zip = new PizZip(templateBuffer);
 
   const { styles, docDefaults, styleIds } = parseStylesXml(zip);
-  // These style ID picks only govern the w:pStyle reference (paragraph-level
-  // properties like spacing/outline level) — visual formatting is resolved
-  // separately below from the template's actual paragraphs.
-  const titleStyle = pickStyle(styleIds, ["Title", "Heading1", "Normal"]);
-  const subtitleStyle = pickStyle(styleIds, ["Subtitle", "Heading3", "Normal", "Body Text"]);
-  const sectionHeadingStyle = pickStyle(styleIds, ["Heading2", "Heading1", "Heading3", "Normal"]);
+  // Every generated paragraph references this same plain body-like style —
+  // never Word's stock Title/Heading1-9/Subtitle IDs. Those are always
+  // present in styles.xml whether or not the template's author ever used
+  // them, and often carry their own theme color/size (Word's defaults lean
+  // blue for Heading2/Heading3) that would otherwise silently bleed through
+  // whenever we don't already have an explicit override for that property.
+  // All visual differentiation (font/size/color/bold/underline/alignment)
+  // is instead resolved from the template's actual paragraphs below and
+  // applied as direct formatting.
   const bodyStyle = pickStyle(styleIds, ["Normal", "BodyText", "Body Text"]);
 
   const documentFile = zip.file("word/document.xml");
@@ -410,19 +450,23 @@ export async function buildTwoPagerFromTemplate(
   const subtitleFormat = detectedHeadingFormat ? sectionHeadingFormat : bodyFormat;
   const subtitleItalic = !detectedHeadingFormat;
 
+  const titleAlign = examples.length ? examples[0].align : alignmentForFormat(examples, titleFormat);
+  const sectionHeadingAlign = alignmentForFormat(examples, sectionHeadingFormat);
+  const bodyAlign = alignmentForFormat(examples, bodyFormat);
+  const subtitleAlign = detectedHeadingFormat ? sectionHeadingAlign : bodyAlign;
+
   const titleRPr = buildRPrNode(titleFormat);
   const subtitleRPr = buildRPrNode(subtitleFormat, subtitleItalic || undefined);
   const sectionHeadingRPr = buildRPrNode(sectionHeadingFormat);
   const bodyRPr = buildRPrNode(bodyFormat);
 
-  const newBody: XNode[] = [
-    paragraph(titleStyle, plan.title, titleRPr),
-    paragraph(subtitleStyle, plan.subtitle, subtitleRPr, frontSectionBreak),
-  ];
+  const newBody: XNode[] = [paragraph(bodyStyle, plan.title, titleRPr, titleAlign)];
+  if (frontSectionBreak) newBody.push(sectionBreakParagraph(frontSectionBreak));
+  newBody.push(paragraph(bodyStyle, plan.subtitle, subtitleRPr, subtitleAlign));
 
   for (const section of plan.sections) {
-    newBody.push(paragraph(sectionHeadingStyle, section.heading, sectionHeadingRPr));
-    for (const p of section.paragraphs) newBody.push(paragraph(bodyStyle, p, bodyRPr));
+    newBody.push(paragraph(bodyStyle, section.heading, sectionHeadingRPr, sectionHeadingAlign));
+    for (const p of section.paragraphs) newBody.push(paragraph(bodyStyle, p, bodyRPr, bodyAlign));
   }
 
   if (finalSectPr) newBody.push(finalSectPr);
