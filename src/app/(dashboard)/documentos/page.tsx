@@ -4,6 +4,7 @@ import {
   LayoutTemplate, FileText, Table2, File, ImageIcon,
   Paperclip, Sparkles, Target, Flag, Lock, FileCode, ChevronLeft,
 } from "lucide-react";
+import { usePersistentState } from "@/lib/usePersistentState";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -110,10 +111,13 @@ function fmtSize(b: number | null): string {
 export default function DocumentosPage() {
   const [templates, setTemplates]     = useState<DocTemplate[]>([]);
   const [companies, setCompanies]     = useState<Company[]>([]);
-  const [docType, setDocType]         = useState<DocType | null>(null);
-  const [companyId, setCompanyId]     = useState("");
-  const [contextFiles, setContextFiles] = useState<File[]>([]);
-  const [userPrompt, setUserPrompt]    = useState("");
+  // Persisted to sessionStorage (not plain useState) so navigating to another
+  // page (e.g. Settings) and back doesn't lose an in-progress draft, form
+  // inputs, or already-uploaded context files.
+  const [docType, setDocType]         = usePersistentState<DocType | null>("documentos:docType", null);
+  const [companyId, setCompanyId]     = usePersistentState("documentos:companyId", "");
+  const [contextFiles, setContextFiles] = useState<File[]>([]); // raw File objects can't be persisted; see contextBlobUrls below
+  const [userPrompt, setUserPrompt]    = usePersistentState("documentos:userPrompt", "");
   const [hasApiKey, setHasApiKey]     = useState(true);
   const [uploading, setUploading]     = useState(false);
   const [generating, setGenerating]   = useState(false);
@@ -130,9 +134,12 @@ export default function DocumentosPage() {
   const abortRef = useRef<AbortController | null>(null);
   const [planning, setPlanning]         = useState(false);
   const [planErr, setPlanErr]           = useState<string | null>(null);
-  const [plan, setPlan]                 = useState<DeckPlan | null>(null);
-  const [planFeedback, setPlanFeedback] = useState("");
+  const [plan, setPlan]                 = usePersistentState<DeckPlan | null>("documentos:plan", null);
+  const [planFeedback, setPlanFeedback] = usePersistentState("documentos:planFeedback", "");
   const [uploadingCtx, setUploadingCtx] = useState(false);
+  // Kept in sync with (and reset alongside) contextFiles by array length —
+  // not persisted, since raw File objects can't survive serialization and a
+  // stale blobUrls list without matching files would silently misfire.
   const [contextBlobUrls, setContextBlobUrls] = useState<{ name: string; url: string; type: string }[]>([]);
   const [showUpload, setShowUpload]   = useState(false); // "set/replace default template" modal
   const [dragOver, setDragOver]       = useState(false);
@@ -143,12 +150,12 @@ export default function DocumentosPage() {
   const contextFileRef  = useRef<HTMLInputElement>(null);
 
   // ── 2-Pager specific state ────────────────────────────────────────────────
-  const [pageCount, setPageCount] = useState(2);
-  const [tpSections, setTpSections] = useState<TwoPagerSectionUI[]>([]);
-  const [tpSectionsLoaded, setTpSectionsLoaded] = useState(false);
-  const [tpPlan, setTpPlan] = useState<TwoPagerPlan | null>(null);
-  const [tpEdits, setTpEdits] = useState<Record<number, string>>({});
-  const [tpFeedback, setTpFeedback] = useState("");
+  const [pageCount, setPageCount] = usePersistentState("documentos:pageCount", 2);
+  const [tpSections, setTpSections] = usePersistentState<TwoPagerSectionUI[]>("documentos:tpSections", []);
+  const [tpSectionsLoaded, setTpSectionsLoaded] = usePersistentState("documentos:tpSectionsLoaded", false);
+  const [tpPlan, setTpPlan] = usePersistentState<TwoPagerPlan | null>("documentos:tpPlan", null);
+  const [tpEdits, setTpEdits] = usePersistentState<Record<number, string>>("documentos:tpEdits", {});
+  const [tpFeedback, setTpFeedback] = usePersistentState("documentos:tpFeedback", "");
   const [tpPlanning, setTpPlanning] = useState(false);
   const [tpPlanErr, setTpPlanErr] = useState<string | null>(null);
   const [tpBuilding, setTpBuilding] = useState(false);

@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
     } else {
       buffer = await buildTwoPagerDocx(title, subtitle, clean.sections);
     }
-    const filename = `${companyName.replace(/[^a-zA-Z0-9_-]/g, "_")}_2Pager_${new Date().toISOString().slice(0, 10)}.docx`;
+    const safeCompanyName = companyName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, " ") || "Company";
+    const filename = `${safeCompanyName} - 2-Pager - ${new Date().toISOString().slice(0, 10)}.docx`;
 
     return NextResponse.json({
       file: buffer.toString("base64"),
