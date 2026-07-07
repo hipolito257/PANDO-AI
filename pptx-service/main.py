@@ -17,7 +17,11 @@ app = FastAPI(title="PANDO pptx-service", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5052", "http://localhost:3000"],
+    # This service is only ever called server-to-server from the Next.js app
+    # (never directly from a browser), so origin restriction isn't a real
+    # security boundary here — kept permissive rather than hardcoding a
+    # Vercel domain that changes across preview/production deployments.
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
