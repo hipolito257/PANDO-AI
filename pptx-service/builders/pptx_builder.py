@@ -38,6 +38,14 @@ LAYOUT_MAP = {
 
 PH = {"cat": 18, "title": 16, "takeaway": 17, "note": 14, "content": 26}
 
+# Takeaway placeholder's real geometry in the template layout (idx=17): fixed
+# top=1.078", height=0.551" (sized for up to ~2 lines at this font size). Used
+# to compute exactly how far down its text actually reaches, instead of always
+# assuming the box is full — see _content_start_y.
+TAKEAWAY_TOP = 1.078
+TAKEAWAY_SIZE = 14
+TAKEAWAY_MAX_BOTTOM = 1.998  # the template's own fixed content-start y — never exceeded
+
 
 # ── Safe value helpers ─────────────────────────────────────────────────────────
 
@@ -94,12 +102,15 @@ CANVAS_BOTTOM = 7.15    # below this collides with the note/footer placeholder
 
 def _geom(el: dict, defaults=(CONTENT_X, 2.0, 11.5, 4.0)):
     """Extract x, y, w, h from element dict with safe defaults and content-area clamps.
-    y minimum is 2.0" — where the main content area starts in the template (1826680 EMU).
+    y has a loose 1.3" safety floor only (never overlapping the title/category area) —
+    the real, precise content-start position for a given slide (based on how much the
+    takeaway actually wraps) is computed once in _add_slide and applied there by
+    shifting every element's declared y, not by this floor.
     x minimum is 0.918" and right edge capped at 12.415" — matches the template's title/
     takeaway/content placeholder bounds exactly, so generated elements stay left- and
     right-aligned with the headers instead of drifting outside them."""
     x = max(_num(el.get("x"), defaults[0]), CONTENT_X)
-    y = max(_num(el.get("y"), defaults[1]), 2.0)
+    y = max(_num(el.get("y"), defaults[1]), 1.3)
     w = max(_num(el.get("w"), defaults[2]), 0.1)
     h = max(_num(el.get("h"), defaults[3]), 0.1)
     if x + w > CONTENT_RIGHT:
@@ -289,6 +300,26 @@ class PptxBuilder:
                     _replace_text(shape, subtitle)
                     break
 
+    # ── Precise content-start calculation ───────────────────────────────────────
+    def _content_start_y(self, sd: dict) -> float:
+        """Where the first content element should start, computed from the
+        takeaway's actual wrapped height at TAKEAWAY_SIZE instead of always
+        assuming its box is fully used. The takeaway placeholder's box is fixed
+        (top=1.078", height=0.551", sized for ~2 lines) and independent of the
+        title above it (the title has its own auto-shrink-to-fit, so it can never
+        push into the takeaway's position) — only the takeaway's own text length
+        affects how much of that box is actually filled.
+        """
+        takeaway = _str(sd.get("takeaway"))
+        if not takeaway:
+            # No takeaway at all — content can start right after the title's box.
+            return TAKEAWAY_TOP
+        col_w = CONTENT_RIGHT - CONTENT_X
+        lines = min(self._wrap_lines(takeaway, col_w, TAKEAWAY_SIZE), 2)  # box fits ~2 lines; more just shrinks font, not height
+        line_h = (TAKEAWAY_SIZE * 1.25) / 72
+        bottom = TAKEAWAY_TOP + lines * line_h + 0.14  # + top/bottom internal padding
+        return min(bottom + 0.20, TAKEAWAY_MAX_BOTTOM)  # +breathing room, never past the template's own max
+
     # ── Slide assembly ─────────────────────────────────────────────────────────
     def _add_slide(self, sd: dict):
         layout_key = _str(sd.get("layout"), "takeaway")
@@ -301,12 +332,16 @@ class PptxBuilder:
         self._fill_phs(slide, sd)
 
         elements = [el for el in sd.get("elements", []) if isinstance(el, dict)]
-        # Shift all elements up so the topmost one starts at y=2.0" (content area start).
-        # This corrects Claude placing the first element at e.g. y=2.8 which leaves a large gap.
+        # Shift all elements so the topmost one starts exactly where the takeaway's
+        # actual text ends (see _content_start_y) — not a blind fixed 2.0" assumption.
+        # A short one-line takeaway used to leave nearly half an inch of dead space
+        # before the first chart; a long one relied on auto-shrink and the old fixed
+        # value to avoid overlap. This corrects both directions in one calculation.
         if elements and layout_key != "divider":
-            min_y = min(_num(el.get("y"), 2.0) for el in elements)
-            if min_y > 2.0:
-                shift = min_y - 2.0
+            content_start = self._content_start_y(sd)
+            min_y = min(_num(el.get("y"), content_start) for el in elements)
+            shift = min_y - content_start
+            if abs(shift) > 0.01:
                 for el in elements:
                     el["y"] = _num(el.get("y"), min_y) - shift
 
@@ -368,7 +403,8 @@ class PptxBuilder:
 
     def _qa_check_slide(self, sd: dict, elements: list[dict]):
         title = _str(sd.get("title"), "(untitled slide)")
-        canvas = (CONTENT_X - 0.05, 1.95, CONTENT_RIGHT + 0.05, CANVAS_BOTTOM)
+        top_bound = self._content_start_y(sd) - 0.05 if _str(sd.get("layout"), "takeaway") != "divider" else 1.95
+        canvas = (CONTENT_X - 0.05, top_bound, CONTENT_RIGHT + 0.05, CANVAS_BOTTOM)
 
         boxes = []
         for el in elements:
@@ -435,12 +471,15 @@ class PptxBuilder:
             PH["takeaway"]: takeaway_val,
             PH["note"]:     note_val,
         }
+        # Takeaway is explicitly bumped to TAKEAWAY_SIZE (14pt) — the template's
+        # own placeholder default is 12pt, sized for our house style.
+        sizes = {PH["takeaway"]: TAKEAWAY_SIZE}
         to_remove = []
         for ph in phs:
             idx = ph.placeholder_format.idx
             val = mapping.get(idx)
             if val:
-                self._set_markdown_text(ph, val)
+                self._set_markdown_text(ph, val, font_size=sizes.get(idx))
             else:
                 to_remove.append(ph)
         for ph in to_remove:
@@ -502,7 +541,7 @@ class PptxBuilder:
             _txt(subtitle, 1, H / 2 + 0.7, W - 2, 0.5, 16, fg="A5C8D1")
         _txt("pando.vc  |  Private & Confidential", 0, H - 0.55, W, 0.35, 9, italic=True)
 
-    def _set_markdown_text(self, ph, text: str):
+    def _set_markdown_text(self, ph, text: str, font_size: float | None = None):
         tf = ph.text_frame
         tf.clear()
         lines = _str(text).split("\n")
@@ -517,6 +556,15 @@ class PptxBuilder:
                     r.font.bold = True
                 else:
                     r.text = part
+                # Force the brand font explicitly rather than letting these
+                # placeholders (title/takeaway/category/note) fall back to
+                # whatever the template's own placeholder style happens to be —
+                # that's how the footnote/source line ended up in plain "Work
+                # Sans" instead of "Work Sans Light" while every other element
+                # in this file explicitly sets DEFAULT_FONT.
+                r.font.name = self.DEFAULT_FONT
+                if font_size is not None:
+                    r.font.size = Pt(font_size)
         # A long title/takeaway that wraps to a second line can overflow its
         # placeholder's fixed box and collide with the text below it (e.g. the
         # takeaway paragraph sitting right under the title). Let PowerPoint
@@ -815,6 +863,35 @@ class PptxBuilder:
                 f'<c:spPr><a:solidFill><a:srgbClr val="{col}"/></a:solidFill>'
                 f'<a:ln><a:noFill/></a:ln></c:spPr></c:dPt>'
             ))
+
+    def _waterfall_labels(self, series, display_values: list[str]):
+        """Boxed value label above each waterfall bar, showing the true signed
+        delta (e.g. "-3") rather than the internal stacked/positive-magnitude
+        plot value — without this, a bridge chart is unreadable at a glance,
+        exactly the gap real IB waterfalls never leave."""
+        try:
+            # Accessing .data_labels first ensures python-pptx has created a
+            # valid, schema-complete <c:dLbls> (group-level show* flags etc.)
+            # — individual <c:dLbl> overrides must be inserted before all of
+            # that, in ascending idx order, per the CT_DLbls schema sequence.
+            series.data_labels.show_value = False
+            dLbls = series.data_labels._element
+            for i, text in enumerate(display_values):
+                dlbl = parse_xml(
+                    f'<c:dLbl xmlns:c="{C_NS}" xmlns:a="{A_NS}">'
+                    f'<c:idx val="{i}"/>'
+                    f'<c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>'
+                    f'<a:rPr lang="en-US" sz="700" b="1"><a:solidFill><a:srgbClr val="333333"/></a:solidFill>'
+                    f'<a:latin typeface="{self.DEFAULT_FONT}"/></a:rPr>'
+                    f'<a:t>{text}</a:t></a:r></a:p></c:rich></c:tx>'
+                    f'<c:spPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+                    f'<a:ln w="{int(Pt(0.75))}"><a:solidFill><a:srgbClr val="444444"/></a:solidFill></a:ln></c:spPr>'
+                    f'<c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/>'
+                    f'<c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/>'
+                    f'</c:dLbl>'
+                )
+                dLbls.insert(i, dlbl)
+        except Exception: pass
 
     # ── Horizontal floating bar (pricing ranges) ───────────────────────────────
     def _hbar_float(self, slide, el: dict):
@@ -1825,6 +1902,10 @@ class PptxBuilder:
 
         delta_series = ch.series[1]
         self._color_bar_points(delta_series, colors, len(values))
+        if el.get("data_labels", True):
+            display = [f"{v:,.0f}" if tot else f"{'+' if v >= 0 else '-'}{abs(v):,.0f}"
+                       for v, tot in zip(values, is_total)]
+            self._waterfall_labels(delta_series, display)
 
         gap_width = int(_num(el.get("gap_width"), 45))
         try:

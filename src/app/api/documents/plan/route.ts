@@ -121,6 +121,10 @@ INSTRUCTIONS:
 - Be specific: for each slide, indicate the title, the key message (takeaway), and what type of chart or table you would use.
 - Use real data. If you don't have a data point, pick a different angle.
 - Typical: 10-16 total slides including cover, back cover, and dividers.
+- IB-QUALITY DISCIPLINE (this is what separates a banker-grade deck from a generic one):
+  - Frame data comparatively, not in isolation, wherever the data supports it: vs. peers, vs. plan/budget, pre vs. post, perception vs. reality. A single bare metric ("Revenue: USD $50 m") is weaker than the same metric next to what it should be compared against.
+  - Every chart needs its "so what" spelled out in the takeaway — a reader skimming only titles and takeaways (never the charts) should still get the thesis.
+  - Reference-quality PANDO slides are DENSE, not sparse: fill the content area — if the main chart only needs part of the slide's height, plan a complementary second element (a pill_row of proof points, a small table, a stat_row) that reinforces the same takeaway with real numbers, rather than leaving a single small chart floating in whitespace.
 
 ELEMENT TYPES (to indicate in the plan) — vary these across the deck, don't reuse the same one every slide:
 - bar chart: comparing 2+ series by category
