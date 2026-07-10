@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { financialModels } from "@/lib/schema";
-import { eq } from "drizzle-orm";
-import { put } from "@vercel/blob";
-import { randomUUID } from "crypto";
 import { buildLboWorkbook, LboAssumptions } from "@/lib/lboModelBuilder";
 import { dbErrorMessage } from "@/lib/utils";
 
 export const maxDuration = 60;
-
-const BLOB_STORE_ID = process.env.BLOBPUBLIC_STORE_ID ?? process.env.BLOB_STORE_ID ?? "";
 
 function validate(a: Partial<LboAssumptions>): string | null {
   if (!a || typeof a !== "object") return "Assumptions are required";
@@ -36,10 +29,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null) as {
       approvedPlan?: Partial<LboAssumptions>;
-      companyId?: string | null;
       companyName?: string;
-      modelId?: string;
-      contextFiles?: { name: string; url: string; type: string }[];
     } | null;
 
     const plan = body?.approvedPlan;
@@ -84,48 +74,10 @@ export async function POST(req: NextRequest) {
     const safeCompanyName = companyName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, " ") || "Company";
     const filename = `${safeCompanyName} - LBO Model - ${new Date().toISOString().slice(0, 10)}.xlsx`;
 
-    const blob = await put(`financial-models/${randomUUID()}-${filename}`, buffer, {
-      access: "public",
-      addRandomSuffix: false,
-      storeId: BLOB_STORE_ID,
-    });
-
-    const now = new Date().toISOString();
-    let modelId = body?.modelId;
-    if (modelId) {
-      await db.update(financialModels).set({
-        assumptions: JSON.stringify(assumptions),
-        contextFiles: JSON.stringify(body?.contextFiles ?? []),
-        workbookUrl: blob.url,
-        workbookSize: buffer.length,
-        status: "built",
-        updatedAt: now,
-        updatedBy: session.user.id,
-      }).where(eq(financialModels.id, modelId));
-    } else {
-      modelId = randomUUID();
-      await db.insert(financialModels).values({
-        id: modelId,
-        companyId: body?.companyId || null,
-        companyName,
-        modelType: "lbo",
-        name: `${companyName} LBO Model`,
-        status: "built",
-        assumptions: JSON.stringify(assumptions),
-        contextFiles: JSON.stringify(body?.contextFiles ?? []),
-        workbookUrl: blob.url,
-        workbookSize: buffer.length,
-        createdBy: session.user.id,
-        updatedBy: session.user.id,
-        updatedAt: now,
-      });
-    }
-
     return NextResponse.json({
       success: true,
       file: buffer.toString("base64"),
       filename,
-      modelId,
     });
   } catch (err) {
     console.error("[financial-models/lbo/build]", err);

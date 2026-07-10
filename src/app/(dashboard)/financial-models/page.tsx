@@ -1,13 +1,12 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { TrendingUp, Upload, X, Loader2, Download, Trash2 } from "lucide-react";
+import { TrendingUp, Upload, X, Loader2, Download, Trash2, Eye } from "lucide-react";
 import { useDocJobs } from "../DocJobsContext";
 
 interface Company { id: string; name: string; sector: string | null; stage: string | null; }
 interface SavedModel {
-  id: string; companyId: string | null; companyName: string | null; modelType: string;
-  name: string; status: string; workbookUrl: string | null; workbookSize: number | null;
-  createdAt: string | null; updatedAt: string | null;
+  id: string; name: string; status: string;
+  workbookUrl: string | null; workbookSize: number | null; createdAt: string | null;
 }
 interface LboPlan {
   entryEbitda: number; revenueYear0: number; entryMultiple: number;
@@ -131,23 +130,26 @@ export default function FinancialModelsPage() {
 
   const [building, setBuilding] = useState(false);
   const [buildErr, setBuildErr] = useState<string | null>(null);
-  const [lastDownload, setLastDownload] = useState<{ filename: string; modelId: string } | null>(null);
-  const [currentModelId, setCurrentModelId] = useState<string | null>(null);
+  const [lastDownload, setLastDownload] = useState<{ filename: string } | null>(null);
+
+  const [libraryName, setLibraryName] = useState("");
+  const [libraryFile, setLibraryFile] = useState<File | null>(null);
+  const [uploadingLibrary, setUploadingLibrary] = useState(false);
+  const [libraryErr, setLibraryErr] = useState<string | null>(null);
+  const libraryFileRef = useRef<HTMLInputElement>(null);
 
   const loadCompanies = useCallback(async () => {
     const r = await fetch("/api/companies");
     if (r.ok) { const d = await r.json(); setCompanies(d.companies ?? d); }
   }, []);
-  const loadModels = useCallback(async (forCompanyId: string) => {
+  const loadModels = useCallback(async () => {
     setLoadingModels(true);
-    const url = forCompanyId ? `/api/financial-models?companyId=${forCompanyId}` : "/api/financial-models";
-    const r = await fetch(url);
+    const r = await fetch("/api/financial-models");
     if (r.ok) setSavedModels(await r.json());
     setLoadingModels(false);
   }, []);
 
-  useEffect(() => { loadCompanies(); loadModels(""); }, [loadCompanies, loadModels]);
-  useEffect(() => { loadModels(companyId); }, [companyId, loadModels]);
+  useEffect(() => { loadCompanies(); loadModels(); }, [loadCompanies, loadModels]);
 
   useEffect(() => {
     const job = jobs.lboPlan;
@@ -165,10 +167,7 @@ export default function FinancialModelsPage() {
     if (job.status === "error") setBuildErr(job.error ?? "Unknown error");
     if (job.status === "done") {
       setBuildErr(null);
-      const r = job.result as { filename: string; modelId: string };
-      setLastDownload(r);
-      setCurrentModelId(r.modelId);
-      loadModels(companyId);
+      setLastDownload(job.result as { filename: string });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs.lboBuild]);
@@ -223,7 +222,7 @@ export default function FinancialModelsPage() {
 
   async function handlePlan(fb?: string) {
     setPlanErr(null);
-    setCurrentModelId(null); setLastDownload(null);
+    setLastDownload(null);
     await runJob("lboPlan", async () => {
       const blobUrls = await ensureContextBlobsUploaded();
       const fd = new FormData();
@@ -249,13 +248,10 @@ export default function FinancialModelsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           approvedPlan: plan,
-          companyId: companyId || null,
           companyName: selectedCompany?.name || companyNameFreeform || "Company",
-          modelId: currentModelId ?? undefined,
-          contextFiles: contextBlobUrls,
         }),
       });
-      const j = await res.json().catch(() => ({})) as { file?: string; filename?: string; modelId?: string; error?: string };
+      const j = await res.json().catch(() => ({})) as { file?: string; filename?: string; error?: string };
       if (!res.ok || !j.file) throw new Error(j.error ?? "Error building model");
 
       const bytes = Uint8Array.from(atob(j.file), c => c.charCodeAt(0));
@@ -264,24 +260,60 @@ export default function FinancialModelsPage() {
       const a = document.createElement("a");
       a.href = url; a.download = j.filename!; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      return { filename: j.filename!, modelId: j.modelId! };
+      return { filename: j.filename! };
     });
   }
 
-  async function loadSavedModel(id: string) {
-    const r = await fetch(`/api/financial-models/${id}`);
-    if (!r.ok) return;
-    const d = await r.json();
-    const a = JSON.parse(typeof d.assumptions === "string" ? d.assumptions : JSON.stringify(d.assumptions));
-    setPlan(a);
-    setCurrentModelId(id);
-    setLastDownload(null);
-    if (d.companyId) setCompanyId(d.companyId);
+  async function uploadToLibrary() {
+    if (!libraryFile || !libraryName.trim()) return;
+    setLibraryErr(null);
+    setUploadingLibrary(true);
+    try {
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(libraryFile.size / CTX_CHUNK) || 1;
+      const chunkUrls: string[] = [];
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = libraryFile.slice(i * CTX_CHUNK, (i + 1) * CTX_CHUNK);
+        const fd = new FormData();
+        fd.append("chunk", chunk);
+        fd.append("uploadId", uploadId);
+        fd.append("chunkIndex", String(i));
+        fd.append("filename", libraryFile.name);
+        const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`Error uploading part ${i + 1}`);
+        const { chunkUrl } = await res.json();
+        chunkUrls.push(chunkUrl);
+      }
+      const finalRes = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: `model_${Date.now()}_${libraryFile.name}` }),
+      });
+      if (!finalRes.ok) throw new Error("Error assembling file");
+      const { blobUrl } = await finalRes.json();
+
+      const metaRes = await fetch("/api/financial-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: libraryName.trim(), fileUrl: blobUrl, fileSize: libraryFile.size }),
+      });
+      if (!metaRes.ok) throw new Error("Error saving to library");
+
+      setLibraryName(""); setLibraryFile(null);
+      if (libraryFileRef.current) libraryFileRef.current.value = "";
+      loadModels();
+    } catch (e) {
+      setLibraryErr(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploadingLibrary(false);
+    }
   }
   async function deleteSavedModel(id: string) {
     await fetch(`/api/financial-models/${id}`, { method: "DELETE" });
-    loadModels(companyId);
-    if (currentModelId === id) { setCurrentModelId(null); setPlan(null); }
+    loadModels();
+  }
+  function previewModel(url: string) {
+    window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, "_blank");
   }
 
   function update<K extends keyof LboPlan>(key: K, value: LboPlan[K]) {
@@ -296,16 +328,22 @@ export default function FinancialModelsPage() {
             <TrendingUp size={20} className="text-orange" />
             <h1 className="text-[20px] font-semibold text-carbon">Financial Models</h1>
           </div>
-          <p className="text-[13px] text-slate mb-6">
-            Build a formula-driven LBO model — every number in the workbook is a real Excel formula you can audit and edit, not AI-typed static values.
+          <p className="text-[13px] text-slate mb-5">
+            Formula-driven models — every number in the workbook is a real Excel formula you can audit and edit, not AI-typed static values.
           </p>
+
+          {/* Model type sections — LBO is the only one built so far */}
+          <div className="flex items-center gap-2 mb-6">
+            <span className="px-3 py-1.5 bg-carbon text-white text-[12px] font-medium rounded-[8px]">LBO Model</span>
+            <span className="px-3 py-1.5 border border-dashed border-chalk text-slate/60 text-[12px] rounded-[8px]">More model types coming soon</span>
+          </div>
 
           {/* Company / target */}
           <div className="bg-white border border-chalk rounded-[12px] p-6 mb-6">
             <h2 className="text-[14px] font-semibold text-carbon mb-3">Target Company</h2>
             <select
               value={companyId}
-              onChange={e => { setCompanyId(e.target.value); setPlan(null); setCurrentModelId(null); setLastDownload(null); }}
+              onChange={e => { setCompanyId(e.target.value); setPlan(null); setLastDownload(null); }}
               className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-orange mb-2"
             >
               <option value="">— No specific company (early screening) —</option>
@@ -447,40 +485,75 @@ export default function FinancialModelsPage() {
                 className="w-full py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
               >
                 {building && <Loader2 size={14} className="animate-spin" />}
-                {building ? "Building model…" : currentModelId ? "Rebuild Model" : "Build Model"}
+                {building ? "Building model…" : "Build Model"}
               </button>
               {buildErr && <div className="rounded-[8px] p-3 text-[12px] border bg-red-50 text-red-700 border-red-200">{buildErr}</div>}
               {lastDownload && !building && (
                 <div className="rounded-[8px] p-3 text-[12px] border bg-green-50 text-green-700 border-green-200">
-                  Downloaded <strong>{lastDownload.filename}</strong> — saved to your Financial Models list below.
+                  Downloaded <strong>{lastDownload.filename}</strong>. Want the team to see it? Upload it to the Model Library below.
                 </div>
               )}
             </div>
           )}
 
-          {/* Saved models */}
+          {/* Model Library — manual uploads, shared across the whole team, flat (no company scoping) */}
           <div className="bg-white border border-chalk rounded-[12px] p-6">
-            <h2 className="text-[14px] font-semibold text-carbon mb-3">Saved Models{companyId ? "" : " (All Companies)"}</h2>
+            <h2 className="text-[14px] font-semibold text-carbon mb-1">Model Library</h2>
+            <p className="text-[12px] text-slate mb-4">
+              Not saved automatically — upload a finished workbook here (built above or elsewhere) so anyone on the team can find and open it.
+            </p>
+
+            <div className="flex items-end gap-2 mb-4">
+              <div className="flex-1">
+                <span className="text-[11px] text-slate">Name</span>
+                <input
+                  type="text" value={libraryName} onChange={e => setLibraryName(e.target.value)}
+                  placeholder="e.g. Acme Co. — LBO Model (base case)"
+                  className="w-full mt-1 px-2.5 py-1.5 text-[12px] bg-fog border border-chalk rounded-[6px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange"
+                />
+              </div>
+              <button
+                type="button" onClick={() => libraryFileRef.current?.click()}
+                className="px-3 py-[7px] text-[12px] border border-chalk rounded-[6px] text-carbon hover:bg-fog whitespace-nowrap max-w-[160px] truncate"
+              >
+                {libraryFile ? libraryFile.name : "Choose file"}
+              </button>
+              <input ref={libraryFileRef} type="file" className="hidden"
+                onChange={e => setLibraryFile(e.target.files?.[0] ?? null)} />
+              <button
+                onClick={uploadToLibrary}
+                disabled={uploadingLibrary || !libraryFile || !libraryName.trim()}
+                className="px-4 py-1.5 bg-orange text-white rounded-[6px] text-[12px] font-medium hover:opacity-85 disabled:opacity-40 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {uploadingLibrary && <Loader2 size={13} className="animate-spin" />}
+                {uploadingLibrary ? "Uploading…" : "Upload"}
+              </button>
+            </div>
+            {libraryErr && <div className="mb-3 rounded-[8px] p-3 text-[12px] border bg-red-50 text-red-700 border-red-200">{libraryErr}</div>}
+
             {loadingModels ? (
               <div className="text-center py-6 text-slate text-[12px]">Loading…</div>
             ) : savedModels.length === 0 ? (
-              <div className="text-center py-6 text-slate text-[12px]">No saved models yet.</div>
+              <div className="text-center py-6 text-slate text-[12px]">No models uploaded yet.</div>
             ) : (
               <div className="space-y-2">
                 {savedModels.map(m => (
                   <div key={m.id} className="flex items-center justify-between px-3 py-2.5 border border-chalk rounded-[8px]">
-                    <button onClick={() => loadSavedModel(m.id)} className="text-left flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
                       <div className="text-[13px] text-carbon truncate">{m.name}</div>
                       <div className="text-[11px] text-slate">
-                        {m.companyName ?? "No company"} · {m.status} · {fmtSize(m.workbookSize)}
-                        {m.updatedAt ? ` · ${new Date(m.updatedAt).toLocaleDateString()}` : ""}
+                        {fmtSize(m.workbookSize)}
+                        {m.createdAt ? ` · ${new Date(m.createdAt).toLocaleDateString()}` : ""}
                       </div>
-                    </button>
+                    </div>
                     <div className="flex items-center gap-2 shrink-0 ml-3">
                       {m.workbookUrl && (
-                        <a href={m.workbookUrl} download className="text-slate hover:text-carbon"><Download size={15} /></a>
+                        <>
+                          <button onClick={() => previewModel(m.workbookUrl!)} title="Preview" className="text-slate hover:text-carbon"><Eye size={15} /></button>
+                          <a href={m.workbookUrl} download className="text-slate hover:text-carbon" title="Download"><Download size={15} /></a>
+                        </>
                       )}
-                      <button onClick={() => deleteSavedModel(m.id)} className="text-slate hover:text-red-500"><Trash2 size={15} /></button>
+                      <button onClick={() => deleteSavedModel(m.id)} className="text-slate hover:text-red-500" title="Delete"><Trash2 size={15} /></button>
                     </div>
                   </div>
                 ))}

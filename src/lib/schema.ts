@@ -217,9 +217,9 @@ export const twoPagerSectionsConfig = pgTable("TwoPagerSectionsConfig", {
 });
 
 // ── Financial Models (LBO, and future model types) ─────────────────────────────
-// A row is only created when a model is actually built (not on every AI-drafted
-// assumption regeneration), so idle exploration doesn't pollute the saved list.
-// Rebuilding an existing model updates the same row rather than creating a new one.
+// Building a model never writes a row here — building is download-only. A row is
+// only created when a user explicitly uploads a finished workbook to the shared
+// team library (flat list, not scoped to a company).
 
 export const financialModels = pgTable("FinancialModel", {
   id:           text("id").primaryKey(),
@@ -227,8 +227,8 @@ export const financialModels = pgTable("FinancialModel", {
   companyName:  text("companyName"), // freeform fallback when no company is selected (target not yet tracked)
   modelType:    text("modelType").notNull().default("lbo"),
   name:         text("name").notNull(),
-  status:       text("status").notNull().default("draft"), // "draft" | "built"
-  assumptions:  text("assumptions").notNull(),              // JSON: the reviewed/edited assumptions object
+  status:       text("status").notNull().default("draft"), // "draft" | "built" | "uploaded"
+  assumptions:  text("assumptions").notNull(),              // JSON: "{}" for manually uploaded library entries
   contextFiles: text("contextFiles").notNull().default("[]"), // JSON array of { name, url, type }
   workbookUrl:  text("workbookUrl"),
   workbookSize: integer("workbookSize"),
@@ -236,6 +236,22 @@ export const financialModels = pgTable("FinancialModel", {
   updatedAt:    text("updatedAt").default(sql`now()`),
   createdBy:    text("createdBy"),
   updatedBy:    text("updatedBy"),
+});
+
+// ── Document Library (shared, flat) ─────────────────────────────────────────
+// Manually uploaded finished documents (presentations, 2-pagers) that any user
+// can browse and download. Never created automatically by generation — always
+// an explicit, separate upload action so the list only holds what the team
+// actually wants to share.
+
+export const documentLibrary = pgTable("DocumentLibrary", {
+  id:        text("id").primaryKey(),
+  docType:   text("docType").notNull(), // "presentation" | "twopager"
+  name:      text("name").notNull(),
+  fileUrl:   text("fileUrl").notNull(),
+  fileSize:  integer("fileSize"),
+  createdAt: text("createdAt").default(sql`now()`),
+  createdBy: text("createdBy"),
 });
 
 // ── Document Templates ────────────────────────────────────────────────────────

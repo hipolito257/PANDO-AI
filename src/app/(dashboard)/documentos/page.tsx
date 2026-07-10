@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   LayoutTemplate, FileText, Table2, File, ImageIcon,
   Paperclip, Sparkles, Target, Flag, Lock, FileCode, ChevronLeft,
+  FolderOpen, Eye, Download, Trash2, Loader2, X,
 } from "lucide-react";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { useDocJobs } from "../DocJobsContext";
@@ -104,6 +105,14 @@ function FileTypeIcon({ name, size = 16 }: { name: string; size?: number }) {
   return <File size={size} className="text-graphite" />;
 }
 
+// Each chunk is ≤3 MB so it stays under Vercel's 4.5 MB payload limit.
+const CTX_CHUNK = 3 * 1024 * 1024;
+
+interface LibraryItem {
+  id: string; docType: string; name: string;
+  fileUrl: string | null; fileSize: number | null; createdAt: string | null;
+}
+
 function fmtSize(b: number | null): string {
   if (!b) return "";
   return b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`;
@@ -150,6 +159,77 @@ export default function DocumentosPage() {
   const [uploadDesc, setUploadDesc]   = useState("");
   const templateFileRef = useRef<HTMLInputElement>(null);
   const contextFileRef  = useRef<HTMLInputElement>(null);
+
+  // ── Document Library (shared, manual-upload, flat — presentations & 2-pagers) ──
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [libraryTab, setLibraryTab] = useState<"presentation" | "twopager">("presentation");
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libName, setLibName] = useState("");
+  const [libFile, setLibFile] = useState<File | null>(null);
+  const [libUploading, setLibUploading] = useState(false);
+  const [libErr, setLibErr] = useState<string | null>(null);
+  const libFileRef = useRef<HTMLInputElement>(null);
+
+  const loadLibrary = useCallback(async (docType: "presentation" | "twopager") => {
+    setLibraryLoading(true);
+    const r = await fetch(`/api/document-library?docType=${docType}`);
+    if (r.ok) setLibraryItems(await r.json());
+    setLibraryLoading(false);
+  }, []);
+  useEffect(() => { if (showLibrary) loadLibrary(libraryTab); }, [showLibrary, libraryTab, loadLibrary]);
+
+  async function uploadToLibrary() {
+    if (!libFile || !libName.trim()) return;
+    setLibErr(null);
+    setLibUploading(true);
+    try {
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(libFile.size / CTX_CHUNK) || 1;
+      const chunkUrls: string[] = [];
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = libFile.slice(i * CTX_CHUNK, (i + 1) * CTX_CHUNK);
+        const fd = new FormData();
+        fd.append("chunk", chunk);
+        fd.append("uploadId", uploadId);
+        fd.append("chunkIndex", String(i));
+        fd.append("filename", libFile.name);
+        const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`Error uploading part ${i + 1}`);
+        const { chunkUrl } = await res.json();
+        chunkUrls.push(chunkUrl);
+      }
+      const finalRes = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: `library_${Date.now()}_${libFile.name}` }),
+      });
+      if (!finalRes.ok) throw new Error("Error assembling file");
+      const { blobUrl } = await finalRes.json();
+
+      const metaRes = await fetch("/api/document-library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docType: libraryTab, name: libName.trim(), fileUrl: blobUrl, fileSize: libFile.size }),
+      });
+      if (!metaRes.ok) throw new Error("Error saving to library");
+
+      setLibName(""); setLibFile(null);
+      if (libFileRef.current) libFileRef.current.value = "";
+      loadLibrary(libraryTab);
+    } catch (e) {
+      setLibErr(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setLibUploading(false);
+    }
+  }
+  async function deleteLibraryItem(id: string) {
+    await fetch(`/api/document-library/${id}`, { method: "DELETE" });
+    loadLibrary(libraryTab);
+  }
+  function previewLibraryItem(url: string) {
+    window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, "_blank");
+  }
 
   // ── 2-Pager specific state ────────────────────────────────────────────────
   const [pageCount, setPageCount] = usePersistentState("documentos:pageCount", 2);
@@ -477,7 +557,6 @@ export default function DocumentosPage() {
 
   // ── Upload context files via chunked upload (reuses template chunk endpoints) ──
   // Each chunk is ≤3 MB so it stays under Vercel's 4.5 MB payload limit.
-  const CTX_CHUNK = 3 * 1024 * 1024;
 
   async function ensureContextBlobsUploaded(): Promise<{ name: string; url: string; type: string }[]> {
     if (contextFiles.length === 0) return [];
@@ -851,6 +930,88 @@ export default function DocumentosPage() {
           </div>
         )}
 
+        {/* Document Library modal — manual uploads, shared across the whole team */}
+        {showLibrary && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-[14px] shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-chalk shrink-0">
+                <h3 className="text-[15px] font-semibold text-carbon">Document Library</h3>
+                <button onClick={() => setShowLibrary(false)} className="text-slate hover:text-carbon"><X size={16} /></button>
+              </div>
+
+              <div className="flex gap-2 px-6 pt-4 shrink-0">
+                <button onClick={() => setLibraryTab("presentation")}
+                  className={`px-3 py-1.5 text-[12px] font-medium rounded-[7px] transition-colors ${libraryTab === "presentation" ? "bg-carbon text-white" : "border border-chalk text-slate hover:bg-fog"}`}>
+                  Presentations
+                </button>
+                <button onClick={() => setLibraryTab("twopager")}
+                  className={`px-3 py-1.5 text-[12px] font-medium rounded-[7px] transition-colors ${libraryTab === "twopager" ? "bg-carbon text-white" : "border border-chalk text-slate hover:bg-fog"}`}>
+                  2-Pagers
+                </button>
+              </div>
+
+              <div className="p-6 pt-4 space-y-4 overflow-y-auto flex-1">
+                <div>
+                  <p className="text-[11px] text-slate mb-3">
+                    Not saved automatically — upload a finished {libraryTab === "presentation" ? "presentation" : "2-pager"} here so anyone on the team can find and open it.
+                  </p>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[11px] text-slate">Name</span>
+                      <input
+                        type="text" value={libName} onChange={e => setLibName(e.target.value)}
+                        placeholder="e.g. Acme Co. — Investor Deck v2"
+                        className="w-full mt-1 px-2.5 py-1.5 text-[12px] bg-fog border border-chalk rounded-[6px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange"
+                      />
+                    </div>
+                    <button type="button" onClick={() => libFileRef.current?.click()}
+                      className="px-3 py-[7px] text-[12px] border border-chalk rounded-[6px] text-carbon hover:bg-fog whitespace-nowrap max-w-[120px] truncate">
+                      {libFile ? libFile.name : "Choose file"}
+                    </button>
+                    <input ref={libFileRef} type="file" className="hidden"
+                      onChange={e => setLibFile(e.target.files?.[0] ?? null)} />
+                    <button onClick={uploadToLibrary} disabled={libUploading || !libFile || !libName.trim()}
+                      className="px-4 py-1.5 bg-orange text-white rounded-[6px] text-[12px] font-medium hover:opacity-85 disabled:opacity-40 transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                      {libUploading && <Loader2 size={13} className="animate-spin" />}
+                      {libUploading ? "Uploading…" : "Upload"}
+                    </button>
+                  </div>
+                  {libErr && <div className="mt-2 rounded-[8px] p-2.5 text-[12px] border bg-red-50 text-red-700 border-red-200">{libErr}</div>}
+                </div>
+
+                {libraryLoading ? (
+                  <div className="text-center py-6 text-slate text-[12px]">Loading…</div>
+                ) : libraryItems.length === 0 ? (
+                  <div className="text-center py-6 text-slate text-[12px]">Nothing uploaded yet.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {libraryItems.map(item => (
+                      <div key={item.id} className="flex items-center justify-between px-3 py-2.5 border border-chalk rounded-[8px]">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] text-carbon truncate">{item.name}</div>
+                          <div className="text-[11px] text-slate">
+                            {fmtSize(item.fileSize)}
+                            {item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString()}` : ""}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-3">
+                          {item.fileUrl && (
+                            <>
+                              <button onClick={() => previewLibraryItem(item.fileUrl!)} title="Preview" className="text-slate hover:text-carbon"><Eye size={15} /></button>
+                              <a href={item.fileUrl} download className="text-slate hover:text-carbon" title="Download"><Download size={15} /></a>
+                            </>
+                          )}
+                          <button onClick={() => deleteLibraryItem(item.id)} className="text-slate hover:text-red-500" title="Delete"><Trash2 size={15} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Landing: choose document type ─────────────────────────────── */}
         {!docType && (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
@@ -870,6 +1031,10 @@ export default function DocumentosPage() {
                 </button>
               ))}
             </div>
+            <button onClick={() => setShowLibrary(true)}
+              className="mt-8 flex items-center gap-1.5 text-[12px] text-slate hover:text-carbon">
+              <FolderOpen size={14} /> Document Library — browse uploaded files
+            </button>
           </div>
         )}
 
