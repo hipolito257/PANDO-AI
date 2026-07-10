@@ -216,6 +216,28 @@ export const twoPagerSectionsConfig = pgTable("TwoPagerSectionsConfig", {
   updatedBy: text("updatedBy"),
 });
 
+// ── Financial Models (LBO, and future model types) ─────────────────────────────
+// A row is only created when a model is actually built (not on every AI-drafted
+// assumption regeneration), so idle exploration doesn't pollute the saved list.
+// Rebuilding an existing model updates the same row rather than creating a new one.
+
+export const financialModels = pgTable("FinancialModel", {
+  id:           text("id").primaryKey(),
+  companyId:    text("companyId").references(() => companies.id, { onDelete: "cascade" }),
+  companyName:  text("companyName"), // freeform fallback when no company is selected (target not yet tracked)
+  modelType:    text("modelType").notNull().default("lbo"),
+  name:         text("name").notNull(),
+  status:       text("status").notNull().default("draft"), // "draft" | "built"
+  assumptions:  text("assumptions").notNull(),              // JSON: the reviewed/edited assumptions object
+  contextFiles: text("contextFiles").notNull().default("[]"), // JSON array of { name, url, type }
+  workbookUrl:  text("workbookUrl"),
+  workbookSize: integer("workbookSize"),
+  createdAt:    text("createdAt").default(sql`now()`),
+  updatedAt:    text("updatedAt").default(sql`now()`),
+  createdBy:    text("createdBy"),
+  updatedBy:    text("updatedBy"),
+});
+
 // ── Document Templates ────────────────────────────────────────────────────────
 
 export const documentTemplates = pgTable("DocumentTemplate", {
@@ -286,10 +308,15 @@ export const companiesRelations = relations(companies, ({ many }) => ({
   founders:         many(founders),
   financialHistory: many(financialSnapshots),
   notes:            many(notes),
+  financialModels:  many(financialModels),
 }));
 
 export const notesRelations = relations(notes, ({ one }) => ({
   company: one(companies, { fields: [notes.companyId], references: [companies.id] }),
+}));
+
+export const financialModelsRelations = relations(financialModels, ({ one }) => ({
+  company: one(companies, { fields: [financialModels.companyId], references: [companies.id] }),
 }));
 
 export const signalsRelations = relations(signals, ({ one }) => ({
