@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, companies, signals, companyTags, mandateMatches, activityLog } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { eq, desc, like, and, type SQL } from "drizzle-orm";
+import { eq, desc, like, ilike, and, type SQL } from "drizzle-orm";
 import { slugify } from "@/lib/utils";
 import { randomUUID } from "crypto";
 
@@ -60,7 +60,16 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { name, ...rest } = body;
-  if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+  if (!name?.trim()) return NextResponse.json({ error: "name required" }, { status: 400 });
+
+  const existing = await db.query.companies.findFirst({ where: ilike(companies.name, name.trim()) });
+  if (existing) {
+    return NextResponse.json({
+      error: `"${existing.name}" is already in the radar (status: ${existing.status}).`,
+      alreadyExists: true,
+      company: existing,
+    }, { status: 409 });
+  }
 
   const userId   = session.user.id;
   const userName = session.user.name ?? session.user.email ?? "User";
