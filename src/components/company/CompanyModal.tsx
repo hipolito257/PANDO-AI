@@ -58,11 +58,15 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"basic"|"financials"|"score">("basic");
+  const [aiFilling, setAiFilling] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiNote, setAiNote] = useState("");
 
   useEffect(() => {
     if (open) {
       setActiveTab("basic");
       setError("");
+      setAiError(""); setAiNote("");
       if (initial) {
         setForm({
           name:           initial.name          ?? "",
@@ -128,6 +132,42 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
     onClose();
   }
 
+  async function completeWithAi() {
+    if (!form.name.trim()) { setAiError("Enter a company name first."); return; }
+    setAiFilling(true);
+    setAiError("");
+    setAiNote("");
+    try {
+      const res = await fetch("/api/companies/ai-fill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.success) throw new Error(j.error ?? "Error researching company.");
+
+      const { researchNotes, ...fields } = j.fields as Record<string, unknown> & { researchNotes?: string };
+      setForm(f => {
+        const next = { ...f } as Record<string, unknown>;
+        for (const key of Object.keys(fields)) {
+          if (!(key in EMPTY)) continue;
+          const current = (f as Record<string, unknown>)[key];
+          const isBlank = current === null || current === undefined || current === "";
+          const incoming = fields[key];
+          if (isBlank && incoming !== null && incoming !== undefined && incoming !== "") {
+            next[key] = incoming;
+          }
+        }
+        return next as typeof f;
+      });
+      setAiNote(researchNotes || "AI filled in what it could find.");
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI research failed.");
+    } finally {
+      setAiFilling(false);
+    }
+  }
+
   if (!open) return null;
 
   const inp = "w-full px-3 py-2 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-carbon placeholder:text-slate";
@@ -190,8 +230,25 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className={lbl}>Name *</label>
-                  <input value={form.name} onChange={e => set("name", e.target.value)}
-                    placeholder="E.g. Konfío" className={inp} required />
+                  <div className="flex gap-2">
+                    <input value={form.name} onChange={e => set("name", e.target.value)}
+                      placeholder="E.g. Konfío" className={inp} required />
+                    <button type="button" onClick={completeWithAi} disabled={aiFilling || !form.name.trim()}
+                      className="shrink-0 px-3 py-2 text-[12px] font-medium text-white bg-orange rounded-[8px] hover:opacity-85 disabled:opacity-40 transition-opacity flex items-center gap-1.5 whitespace-nowrap">
+                      {aiFilling && (
+                        <svg className="animate-spin" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.3"/>
+                          <path d="M11 6a5 5 0 00-5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      )}
+                      {aiFilling ? "Researching…" : "Complete with AI"}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate mt-1">
+                    Fill in what you know, then let AI research and complete the rest — it only fills blank fields, never overwrites what you typed.
+                  </p>
+                  {aiError && <p className="text-[11px] text-red-500 bg-red-50 border border-red-200 rounded-[6px] px-3 py-2 mt-2">{aiError}</p>}
+                  {aiNote && !aiError && <p className="text-[11px] text-graphite bg-fog border border-chalk rounded-[6px] px-3 py-2 mt-2">{aiNote} Review before saving.</p>}
                 </div>
                 <div className="col-span-2">
                   <label className={lbl}>Description</label>
