@@ -11,6 +11,11 @@ function createDb() {
     idle_timeout: 20,
     connect_timeout: 10,
     ssl: "require",  // Supabase requires SSL
+    // With max:1, a slow/stuck query blocks every other query on this
+    // instance behind it with no upper bound — bound it so callers fail
+    // fast (and the frontend's error/finally paths kick in) instead of
+    // the request hanging indefinitely.
+    connection: { statement_timeout: 15000 },
   });
 
   return drizzle(client, { schema });

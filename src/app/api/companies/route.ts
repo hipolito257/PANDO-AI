@@ -35,23 +35,28 @@ export async function GET(req: NextRequest) {
   if (stage)   conditions.push(eq(companies.stage, stage));
   if (q)       conditions.push(like(companies.name, `%${q}%`));
 
-  const rows = await db.query.companies.findMany({
-    where: conditions.length > 0 ? and(...conditions) : undefined,
-    with: {
-      signals:        { orderBy: [desc(signals.date)], limit: 3 },
-      tags:           true,
-      mandateMatches: { with: { mandate: true } },
-    },
-    orderBy: [desc(companies.score)],
-    limit,
-  });
+  try {
+    const rows = await db.query.companies.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      with: {
+        signals:        { orderBy: [desc(signals.date)], limit: 3 },
+        tags:           true,
+        mandateMatches: { with: { mandate: true } },
+      },
+      orderBy: [desc(companies.score)],
+      limit,
+    });
 
-  let result = rows;
-  if (mandateId) {
-    result = rows.filter(c => c.mandateMatches.some((m: any) => m.mandateId === mandateId));
+    let result = rows;
+    if (mandateId) {
+      result = rows.filter(c => c.mandateMatches.some((m: any) => m.mandateId === mandateId));
+    }
+
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error("[companies GET]", err);
+    return NextResponse.json({ error: "Failed to load companies" }, { status: 500 });
   }
-
-  return NextResponse.json(result);
 }
 
 export async function POST(req: NextRequest) {

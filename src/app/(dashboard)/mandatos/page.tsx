@@ -34,9 +34,14 @@ export default function MandatosPage() {
 
   async function load() {
     setLoading(true);
-    const res = await fetch("/api/mandatos");
-    setMandates(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch("/api/mandatos", { signal: AbortSignal.timeout(15000) });
+      setMandates(res.ok ? await res.json() : []);
+    } catch {
+      setMandates([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);

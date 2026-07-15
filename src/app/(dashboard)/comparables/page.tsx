@@ -130,12 +130,13 @@ function ComparablesPage() {
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
-    fetch("/api/companies?limit=200")
-      .then(r => r.json())
+    fetch("/api/companies?limit=200", { signal: AbortSignal.timeout(15000) })
+      .then(r => r.ok ? r.json() : [])
       // Exclude exits (public/acquired/closed) and inactive — keep monitoring + pipeline
       .then(d => Array.isArray(d)
         ? setCompanies(d.filter((c: Company) => !["public","acquired","closed","inactive"].includes(c.status)))
-        : setCompanies([]));
+        : setCompanies([]))
+      .catch(() => setCompanies([]));
   }, []);
 
   const loadCompSet = useCallback(async (cid: string) => {
@@ -143,10 +144,15 @@ function ComparablesPage() {
     setCompSet(null);
     setHistoryData({});
     setEditedCells({});
-    const res = await fetch(`/api/comparables?companyId=${cid}`);
-    const sets: CompSet[] = await res.json();
-    setCompSet(sets[0] ?? null);
-    setLoadingSet(false);
+    try {
+      const res = await fetch(`/api/comparables?companyId=${cid}`, { signal: AbortSignal.timeout(15000) });
+      const sets: CompSet[] = res.ok ? await res.json() : [];
+      setCompSet(sets[0] ?? null);
+    } catch {
+      setCompSet(null);
+    } finally {
+      setLoadingSet(false);
+    }
   }, []);
 
   const handleEditComp = useCallback((ticker: string, field: keyof PublicComp, value: number | null) => {

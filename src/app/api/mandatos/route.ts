@@ -14,18 +14,23 @@ export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const rows = await db.query.mandates.findMany({
-    with: { matches: true },
-    orderBy: [asc(mandates.createdAt)],
-  });
+  try {
+    const rows = await db.query.mandates.findMany({
+      with: { matches: true },
+      orderBy: [asc(mandates.createdAt)],
+    });
 
-  const result = rows.map((m) => ({
-    ...m,
-    _count: { matches: m.matches.length },
-    matches: m.matches.filter((x: any) => x.tier === "strong"),
-  }));
+    const result = rows.map((m) => ({
+      ...m,
+      _count: { matches: m.matches.length },
+      matches: m.matches.filter((x: any) => x.tier === "strong"),
+    }));
 
-  return NextResponse.json(result);
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error("[mandatos GET]", err);
+    return NextResponse.json({ error: "Failed to load mandates" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {

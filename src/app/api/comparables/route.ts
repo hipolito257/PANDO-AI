@@ -14,30 +14,35 @@ export async function GET(req: NextRequest) {
 
   const companyId = req.nextUrl.searchParams.get("companyId");
 
-  const sets = await db.query.compSets.findMany({
-    with: { company: true },
-    where: companyId ? eq(compSets.companyId, companyId) : undefined,
-    orderBy: (c, { desc }) => [desc(c.createdAt)],
-  });
+  try {
+    const sets = await db.query.compSets.findMany({
+      with: { company: true },
+      where: companyId ? eq(compSets.companyId, companyId) : undefined,
+      orderBy: (c, { desc }) => [desc(c.createdAt)],
+    });
 
-  const allTickers = [...new Set(sets.flatMap(s => JSON.parse(s.tickers) as string[]))];
-  let pubData: any[] = [];
-  if (allTickers.length > 0) {
-    try {
-      pubData = await db.query.publicComps.findMany({ where: inArray(publicComps.ticker, allTickers) });
-    } catch {
-      // New columns may not exist yet in DB — silently skip extra metrics
-      pubData = [];
+    const allTickers = [...new Set(sets.flatMap(s => JSON.parse(s.tickers) as string[]))];
+    let pubData: any[] = [];
+    if (allTickers.length > 0) {
+      try {
+        pubData = await db.query.publicComps.findMany({ where: inArray(publicComps.ticker, allTickers) });
+      } catch {
+        // New columns may not exist yet in DB — silently skip extra metrics
+        pubData = [];
+      }
     }
+    const pubMap = Object.fromEntries(pubData.map((p: any) => [p.ticker, p]));
+
+    const result = sets.map(s => ({
+      ...s,
+      comps: (JSON.parse(s.tickers) as string[]).map(t => pubMap[t]).filter(Boolean),
+    }));
+
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error("[comparables GET]", err);
+    return NextResponse.json({ error: "Failed to load comparables" }, { status: 500 });
   }
-  const pubMap = Object.fromEntries(pubData.map((p: any) => [p.ticker, p]));
-
-  const result = sets.map(s => ({
-    ...s,
-    comps: (JSON.parse(s.tickers) as string[]).map(t => pubMap[t]).filter(Boolean),
-  }));
-
-  return NextResponse.json(result);
 }
 
 // POST — create comp set

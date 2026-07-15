@@ -66,7 +66,7 @@ export default function RadarPage() {
       if (country) params.set("country", country);
       if (stage) params.set("stage", stage);
       if (mandateId) params.set("mandate", mandateId);
-      const res = await fetch(`/api/companies?${params}`);
+      const res = await fetch(`/api/companies?${params}`, { signal: AbortSignal.timeout(15000) });
       const main = res.ok ? await res.json() : [];
       const mainData = Array.isArray(main) ? main : (main.companies ?? []);
       setCompanies(mainData.filter((c: Company) => c.status === "monitoring"));
@@ -82,7 +82,12 @@ export default function RadarPage() {
   const load = loadAll;
 
   useEffect(() => { loadAll(); }, [loadAll]);
-  useEffect(() => { fetch("/api/mandatos").then(r => r.json()).then(setMandates); }, []);
+  useEffect(() => {
+    fetch("/api/mandatos", { signal: AbortSignal.timeout(15000) })
+      .then(r => r.ok ? r.json() : [])
+      .then(setMandates)
+      .catch(() => setMandates([]));
+  }, []);
 
   // Mark all non-exit signals as read when the user opens Radar
   useEffect(() => {
@@ -90,7 +95,7 @@ export default function RadarPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ excludeTypes: ["exit_signal"] }),
-    });
+    }).catch(() => {});
   }, []);
 
   // Radar → Pipeline: el equipo decide seguir activamente esta empresa
