@@ -5,6 +5,8 @@ import { useSession } from "next-auth/react";
 type Member = { id: string; name: string; email: string; role: string; createdAt: string | null };
 type PendingUser = { id: string; name: string; email: string; createdAt: string | null };
 type TwoPagerSection = { id: string; title: string; guidance: string };
+type IrlSection = { id: string; title: string; guidance: string };
+type IrlQuestion = { id: string; category: string; question: string };
 
 export default function SettingsPage() {
   const { data: session, update: updateSession } = useSession();
@@ -48,6 +50,21 @@ export default function SettingsPage() {
   const [templateLoading, setTemplateLoading] = useState(true);
   const [templateUploading, setTemplateUploading] = useState(false);
   const [templateMessage, setTemplateMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [irlSections, setIrlSections] = useState<IrlSection[]>([]);
+  const [irlSectionsLoading, setIrlSectionsLoading] = useState(true);
+  const [irlSectionsSaving, setIrlSectionsSaving] = useState(false);
+  const [irlSectionsMessage, setIrlSectionsMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [irlQuestions, setIrlQuestions] = useState<IrlQuestion[]>([]);
+  const [irlQuestionsLoading, setIrlQuestionsLoading] = useState(true);
+  const [irlQuestionsSaving, setIrlQuestionsSaving] = useState(false);
+  const [irlQuestionsMessage, setIrlQuestionsMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [irlTemplateName, setIrlTemplateName] = useState<string | null>(null);
+  const [irlTemplateLoading, setIrlTemplateLoading] = useState(true);
+  const [irlTemplateUploading, setIrlTemplateUploading] = useState(false);
+  const [irlTemplateMessage, setIrlTemplateMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -113,6 +130,36 @@ export default function SettingsPage() {
       setTemplateLoading(false);
     }
     loadTemplate();
+
+    async function loadIrlSections() {
+      const res = await fetch("/api/admin/irl-sections");
+      if (res.ok) {
+        const data = await res.json();
+        setIrlSections(data.sections);
+      }
+      setIrlSectionsLoading(false);
+    }
+    loadIrlSections();
+
+    async function loadIrlQuestions() {
+      const res = await fetch("/api/admin/irl-questionnaire");
+      if (res.ok) {
+        const data = await res.json();
+        setIrlQuestions(data.questions);
+      }
+      setIrlQuestionsLoading(false);
+    }
+    loadIrlQuestions();
+
+    async function loadIrlTemplate() {
+      const res = await fetch("/api/admin/irl-template");
+      if (res.ok) {
+        const data = await res.json();
+        setIrlTemplateName(data.name);
+      }
+      setIrlTemplateLoading(false);
+    }
+    loadIrlTemplate();
   }, [isAdmin]);
 
   function updateSection(idx: number, patch: Partial<TwoPagerSection>) {
@@ -132,6 +179,44 @@ export default function SettingsPage() {
   }
   function addSection() {
     setSections(prev => [...prev, { id: crypto.randomUUID(), title: "New Section", guidance: "" }]);
+  }
+
+  function updateIrlSection(idx: number, patch: Partial<IrlSection>) {
+    setIrlSections(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s));
+  }
+  function removeIrlSection(idx: number) {
+    setIrlSections(prev => prev.filter((_, i) => i !== idx));
+  }
+  function moveIrlSection(idx: number, dir: -1 | 1) {
+    setIrlSections(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+  function addIrlSection() {
+    setIrlSections(prev => [...prev, { id: crypto.randomUUID(), title: "New Section", guidance: "" }]);
+  }
+
+  function updateIrlQuestion(idx: number, patch: Partial<IrlQuestion>) {
+    setIrlQuestions(prev => prev.map((q, i) => i === idx ? { ...q, ...patch } : q));
+  }
+  function removeIrlQuestion(idx: number) {
+    setIrlQuestions(prev => prev.filter((_, i) => i !== idx));
+  }
+  function moveIrlQuestion(idx: number, dir: -1 | 1) {
+    setIrlQuestions(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+  function addIrlQuestion() {
+    setIrlQuestions(prev => [...prev, { id: crypto.randomUUID(), category: "Market", question: "" }]);
   }
 
   async function handleSectionsSave() {
@@ -208,6 +293,104 @@ export default function SettingsPage() {
       setTemplateMessage({ type: "error", text: e instanceof Error ? e.message : "Upload failed" });
     }
     setTemplateUploading(false);
+  }
+
+  async function handleIrlSectionsSave() {
+    setIrlSectionsMessage(null);
+    if (irlSections.length === 0 || irlSections.some(s => !s.title.trim())) {
+      setIrlSectionsMessage({ type: "error", text: "Every section needs a title" });
+      return;
+    }
+    setIrlSectionsSaving(true);
+    const res = await fetch("/api/admin/irl-sections", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sections: irlSections }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setIrlSections(data.sections);
+      setIrlSectionsMessage({ type: "success", text: "IRL default structure updated" });
+    } else {
+      setIrlSectionsMessage({ type: "error", text: data.error ?? "Could not save structure" });
+    }
+    setIrlSectionsSaving(false);
+  }
+
+  async function handleIrlQuestionsSave() {
+    setIrlQuestionsMessage(null);
+    if (irlQuestions.length === 0 || irlQuestions.some(q => !q.question.trim() || !q.category.trim())) {
+      setIrlQuestionsMessage({ type: "error", text: "Every question needs a category and text" });
+      return;
+    }
+    setIrlQuestionsSaving(true);
+    const res = await fetch("/api/admin/irl-questionnaire", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questions: irlQuestions }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setIrlQuestions(data.questions);
+      setIrlQuestionsMessage({ type: "success", text: "IRL questionnaire updated" });
+    } else {
+      setIrlQuestionsMessage({ type: "error", text: data.error ?? "Could not save questionnaire" });
+    }
+    setIrlQuestionsSaving(false);
+  }
+
+  async function handleIrlTemplateUpload(file: File) {
+    setIrlTemplateMessage(null);
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "docx") {
+      setIrlTemplateMessage({ type: "error", text: "Please upload a .docx file" });
+      return;
+    }
+    setIrlTemplateUploading(true);
+    try {
+      const CHUNK_SIZE = 3 * 1024 * 1024;
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const chunkUrls: string[] = [];
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const fd = new FormData();
+        fd.append("chunk", chunk);
+        fd.append("uploadId", uploadId);
+        fd.append("chunkIndex", String(i));
+        fd.append("filename", file.name);
+        const res = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`Part ${i + 1}/${totalChunks} failed (HTTP ${res.status})`);
+        const { chunkUrl } = await res.json();
+        chunkUrls.push(chunkUrl);
+      }
+
+      const finalRes = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: file.name }),
+      });
+      if (!finalRes.ok) {
+        const j = await finalRes.json().catch(() => ({}));
+        throw new Error(j.error ?? "Error assembling file");
+      }
+      const { blobUrl } = await finalRes.json();
+
+      const regRes = await fetch("/api/admin/irl-template", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: blobUrl, name: file.name }),
+      });
+      const data = await regRes.json().catch(() => ({}));
+      if (!regRes.ok) throw new Error(data.error ?? "Error saving template");
+
+      setIrlTemplateName(data.name);
+      setIrlTemplateMessage({ type: "success", text: "IRL template updated" });
+    } catch (e) {
+      setIrlTemplateMessage({ type: "error", text: e instanceof Error ? e.message : "Upload failed" });
+    }
+    setIrlTemplateUploading(false);
   }
 
   async function handleThesisUpload(file: File) {
@@ -676,6 +859,231 @@ export default function SettingsPage() {
                   : "bg-red-50 text-red-700 border-red-200"
               }`}>
                 {templateMessage.text}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* IRL Default Structure (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+            <div>
+              <h2 className="text-[16px] font-semibold text-carbon">IRL Default Structure</h2>
+              <p className="text-[12px] text-slate mt-1">
+                Default section outline for the Internal Review Letter. Each user can still edit their own copy
+                of this outline when building a specific document.
+              </p>
+            </div>
+
+            {irlSectionsLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : (
+              <div className="space-y-3">
+                {irlSections.map((s, idx) => (
+                  <div key={s.id} className="border border-chalk rounded-[8px] p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={s.title}
+                        onChange={e => updateIrlSection(idx, { title: e.target.value })}
+                        placeholder="Section title"
+                        className="flex-1 px-3 py-2 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-orange"
+                      />
+                      <button
+                        onClick={() => moveIrlSection(idx, -1)}
+                        disabled={idx === 0}
+                        className="px-2 py-2 text-slate hover:text-carbon disabled:opacity-30 text-[12px]"
+                        title="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => moveIrlSection(idx, 1)}
+                        disabled={idx === irlSections.length - 1}
+                        className="px-2 py-2 text-slate hover:text-carbon disabled:opacity-30 text-[12px]"
+                        title="Move down"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() => removeIrlSection(idx)}
+                        className="px-2 py-2 text-red-500 hover:text-red-700 text-[12px]"
+                        title="Remove section"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <textarea
+                      value={s.guidance}
+                      onChange={e => updateIrlSection(idx, { guidance: e.target.value })}
+                      placeholder="Guidance for what this section should cover"
+                      rows={2}
+                      className="w-full px-3 py-2 text-[11px] bg-fog border border-chalk rounded-[8px] text-carbon placeholder:text-slate/60 focus:outline-none focus:border-orange"
+                    />
+                  </div>
+                ))}
+
+                <button
+                  onClick={addIrlSection}
+                  className="w-full py-2 border border-dashed border-chalk rounded-[8px] text-[12px] text-slate hover:text-carbon hover:border-graphite transition-colors"
+                >
+                  + Add Section
+                </button>
+              </div>
+            )}
+
+            {irlSectionsMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border ${
+                irlSectionsMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {irlSectionsMessage.text}
+              </div>
+            )}
+
+            <button
+              onClick={handleIrlSectionsSave}
+              disabled={irlSectionsSaving || irlSectionsLoading}
+              className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {irlSectionsSaving ? "Saving…" : "Save Structure"}
+            </button>
+          </div>
+        )}
+
+        {/* IRL Due-Diligence Questionnaire (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+            <div>
+              <h2 className="text-[16px] font-semibold text-carbon">IRL Due-Diligence Questionnaire</h2>
+              <p className="text-[12px] text-slate mt-1">
+                Questions analysts answer before drafting an IRL. Answers are treated as authoritative
+                and incorporated directly into the draft.
+              </p>
+            </div>
+
+            {irlQuestionsLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : (
+              <div className="space-y-3">
+                {irlQuestions.map((q, idx) => (
+                  <div key={q.id} className="border border-chalk rounded-[8px] p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={q.category}
+                        onChange={e => updateIrlQuestion(idx, { category: e.target.value })}
+                        placeholder="Category"
+                        className="w-32 shrink-0 px-3 py-2 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-orange"
+                      />
+                      <input
+                        type="text"
+                        value={q.question}
+                        onChange={e => updateIrlQuestion(idx, { question: e.target.value })}
+                        placeholder="Question"
+                        className="flex-1 px-3 py-2 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-orange"
+                      />
+                      <button
+                        onClick={() => moveIrlQuestion(idx, -1)}
+                        disabled={idx === 0}
+                        className="px-2 py-2 text-slate hover:text-carbon disabled:opacity-30 text-[12px]"
+                        title="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => moveIrlQuestion(idx, 1)}
+                        disabled={idx === irlQuestions.length - 1}
+                        className="px-2 py-2 text-slate hover:text-carbon disabled:opacity-30 text-[12px]"
+                        title="Move down"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() => removeIrlQuestion(idx)}
+                        className="px-2 py-2 text-red-500 hover:text-red-700 text-[12px]"
+                        title="Remove question"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  onClick={addIrlQuestion}
+                  className="w-full py-2 border border-dashed border-chalk rounded-[8px] text-[12px] text-slate hover:text-carbon hover:border-graphite transition-colors"
+                >
+                  + Add Question
+                </button>
+              </div>
+            )}
+
+            {irlQuestionsMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border ${
+                irlQuestionsMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {irlQuestionsMessage.text}
+              </div>
+            )}
+
+            <button
+              onClick={handleIrlQuestionsSave}
+              disabled={irlQuestionsSaving || irlQuestionsLoading}
+              className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {irlQuestionsSaving ? "Saving…" : "Save Questionnaire"}
+            </button>
+          </div>
+        )}
+
+        {/* IRL Template (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">
+            <div>
+              <h2 className="text-[16px] font-semibold text-carbon">IRL Template</h2>
+              <p className="text-[12px] text-slate mt-1">
+                Upload a reference .docx and every generated Internal Review Letter will match its exact
+                fonts, colors, and page structure (margins, header, footer). Only the content is
+                replaced with AI-generated text — the content of this file is never used as source
+                material, only its visual styling.
+              </p>
+            </div>
+
+            {irlTemplateLoading ? (
+              <div className="text-center py-6 text-slate text-[12px]">Loading...</div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="flex-1 px-3 py-2.5 text-[12px] bg-fog border border-chalk rounded-[8px] text-carbon truncate">
+                  {irlTemplateName ?? "No template uploaded — using PANDO default styling"}
+                </div>
+                <label className="py-2.5 px-4 bg-orange text-white rounded-[8px] text-[13px] font-medium hover:opacity-85 cursor-pointer transition-colors disabled:opacity-40">
+                  {irlTemplateUploading ? "Uploading…" : irlTemplateName ? "Replace" : "Upload"}
+                  <input
+                    type="file"
+                    accept=".docx"
+                    disabled={irlTemplateUploading}
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) handleIrlTemplateUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+
+            {irlTemplateMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border ${
+                irlTemplateMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {irlTemplateMessage.text}
               </div>
             )}
           </div>

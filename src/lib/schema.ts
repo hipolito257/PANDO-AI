@@ -201,6 +201,8 @@ export const firmSettings = pgTable("FirmSettings", {
   investmentThesisFileName: text("investmentThesisFileName"),
   twoPagerTemplateUrl:    text("twoPagerTemplateUrl"),
   twoPagerTemplateName:   text("twoPagerTemplateName"),
+  irlTemplateUrl:         text("irlTemplateUrl"),
+  irlTemplateName:        text("irlTemplateName"),
   updatedAt:              text("updatedAt").default(sql`now()`),
   updatedBy:              text("updatedBy"),
 });
@@ -212,6 +214,28 @@ export const firmSettings = pgTable("FirmSettings", {
 export const twoPagerSectionsConfig = pgTable("TwoPagerSectionsConfig", {
   id:        text("id").primaryKey(),
   sections:  text("sections").notNull(), // JSON array of { id, title, guidance }
+  updatedAt: text("updatedAt").default(sql`now()`),
+  updatedBy: text("updatedBy"),
+});
+
+// ── IRL (Internal Review Letter) Section Structure (singleton row, id = "default") ──
+// Admin-defined default outline for the "Internal Review Letter" document type —
+// an internal, IC-facing due-diligence memo (as opposed to the external-facing 2-Pager).
+
+export const irlSectionsConfig = pgTable("IrlSectionsConfig", {
+  id:        text("id").primaryKey(),
+  sections:  text("sections").notNull(), // JSON array of { id, title, guidance }
+  updatedAt: text("updatedAt").default(sql`now()`),
+  updatedBy: text("updatedBy"),
+});
+
+// ── IRL Due-Diligence Questionnaire (singleton row, id = "default") ────────────
+// Admin-defined list of diligence questions analysts answer before drafting an
+// IRL; answers are injected into the AI draft as authoritative source material.
+
+export const irlQuestionnaireConfig = pgTable("IrlQuestionnaireConfig", {
+  id:        text("id").primaryKey(),
+  questions: text("questions").notNull(), // JSON array of { id, category, question }
   updatedAt: text("updatedAt").default(sql`now()`),
   updatedBy: text("updatedBy"),
 });
