@@ -58,8 +58,8 @@ const DOC_TYPE_META: Record<DocType, { label: string; blurb: string; icon: (s: n
   pptx: {
     label: "PowerPoint",
     blurb: "Build an investor presentation — cover, sections, native charts.",
-    icon: (s) => <LayoutTemplate size={s} className="text-orange" />,
-    color: "bg-orange/10 text-orange border-orange/30",
+    icon: (s) => <LayoutTemplate size={s} className="text-red-600" />,
+    color: "bg-red-500/10 text-red-600 border-red-400/30",
   },
   docx: {
     label: "Word",
@@ -97,14 +97,14 @@ interface IrlPlan {
 interface IrlQuestionUI { id: string; category: string; question: string; answer: string }
 
 const TYPE_COLOR: Record<string, string> = {
-  pptx: "bg-orange/10 text-orange border-orange/30",
+  pptx: "bg-red-500/10 text-red-600 border-red-400/30",
   docx: "bg-blue-500/10 text-blue-600 border-blue-400/30",
   xlsx: "bg-green-500/10 text-green-700 border-green-400/30",
 };
 const TYPE_LABEL: Record<string, string> = { pptx: "PowerPoint", docx: "Word", xlsx: "Excel" };
 
 function DocTypeIcon({ type, size = 18 }: { type: string; size?: number }) {
-  if (type === "pptx") return <LayoutTemplate size={size} className="text-orange" />;
+  if (type === "pptx") return <LayoutTemplate size={size} className="text-red-600" />;
   if (type === "docx") return <FileText size={size} className="text-blue-600" />;
   if (type === "xlsx") return <Table2 size={size} className="text-green-600" />;
   return <File size={size} className="text-graphite" />;
@@ -114,7 +114,7 @@ function FileTypeIcon({ name, size = 16 }: { name: string; size?: number }) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "pdf") return <FileText size={size} className="text-red-500" />;
   if (ext === "docx" || ext === "doc") return <FileText size={size} className="text-blue-500" />;
-  if (ext === "pptx" || ext === "ppt") return <LayoutTemplate size={size} className="text-orange" />;
+  if (ext === "pptx" || ext === "ppt") return <LayoutTemplate size={size} className="text-red-600" />;
   if (ext === "xlsx" || ext === "xls") return <Table2 size={size} className="text-green-600" />;
   if (ext === "png" || ext === "jpg" || ext === "jpeg") return <ImageIcon size={size} className="text-graphite" />;
   if (ext === "txt" || ext === "csv") return <FileCode size={size} className="text-graphite" />;
