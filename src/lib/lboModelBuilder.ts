@@ -61,7 +61,10 @@ const HEADER_FILL = "FF1F4E78";
 const INPUT_FILL = "FFDCE6F1";
 const SECTION_FILL = "FFF2F2F2";
 
-const FMT_USD = '"$"#,##0';
+// Dollar figures are scaled to $mm for readability (institutional convention) —
+// the trailing double-comma is Excel's built-in display-only scaling; it does
+// not change the underlying value, so every formula still computes in raw dollars.
+const FMT_USD = '"$"#,##0.0,,"m"';
 const FMT_PCT = "0.0%";
 const FMT_MULT = '0.00"x"';
 const FMT_PCT_IRR = "0.0%";
@@ -74,12 +77,32 @@ function yearCol(n: number): number {
 }
 
 function inputCell(ws: ExcelJS.Worksheet, row: number, col: number, label: string, value: number, numFmt: string) {
-  ws.getCell(row, 2).value = label;
+  // Only write the row label if one was actually passed — per-year loops call
+  // this with label="" because the row label was already set once via
+  // labelCell(), and writing "" here would silently blank it back out.
+  if (label) ws.getCell(row, 2).value = label;
   const c = ws.getCell(row, col);
   c.value = value;
   c.numFmt = numFmt;
   c.font = { name: FONT_NAME, size: 10, color: { argb: INPUT_COLOR } };
   c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: INPUT_FILL } };
+}
+
+// Styles an existing cell as a hardcoded input in place, without touching the
+// row's column-B label (used for Company/Transaction Year, which aren't numbers).
+function styleAsInput(c: ExcelJS.Cell) {
+  c.font = { name: FONT_NAME, size: 10, color: { argb: INPUT_COLOR } };
+  c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: INPUT_FILL } };
+}
+
+// A structural placeholder zero (e.g. "no interest in Year 0") — styled like a
+// same-sheet formula cell, not a real hardcoded input, so it doesn't fall back
+// to Excel's default Calibri 11 and look inconsistent with the rest of the row.
+function zeroCell(ws: ExcelJS.Worksheet, row: number, col: number, numFmt: string) {
+  const c = ws.getCell(row, col);
+  c.value = 0;
+  c.numFmt = numFmt;
+  c.font = { name: FONT_NAME, size: 10, color: { argb: FORMULA_COLOR } };
 }
 
 function formulaCell(ws: ExcelJS.Worksheet, row: number, col: number, formula: string, numFmt: string, crossSheet = false) {
@@ -116,8 +139,10 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
   for (let c = 3; c <= yearCol(N); c++) asm.getColumn(c).width = 13;
 
   labelCell(asm, 1, 2, `LBO Model — ${a.companyName}`, { bold: true });
-  labelCell(asm, 3, 2, "Company"); asm.getCell(3, 3).value = a.companyName;
-  labelCell(asm, 4, 2, "Transaction Year"); asm.getCell(4, 3).value = a.transactionYear;
+  labelCell(asm, 3, 2, "Company");
+  { const c = asm.getCell(3, 3); c.value = a.companyName; styleAsInput(c); }
+  labelCell(asm, 4, 2, "Transaction Year");
+  { const c = asm.getCell(4, 3); c.value = a.transactionYear; c.numFmt = "0"; styleAsInput(c); }
 
   labelCell(asm, 6, 2, "ENTRY", { section: true });
   inputCell(asm, 7, 3, "Entry EBITDA (LTM)", a.entryEbitda, FMT_USD);
@@ -127,6 +152,7 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
   labelCell(asm, 10, 2, "Entry Enterprise Value");
   inputCell(asm, 11, 3, "Transaction Fees %", a.transactionFeesPct, FMT_PCT);
   inputCell(asm, 12, 3, "Financing Fees %", a.financingFeesPct, FMT_PCT);
+  asm.getCell(12, 3).note = "Financing fees are expensed as a cash use at close. They are not capitalized/amortized over the debt term or tax-shielded — a documented v1 simplification, not an omission.";
 
   labelCell(asm, 14, 2, "FINANCING", { section: true });
   inputCell(asm, 15, 3, "Debt / EBITDA", a.debtToEbitda, FMT_MULT);
@@ -136,6 +162,7 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
   inputCell(asm, 18, 3, "Mandatory Amort % (of orig. principal)", a.mandatoryAmortPct, FMT_PCT);
   inputCell(asm, 19, 3, "Cash Sweep %", a.cashSweepPct, FMT_PCT);
   inputCell(asm, 20, 3, "Minimum Cash Balance", a.minCashBalance, FMT_USD);
+  asm.getCell(20, 3).note = "Seeds the opening cumulative cash balance only. It is NOT enforced as an ongoing floor and there is no revolver — if EBITDA underperforms, this v1 model has no mechanism to fund a cash shortfall.";
 
   labelCell(asm, 22, 2, "SOURCES & USES", { section: true });
   labelCell(asm, 23, 2, "Uses: Purchase of Enterprise Value"); formulaCell(asm, 23, 3, "C10", FMT_USD);
@@ -169,6 +196,21 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
   labelCell(asm, 41, 2, "EXIT", { section: true });
   inputCell(asm, 42, 3, "Holding Period (Years)", N, "0");
   inputCell(asm, 43, 3, "Exit EV / EBITDA Multiple", a.exitMultiple, FMT_MULT);
+
+  labelCell(asm, 45, 2, "LEGEND", { section: true });
+  const legend: [string, string][] = [
+    [INPUT_COLOR, "Hardcoded input — change freely"],
+    [FORMULA_COLOR, "Formula on this sheet"],
+    [LINK_COLOR, "Formula linking from another sheet"],
+  ];
+  legend.forEach(([color, text], i) => {
+    const swatch = asm.getCell(46 + i, 2);
+    swatch.value = "■";
+    swatch.font = { name: FONT_NAME, size: 10, bold: true, color: { argb: color } };
+    const desc = asm.getCell(46 + i, 3);
+    desc.value = text;
+    desc.font = { name: FONT_NAME, size: 9, color: { argb: "FF444444" } };
+  });
 
   const AS = "Assumptions";
   const REF = {
@@ -218,14 +260,14 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
     if (n === 0) {
       formulaCell(om, rows.revenue, col, REF.revenueYear0, FMT_USD, true);
       formulaCell(om, rows.ebitda, col, REF.entryEbitda, FMT_USD, true);
-      om.getCell(rows.da, col).value = 0; om.getCell(rows.da, col).numFmt = FMT_USD;
+      zeroCell(om, rows.da, col, FMT_USD);
       formulaCell(om, rows.ebit, col, `${L}${rows.ebitda}-${L}${rows.da}`, FMT_USD);
-      om.getCell(rows.interest, col).value = 0; om.getCell(rows.interest, col).numFmt = FMT_USD;
+      zeroCell(om, rows.interest, col, FMT_USD);
       formulaCell(om, rows.ebt, col, `${L}${rows.ebit}-${L}${rows.interest}`, FMT_USD);
-      om.getCell(rows.taxes, col).value = 0; om.getCell(rows.taxes, col).numFmt = FMT_USD;
+      zeroCell(om, rows.taxes, col, FMT_USD);
       formulaCell(om, rows.ni, col, `${L}${rows.ebt}-${L}${rows.taxes}`, FMT_USD);
       for (const r of [rows.daAdd, rows.capex, rows.nwc, rows.cfads, rows.mandAmort, rows.fcfSweep]) {
-        om.getCell(r, col).value = 0; om.getCell(r, col).numFmt = FMT_USD;
+        zeroCell(om, r, col, FMT_USD);
       }
       continue;
     }
@@ -269,10 +311,10 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
     const L = colLetter(col);
     if (n === 0) {
       formulaCell(ds, dRows.begin, col, REF.initialDebt, FMT_USD, true);
-      ds.getCell(dRows.interest, col).value = 0; ds.getCell(dRows.interest, col).numFmt = FMT_USD;
-      ds.getCell(dRows.mandAmort, col).value = 0; ds.getCell(dRows.mandAmort, col).numFmt = FMT_USD;
-      ds.getCell(dRows.cashAvail, col).value = 0; ds.getCell(dRows.cashAvail, col).numFmt = FMT_USD;
-      ds.getCell(dRows.sweep, col).value = 0; ds.getCell(dRows.sweep, col).numFmt = FMT_USD;
+      zeroCell(ds, dRows.interest, col, FMT_USD);
+      zeroCell(ds, dRows.mandAmort, col, FMT_USD);
+      zeroCell(ds, dRows.cashAvail, col, FMT_USD);
+      zeroCell(ds, dRows.sweep, col, FMT_USD);
       formulaCell(ds, dRows.end, col, `${L}${dRows.begin}`, FMT_USD);
       formulaCell(ds, dRows.cash, col, REF.minCash, FMT_USD, true);
       continue;
@@ -280,6 +322,9 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
     const prevL = colLetter(col - 1);
     formulaCell(ds, dRows.begin, col, `${prevL}${dRows.end}`, FMT_USD);
     formulaCell(ds, dRows.interest, col, `${L}${dRows.begin}*${REF.interestRate}`, FMT_USD, true);
+    if (n === 1) {
+      ds.getCell(dRows.interest, col).note = "Interest is computed on the BEGINNING-of-year debt balance, not the average balance — a deliberate design choice to keep the dependency chain one-directional and avoid a circular formula (interest -> CFADS -> sweep -> ending balance -> next year's interest). This slightly overstates interest expense (understates FCF) versus an average-balance convention.";
+    }
     formulaCell(ds, dRows.mandAmort, col, `MIN(${L}${dRows.begin},${REF.initialDebt}*${REF.mandAmortPct})`, FMT_USD, true);
     formulaCell(ds, dRows.cashAvail, col, `${OM}!${L}${17}`, FMT_USD, true); // Operating Model row 17 = FCF for sweep
     formulaCell(ds, dRows.sweep, col, `MIN(MAX(${L}${dRows.begin}-${L}${dRows.mandAmort},0),MAX(${L}${dRows.cashAvail},0)*${REF.cashSweepPct})`, FMT_USD, true);
@@ -307,8 +352,11 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
   ret.getRow(10).font = { name: FONT_NAME, size: 10, bold: true };
   labelCell(ret, 11, 2, "Equity Cash Flow");
   formulaCell(ret, 11, yearCol(0), `-${REF.sponsorEquity}`, FMT_USD, true);
-  for (let n = 1; n < N; n++) { ret.getCell(11, yearCol(n)).value = 0; ret.getCell(11, yearCol(n)).numFmt = FMT_USD; }
+  for (let n = 1; n < N; n++) zeroCell(ret, 11, yearCol(n), FMT_USD);
   formulaCell(ret, 11, exitCol, "C7", FMT_USD);
+  if (N > 1) {
+    ret.getCell(11, yearCol(1)).note = "Interim years assume no dividends/distributions — a documented v1 simplification. All equity value is realized at exit only.";
+  }
 
   labelCell(ret, 13, 2, "IRR", { bold: true });
   formulaCell(ret, 13, 3, `IRR(${colLetter(yearCol(0))}11:${exitL}11)`, FMT_PCT_IRR);
@@ -375,14 +423,24 @@ export async function buildLboWorkbook(a: LboAssumptions): Promise<Buffer> {
     }
   }
 
-  // Header band across each sheet for a bit of polish
-  for (const sheet of [asm, om, ds, ret, sens]) {
+  // Header band, freeze panes, tab color, and gridlines-off across every sheet
+  // — the difference between "working draft" and an IC-ready deliverable.
+  const sheetSpecs: { sheet: ExcelJS.Worksheet; freezeRows: number }[] = [
+    { sheet: asm, freezeRows: 0 },
+    { sheet: om, freezeRows: 3 },
+    { sheet: ds, freezeRows: 3 },
+    { sheet: ret, freezeRows: 0 },
+    { sheet: sens, freezeRows: 0 },
+  ];
+  for (const { sheet, freezeRows } of sheetSpecs) {
     sheet.getRow(1).height = 22;
     sheet.getCell(1, 2).font = { name: FONT_NAME, size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     for (let c = 1; c <= yearCol(N) + 1; c++) {
       const cell = sheet.getCell(1, c);
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
     }
+    sheet.properties.tabColor = { argb: HEADER_FILL };
+    sheet.views = [{ state: "frozen", xSplit: 2, ySplit: freezeRows, showGridLines: false }];
   }
 
   const buf = await wb.xlsx.writeBuffer();
