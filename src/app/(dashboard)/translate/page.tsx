@@ -133,7 +133,11 @@ export default function TranslatePage() {
       });
       const startJson = await startRes.json().catch(() => ({}));
       if (!startRes.ok) throw new Error(startJson.message ?? startJson.error ?? "Could not start translation");
-      const { jobId, jobUrl, total } = startJson as { jobId: string; jobUrl: string; total: number };
+      const { jobId, total } = startJson as { jobId: string; jobUrl: string; total: number };
+      // /batch writes each revision to a fresh URL rather than overwriting
+      // the same one, so this must track the latest URL returned and pass
+      // that forward — never keep reusing the original one.
+      let jobUrl = (startJson as { jobUrl: string }).jobUrl;
       setProgress({ done: 0, total });
 
       // 3. Poll batch translation until done — each call is short, so
@@ -147,15 +151,15 @@ export default function TranslatePage() {
         });
         const batchJson = await batchRes.json().catch(() => ({}));
         if (!batchRes.ok) throw new Error(batchJson.message ?? batchJson.error ?? "Translation batch failed");
+        if (batchJson.jobUrl) jobUrl = batchJson.jobUrl;
         setProgress({ done: batchJson.translatedCount ?? 0, total: batchJson.total ?? total });
         done = !!batchJson.done;
       }
 
-      // 4. Finalize — reassemble and download. The job blob can briefly lag
-      //    behind the last batch write (CDN propagation), so finalize itself
-      //    retries server-side — but retry here too in case that's still not
-      //    enough, rather than surfacing a transient "not finished yet" as a
-      //    hard failure to the user.
+      // 4. Finalize — reassemble and download. A couple of light retries
+      //    here too, purely as defense against a genuine transient network
+      //    hiccup — not against blob staleness, which the fresh-URL-per-
+      //    write scheme above already rules out entirely.
       setPhase("finalizing");
       const attemptFinalize = () => fetch("/api/documents/translate/finalize", {
         method: "POST",

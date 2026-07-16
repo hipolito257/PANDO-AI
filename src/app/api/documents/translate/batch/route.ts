@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userSettings } from "@/lib/schema";
@@ -60,15 +60,27 @@ export async function POST(req: NextRequest) {
       job.translated[startIdx + i] = translatedSlice[i];
     }
 
-    await put(`translate-jobs/${userId}/${jobId}.enc`, encryptBuffer(Buffer.from(JSON.stringify(job))), {
+    // Write to a fresh, never-before-fetched URL rather than overwriting
+    // jobUrl in place — a public blob is served through Vercel's CDN, and
+    // overwriting the same path isn't guaranteed to invalidate an edge's
+    // cached copy immediately. On a large document with many sequential
+    // batch round-trips, that staleness window compounds: /finalize (or the
+    // next /batch call) can keep reading an old, not-fully-translated
+    // snapshot no matter how much it retries the same URL. A brand-new URL
+    // has no prior cache entry, so this class of bug can't happen at all.
+    const newJobBlob = await put(`translate-jobs/${userId}/${jobId}.enc`, encryptBuffer(Buffer.from(JSON.stringify(job))), {
       access: "public",
-      addRandomSuffix: false,
-      allowOverwrite: true,
+      addRandomSuffix: true,
       storeId: BLOB_STORE_ID,
     });
+    // Best-effort cleanup of the now-superseded previous revision.
+    del(jobUrl, { storeId: BLOB_STORE_ID } as Parameters<typeof del>[1]).catch(() => {});
 
     const translatedCount = job.translated.filter(t => t !== null).length;
-    return NextResponse.json({ done: translatedCount >= job.total, translatedCount, total: job.total });
+    return NextResponse.json({
+      done: translatedCount >= job.total, translatedCount, total: job.total,
+      jobUrl: newJobBlob.url,
+    });
   } catch (e: any) {
     console.error("[translate/batch] error:", e.message);
     return NextResponse.json({ error: e.message || "Batch translation failed" }, { status: 500 });

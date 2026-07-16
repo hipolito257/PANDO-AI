@@ -87,10 +87,13 @@ export async function POST(req: NextRequest) {
       createdAt: Date.now(),
     };
 
+    // Random suffix — every write to this job's blob (here and in /batch) gets
+    // its own never-before-fetched URL, so no reader can ever be served a
+    // stale CDN-cached copy of a path that was previously overwritten in
+    // place. See /batch for why this matters.
     const jobBlob = await put(`translate-jobs/${userId}/${jobId}.enc`, encryptBuffer(Buffer.from(JSON.stringify(job))), {
       access: "public",
-      addRandomSuffix: false,
-      allowOverwrite: true,
+      addRandomSuffix: true,
       storeId: BLOB_STORE_ID,
     });
 

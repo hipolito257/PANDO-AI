@@ -27,18 +27,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // The client only calls finalize once /batch itself reports done:true —
-    // but that response comes right after this same job blob was overwritten,
-    // and public blobs are served through Vercel's CDN, so this fetch can
-    // still land on an edge that hasn't caught up with the last write yet.
-    // Retry briefly before concluding the job is genuinely unfinished.
+    // /batch now writes each revision to a fresh, uniquely-suffixed URL
+    // (never overwriting jobUrl in place), so the URL passed in here was
+    // never fetched before this call and can't be served from a stale CDN
+    // cache entry. This retry is just defense against a genuine transient
+    // network hiccup, not blob-overwrite staleness.
     let job: TranslateJob | null = null;
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       const jobRes = await fetch(`${jobUrl}?t=${Date.now()}`, { cache: "no-store" });
       if (!jobRes.ok) throw new Error("Translation job not found (it may have expired)");
       job = JSON.parse(decryptBuffer(Buffer.from(await jobRes.arrayBuffer())).toString("utf-8")) as TranslateJob;
       if (!job.translated.some(t => t === null)) break;
-      if (attempt < 4) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+      if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
     }
     if (!job) throw new Error("Translation job not found (it may have expired)");
 
