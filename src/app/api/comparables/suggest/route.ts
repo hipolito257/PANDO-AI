@@ -110,10 +110,10 @@ Target private company:
 - Revenue: ${company.revenueUsd ? `$${company.revenueUsd}M USD` : "Unknown"}
 ${company.website ? `- Website: ${company.website}` : ""}
 
-${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}RESEARCH PROCESS — do this before answering:
-1. Search for and read about the target company itself (its website, news, any description of what it actually sells and to whom) so you understand its real business, not just its sector label.
-2. Search for publicly traded companies that compete in or serve the same specific product/service niche — not just the same broad sector. Verify each candidate's actual current business via search, don't assume from the company name alone (many companies pivot).
-3. For each candidate, search for and confirm its current ticker and exchange — do not output a ticker you have not verified is correct and currently trading today.
+${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}RESEARCH PROCESS — do this before answering, but be search-efficient:
+1. One search to understand the target company's actual business (its website, news, what it specifically sells and to whom) — not just its sector label.
+2. A small number of broad searches to surface direct public competitors in that specific niche (e.g. "<company>'s direct competitor publicly traded"), rather than one narrow search per candidate. Verify each candidate's actual current business via search, don't assume from the company name alone (many companies pivot).
+You have a hard budget of at most 4 searches total — make each one count, and rely on what you already know once you've confirmed the key facts, rather than continuing to search for marginal confirmation.
 
 CRITICAL REQUIREMENTS — NON-NEGOTIABLE:
 ⚠️  ONLY include companies you have verified via search are ACTIVELY TRADED on a major stock exchange RIGHT NOW.
@@ -143,7 +143,14 @@ After your research, respond with ONLY a valid JSON array (no markdown, no pream
     const msg = await client.messages.create({
       model: "claude-sonnet-5",
       max_tokens: 4096,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
+      // Capped at 4 — testing showed the model's own "keep searching until
+      // fully confident" instinct otherwise runs 6-12 searches per request,
+      // ballooning cost (accumulated search-result content compounds as
+      // input tokens on every subsequent turn: ~112K input tokens/request
+      // uncapped vs. ~50-60K capped) without actually improving comp
+      // quality — a tight budget forces more decisive, higher-precision
+      // picks instead of broad exploratory browsing.
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
       messages: [{ role: "user", content: prompt }],
     });
     const text = msg.content

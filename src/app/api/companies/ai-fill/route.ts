@@ -61,6 +61,8 @@ ${knownEntries.length ? `Already known (do NOT re-derive these, just work around
 
 ${thesis ? `Firm investment thesis (for context on sector framing only, not to influence factual accuracy):\n${thesis}\n` : ""}
 
+You have a hard budget of at most 4 searches total — make each one count (e.g. one broad search for the company's site/profile, one or two for financials/funding, one for headcount/stage if still missing), and answer with what you've confirmed once you hit that budget rather than continuing to search for marginal confirmation.
+
 Research this company and return a single raw JSON object (no markdown, no preamble, no code fences) with any of these fields you can determine with reasonable confidence. Leave a field as null if you cannot find a reliable answer — never invent a number.
 
 {
@@ -90,7 +92,11 @@ Sector/country/stage/fundingStage must be EXACTLY one of the listed options (cas
     const msg = await client.messages.create({
       model: "claude-sonnet-5",
       max_tokens: 2048,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 }],
+      // Capped at 4, same fix validated on comparables/suggest: an uncapped
+      // budget let the model keep searching well past the point of adding
+      // value, and accumulated search-result content compounds as input
+      // tokens on every subsequent turn — the dominant cost driver here.
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
       messages: [{ role: "user", content: prompt }],
     });
 
