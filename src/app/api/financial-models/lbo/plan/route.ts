@@ -106,7 +106,7 @@ ${peersLine}`.trim();
 
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       max_tokens: 4000,
       system: `You are a senior PE analyst at PANDO drafting the INPUT ASSUMPTIONS for an LBO model — you are NOT computing the model yourself (the app's own Excel formulas do every calculation). Your only job is to suggest sane, well-grounded numeric inputs for the user to review and edit before anything is built.
 

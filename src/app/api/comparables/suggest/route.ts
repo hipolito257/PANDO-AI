@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
 
   const client = new Anthropic({ apiKey });
 
-  const prompt = `You are a senior private equity analyst building a trading comps table for a valuation.
+  const prompt = `You are a senior private equity analyst building a trading comps table for a valuation. Use web search to actually research the target company and candidate comps — do not rely on memory alone, and never guess a ticker.
 
 Target private company:
 - Name: ${company.name}
@@ -108,43 +108,53 @@ Target private company:
 - Country: ${company.country}
 - Stage: ${company.fundingStage ?? company.stage ?? "Unknown"}
 - Revenue: ${company.revenueUsd ? `$${company.revenueUsd}M USD` : "Unknown"}
+${company.website ? `- Website: ${company.website}` : ""}
 
-${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}CRITICAL REQUIREMENTS — NON-NEGOTIABLE:
-⚠️  ONLY suggest companies that are ACTIVELY TRADED on a major stock exchange RIGHT NOW.
-⚠️  The ticker MUST be valid and have live market data on Yahoo Finance today.
-⚠️  Do NOT suggest: private companies, pre-IPO companies, unicorns, SPACs, delisted stocks, recently acquired companies, or any company without a current stock ticker.
-⚠️  Verify in your training data that each company is publicly listed. If you are not 100% sure a company is public and actively traded, do NOT include it.
+${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}RESEARCH PROCESS — do this before answering:
+1. Search for and read about the target company itself (its website, news, any description of what it actually sells and to whom) so you understand its real business, not just its sector label.
+2. Search for publicly traded companies that compete in or serve the same specific product/service niche — not just the same broad sector. Verify each candidate's actual current business via search, don't assume from the company name alone (many companies pivot).
+3. For each candidate, search for and confirm its current ticker and exchange — do not output a ticker you have not verified is correct and currently trading today.
+
+CRITICAL REQUIREMENTS — NON-NEGOTIABLE:
+⚠️  ONLY include companies you have verified via search are ACTIVELY TRADED on a major stock exchange RIGHT NOW.
+⚠️  Do NOT include: private companies, pre-IPO companies, unicorns, SPACs, delisted stocks, recently acquired companies, or any company without a current stock ticker.
+⚠️  If you cannot verify a candidate is public and actively traded via search, do NOT include it — a shorter, accurate list is better than a longer, wrong one.
 
 SELECTION CRITERIA:
 1. Select publicly listed companies that sell THE SAME PRODUCT OR SERVICE as the target — prioritize what they sell, not the business model structure. For example, if the target sells eyeglasses, select all public companies that sell eyeglasses worldwide, regardless of channel.
 2. Geography does NOT matter — include companies from any country or exchange (NYSE, NASDAQ, LSE, TSE, HKEx, etc.).
-3. Include 8–12 companies to allow for some to be filtered out. The more direct the product/service match, the better.
+3. Include 8–12 companies to allow for some to be filtered out. The more direct the product/service match, the better — reject generic "same industry" matches that don't actually compete for the same customer.
 
 For each company provide:
-- "ticker": the exact stock ticker as listed on its primary exchange (e.g. "LVMH.PA", "7203.T", "AAPL")
+- "ticker": the exact stock ticker as listed on its primary exchange, verified via search (e.g. "LVMH.PA", "7203.T", "AAPL")
 - "name": full company name
 - "exchange": exchange name (NYSE, NASDAQ, TSE, LSE, HKEx, etc.)
 - "website": the company's main website URL (e.g. "https://www.apple.com", "https://www.mercadolibre.com") — required, never omit
-- "reason": 1 sentence — what specific product/service matches the target
+- "reason": 1 sentence — what specific product/service matches the target, based on what you actually found
 - "businessModel": 1–2 sentences describing the business model and similarities/differences vs. target
 - "similarity": "High", "Medium", or "Low" with a brief justification
 
-Return ONLY a valid JSON array (no markdown, no preamble):
+After your research, respond with ONLY a valid JSON array (no markdown, no preamble, no commentary about your search process):
 [{"ticker":"EL","name":"Estée Lauder Companies","exchange":"NYSE","website":"https://www.esteelauder.com","reason":"Global beauty company selling direct-to-consumer cosmetics","businessModel":"Sells luxury beauty products through retail and DTC channels. Similar in DTC approach; differs in having massive wholesale and travel retail distribution.","similarity":"Medium — same category but different price positioning"}]`;
 
-  // ── Step 1: Get AI suggestions ────────────────────────────────────────────
+  // ── Step 1: Get AI suggestions, grounded in real web research ─────────────
   let rawSuggestions: any[] = [];
   try {
     const msg = await client.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 2048,
+      model: "claude-sonnet-5",
+      max_tokens: 4096,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 12 }],
       messages: [{ role: "user", content: prompt }],
     });
-    const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "[]";
+    const text = msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map(b => b.text)
+      .join("\n")
+      .trim();
     try {
       rawSuggestions = JSON.parse(text);
     } catch {
-      const match = text.match(/\[[\s\S]*?\]/);
+      const match = text.match(/\[[\s\S]*\]/);
       rawSuggestions = match ? JSON.parse(match[0]) : [];
     }
   } catch (e: any) {

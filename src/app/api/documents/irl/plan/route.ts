@@ -132,7 +132,7 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
 
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       max_tokens: 8000,
       system: `You are a senior investment professional at PANDO, a private equity fund, writing an Internal Review Letter (IRL): an internal, IC-facing due-diligence memo used to support an investment committee decision. This is NOT a marketing document — write directly, risk-aware, and recommendation-oriented. Where the evidence is thin or a question is unanswered, say so plainly rather than smoothing it over.
 

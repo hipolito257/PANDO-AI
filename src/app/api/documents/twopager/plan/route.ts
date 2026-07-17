@@ -119,7 +119,7 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
 
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       max_tokens: 8000,
       system: `You are a senior analyst at PANDO, a private equity fund, writing a Company 2-Pager: a short, external-facing investment brief.
 

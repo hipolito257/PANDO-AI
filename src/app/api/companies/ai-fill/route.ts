@@ -88,7 +88,7 @@ Sector/country/stage/fundingStage must be EXACTLY one of the listed options (cas
 
   try {
     const msg = await client.messages.create({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-5",
       max_tokens: 2048,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 }],
       messages: [{ role: "user", content: prompt }],

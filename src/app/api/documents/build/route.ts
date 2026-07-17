@@ -457,7 +457,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const claudeResp = await claude.messages.create({
-                  model: "claude-sonnet-4-6",
+                  model: "claude-sonnet-5",
                   max_tokens: 16000,
                   system: buildSystemPrompt(companyData, peersData, templateProfile),
                   messages: [{ role: "user", content: [...contextParts, { type: "text", text: sectionUserText }] }],

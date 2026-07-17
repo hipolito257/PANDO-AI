@@ -402,7 +402,7 @@ Generate between 1 and 4 sheets with real, complete data. Do not use placeholder
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       max_tokens: 8192,
       messages: [{ role: "user", content: contentBlocks }],
     }),
@@ -560,7 +560,7 @@ If the document has real content, generate between 5 and 60 pairs. Respond [] on
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         max_tokens: 8192,
         messages: [{ role: "user", content: contentBlocks }],
       }),
