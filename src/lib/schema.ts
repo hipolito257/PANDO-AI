@@ -203,6 +203,7 @@ export const firmSettings = pgTable("FirmSettings", {
   twoPagerTemplateName:   text("twoPagerTemplateName"),
   irlTemplateUrl:         text("irlTemplateUrl"),
   irlTemplateName:        text("irlTemplateName"),
+  cronEnabled:            boolean("cronEnabled").notNull().default(true),
   updatedAt:              text("updatedAt").default(sql`now()`),
   updatedBy:              text("updatedBy"),
 });

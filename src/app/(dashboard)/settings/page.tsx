@@ -35,6 +35,11 @@ export default function SettingsPage() {
   const [resetValue, setResetValue] = useState("");
   const [resetMessage, setResetMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  const [cronEnabled, setCronEnabled] = useState(true);
+  const [cronLoading, setCronLoading] = useState(true);
+  const [cronSaving, setCronSaving] = useState(false);
+  const [cronMessage, setCronMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   const [thesis, setThesis] = useState("");
   const [thesisFileName, setThesisFileName] = useState<string | null>(null);
   const [thesisLoading, setThesisLoading] = useState(true);
@@ -99,6 +104,16 @@ export default function SettingsPage() {
       setPendingLoading(false);
     }
     loadPending();
+
+    async function loadCronSettings() {
+      const res = await fetch("/api/admin/cron-settings");
+      if (res.ok) {
+        const data = await res.json();
+        setCronEnabled(data.enabled);
+      }
+      setCronLoading(false);
+    }
+    loadCronSettings();
 
     async function loadThesis() {
       const res = await fetch("/api/admin/firm-thesis");
@@ -217,6 +232,25 @@ export default function SettingsPage() {
   }
   function addIrlQuestion() {
     setIrlQuestions(prev => [...prev, { id: crypto.randomUUID(), category: "Market", question: "" }]);
+  }
+
+  async function handleCronToggle() {
+    const next = !cronEnabled;
+    setCronMessage(null);
+    setCronSaving(true);
+    const res = await fetch("/api/admin/cron-settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: next }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setCronEnabled(data.enabled);
+      setCronMessage({ type: "success", text: data.enabled ? "Daily cron re-enabled" : "Daily cron paused" });
+    } else {
+      setCronMessage({ type: "error", text: data.error ?? "Could not update cron setting" });
+    }
+    setCronSaving(false);
   }
 
   async function handleSectionsSave() {
@@ -625,6 +659,50 @@ export default function SettingsPage() {
             {savingAccount ? "Saving…" : "Update Account"}
           </button>
         </div>
+
+        {/* Discovery Automation (admin only) */}
+        {isAdmin && (
+          <div className="bg-white border border-chalk rounded-[12px] p-6 mb-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-[16px] font-semibold text-carbon">Discovery Automation</h2>
+                <p className="text-[12px] text-slate mt-1 max-w-lg">
+                  Pauses the daily cron that scans existing companies for news and discovers new
+                  candidates. It still fires on schedule every weekday morning, it just does nothing
+                  while paused, so you can turn it back on any time without re-configuring anything.
+                </p>
+              </div>
+              <button
+                onClick={handleCronToggle}
+                disabled={cronLoading || cronSaving}
+                aria-pressed={cronEnabled}
+                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-40 ${
+                  cronEnabled ? "bg-orange" : "bg-chalk"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                    cronEnabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <p className="text-[12px] text-slate mt-3">
+              {cronLoading ? "Loading…" : cronEnabled ? "Running daily, weekdays at 8am." : "Paused — the cron will skip its work until re-enabled."}
+            </p>
+
+            {cronMessage && (
+              <div className={`rounded-[8px] p-3 text-[12px] border mt-3 ${
+                cronMessage.type === "success"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}>
+                {cronMessage.text}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Pending Requests (admin only) */}
         {isAdmin && (

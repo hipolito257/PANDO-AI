@@ -55,6 +55,7 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
   const latest = logs[0];
   const running = latest.status === "running";
   const ok = latest.status === "ok";
+  const skipped = latest.status === "skipped";
   const dur = fmtDuration(latest.durationMs);
 
   return (
@@ -65,7 +66,7 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-chalk/30 transition-colors text-left"
       >
         {/* Status dot */}
-        <span className={`w-1.5 h-1.5 rounded-full flex-none ${running ? "bg-amber-400 animate-pulse" : ok ? "bg-emerald-500" : "bg-red-500"}`} />
+        <span className={`w-1.5 h-1.5 rounded-full flex-none ${running ? "bg-amber-400 animate-pulse" : ok ? "bg-emerald-500" : skipped ? "bg-slate" : "bg-red-500"}`} />
 
         {/* Label */}
         <span className="text-[11px] font-semibold text-carbon uppercase tracking-wide flex-none">
@@ -79,6 +80,8 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
         <div className="flex items-center gap-1.5 flex-1 flex-wrap">
           {running ? (
             <span className="text-[11px] text-amber-600 font-medium">Running now…</span>
+          ) : skipped ? (
+            <span className="text-[11px] text-slate font-medium">Skipped — cron disabled in Settings</span>
           ) : (
             <>
               {latest.newsAdded > 0 && <Chip label="news" value={latest.newsAdded} />}
@@ -139,13 +142,13 @@ export function DailyDigest({ logs }: { logs: CronLog[] }) {
           {/* Footer */}
           <div className="flex items-center gap-3 pt-1 border-t border-chalk text-[10px] text-slate">
             {dur && <span>Duration: {dur}</span>}
-            <span className={`font-medium ${running ? "text-amber-600" : ok ? "text-emerald-600" : "text-red-500"}`}>
+            <span className={`font-medium ${running ? "text-amber-600" : ok ? "text-emerald-600" : skipped ? "text-slate" : "text-red-500"}`}>
               {running ? (
                 <span className="inline-flex items-center gap-1">
                   <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
                   Running…
                 </span>
-              ) : ok ? "Status: OK" : `Error: ${latest.errorMsg ?? "unknown"}`}
+              ) : ok ? "Status: OK" : skipped ? "Status: Skipped (disabled)" : `Error: ${latest.errorMsg ?? "unknown"}`}
             </span>
             {logs.length > 1 && (
               <span className="ml-auto">

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { companies, newsItems, signals, cronLogs } from "@/lib/schema";
+import { companies, newsItems, signals, cronLogs, firmSettings } from "@/lib/schema";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
-import { getFirmThesis } from "@/lib/firmThesis";
+import { getFirmThesis, FIRM_SETTINGS_ID } from "@/lib/firmThesis";
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -476,6 +476,29 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = Date.now();
+
+  // ── Manual on/off switch (Settings → Discovery Automation) ────────────────
+  // Lets the admin pause the whole cron for a week without touching the
+  // Vercel schedule itself — it still fires on time, this just no-ops.
+  const firmSetting = await db.query.firmSettings.findFirst({ where: eq(firmSettings.id, FIRM_SETTINGS_ID) }).catch(() => null);
+  if (firmSetting && firmSetting.cronEnabled === false) {
+    await db.insert(cronLogs).values({
+      id: uid(),
+      ranAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAt,
+      companiesScanned: 0,
+      newsAdded: 0,
+      signalsAdded: 0,
+      exitsDetected: 0,
+      fundingUpdates: 0,
+      discovered: 0,
+      candidatesExtracted: 0,
+      filteredByThesis: 0,
+      status: "skipped",
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, skipped: true, reason: "Cron is disabled in Settings" });
+  }
+
   const systemApiKey = process.env.ANTHROPIC_API_KEY ?? null;
   const cos = await db.query.companies.findMany();
   const activeCompanies = cos.filter(c => !["public", "acquired", "closed"].includes(c.status));
