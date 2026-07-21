@@ -10,14 +10,16 @@ import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
 
 export const maxDuration = 300;
 
+// PPTX_SERVICE_URL is injected automatically by the Vercel Services binding
+// (see vercel.json) in production/preview; the pptx-service Python service is
+// never reachable from the public internet, only over that internal binding.
+// Local dev falls back to running pptx-service directly on 127.0.0.1:5053.
 function getPptxEndpoint(): string {
   if (process.env.PPTX_SERVICE_URL) return `${process.env.PPTX_SERVICE_URL}/build/pptx`;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/pptx_build`;
   return "http://127.0.0.1:5053/build/pptx";
 }
 function getProfileEndpoint(): string {
   if (process.env.PPTX_SERVICE_URL) return `${process.env.PPTX_SERVICE_URL}/profile/template`;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/pptx_profile`;
   return "http://127.0.0.1:5053/profile/template";
 }
 

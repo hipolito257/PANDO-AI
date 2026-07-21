@@ -4,5 +4,27 @@
       "path": "/api/cron/sync",
       "schedule": "0 8 * * 1-5"
     }
+  ],
+  "services": {
+    "frontend": {
+      "root": ".",
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "pptx",
+          "format": "url",
+          "env": "PPTX_SERVICE_URL"
+        }
+      ]
+    },
+    "pptx": {
+      "root": "pptx-service",
+      "framework": "fastapi",
+      "entrypoint": "main:app"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
   ]
 }
