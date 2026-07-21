@@ -22,6 +22,7 @@ export function Logo({ size = "md", className }: LogoProps) {
         height={h}
         style={{ objectFit: "contain" }}
         priority
+        unoptimized
       />
     </div>
   );
