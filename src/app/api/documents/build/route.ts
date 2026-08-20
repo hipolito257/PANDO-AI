@@ -10,10 +10,10 @@ import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
 
 export const maxDuration = 300;
 
-// PPTX_SERVICE_URL is injected automatically by the Vercel Services binding
-// (see vercel.json) in production/preview; the pptx-service Python service is
-// never reachable from the public internet, only over that internal binding.
-// Local dev falls back to running pptx-service directly on 127.0.0.1:5053.
+// pptx-service is its own Vercel project; PPTX_SERVICE_URL points at it and
+// PPTX_SERVICE_TOKEN is the shared secret it checks, since that deployment is
+// publicly reachable. Local dev falls back to running it on 127.0.0.1:5053,
+// where no token is set and the check is skipped.
 function getPptxEndpoint(): string {
   if (process.env.PPTX_SERVICE_URL) return `${process.env.PPTX_SERVICE_URL}/build/pptx`;
   return "http://127.0.0.1:5053/build/pptx";
@@ -21,6 +21,11 @@ function getPptxEndpoint(): string {
 function getProfileEndpoint(): string {
   if (process.env.PPTX_SERVICE_URL) return `${process.env.PPTX_SERVICE_URL}/profile/template`;
   return "http://127.0.0.1:5053/profile/template";
+}
+function pptxHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.PPTX_SERVICE_TOKEN) h["X-Service-Token"] = process.env.PPTX_SERVICE_TOKEN;
+  return h;
 }
 
 // ── PANDO template profile ────────────────────────────────────────────────────
@@ -276,7 +281,7 @@ export async function POST(req: NextRequest) {
         try {
           const profResp = await fetch(getProfileEndpoint(), {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: pptxHeaders(),
             body: JSON.stringify({ template_url: template.filePath }),
           });
           if (profResp.ok) {
@@ -536,7 +541,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
         try {
           buildResp = await fetch(endpoint, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: pptxHeaders(),
             body: JSON.stringify({
               template_url: template.filePath,
               slide_plan: fullSlidePlan,

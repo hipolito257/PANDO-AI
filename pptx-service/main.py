@@ -4,9 +4,10 @@ Called by the Next.js app at /api/documents/build.
 """
 import base64
 import io
+import os
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -25,6 +26,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Shared-secret auth ─────────────────────────────────────────────────────────
+# This service runs as its own public Vercel deployment, so the build endpoints
+# require a token that only the Next.js app knows. When PPTX_SERVICE_TOKEN is
+# unset the check is skipped, which keeps local dev (and /health) frictionless.
+SERVICE_TOKEN = os.environ.get("PPTX_SERVICE_TOKEN")
+
+
+def require_token(x_service_token: str | None = Header(default=None)):
+    if SERVICE_TOKEN and x_service_token != SERVICE_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # ── Request models ─────────────────────────────────────────────────────────────
@@ -62,7 +75,7 @@ def health():
     return {"status": "ok", "service": "pptx-service", "port": 5053}
 
 
-@app.post("/profile/template")
+@app.post("/profile/template", dependencies=[Depends(require_token)])
 async def profile_template(req: ProfileRequest):
     """Extract color palette, fonts, and layout info from a PPTX template."""
     try:
@@ -73,7 +86,7 @@ async def profile_template(req: ProfileRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/build/pptx")
+@app.post("/build/pptx", dependencies=[Depends(require_token)])
 async def build_pptx(req: BuildRequest):
     """
     Build a PPTX from a slide plan JSON.
