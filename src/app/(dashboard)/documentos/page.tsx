@@ -690,11 +690,24 @@ export default function DocumentosPage() {
 
     setGenErr(null); setGenSuccess(false);
 
+    // Context files go up via the chunked blob upload rather than inline in
+    // this request. Inlining them meant a single backup file over Vercel's
+    // 4.5 MB payload limit (routine for a .pptx) was rejected at the edge
+    // before reaching the route, surfacing only as "Generation error".
+    let blobs: { name: string; url: string; type: string }[] = [];
+    try {
+      blobs = await ensureContextBlobsUploaded();
+    } catch (e) {
+      setUploadingCtx(false);
+      setGenErr(e instanceof Error ? e.message : "Could not upload the backup files");
+      return;
+    }
+
     const fd = new FormData();
     fd.append("templateId", selected.id);
     if (companyId) fd.append("companyId", companyId);
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
-    for (const f of contextFiles) fd.append("files", f);
+    if (blobs.length) fd.append("blobUrls", JSON.stringify(blobs));
 
     await runJob("generate", async () => {
       const res = await fetch("/api/documents/generate", { method: "POST", body: fd });

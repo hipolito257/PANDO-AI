@@ -412,7 +412,7 @@ Generate between 1 and 4 sheets with real, complete data. Do not use placeholder
     },
     body: JSON.stringify({
       model: "claude-sonnet-5",
-      max_tokens: 8192,
+      max_tokens: 32000,
       // Sonnet 5 thinks adaptively by default, and on a long extraction prompt
       // like this it spent ~4k of the 8k output budget thinking, truncating the
       // JSON before it finished. This is mechanical structuring, not reasoning,
@@ -420,7 +420,7 @@ Generate between 1 and 4 sheets with real, complete data. Do not use placeholder
       thinking: { type: "disabled" },
       messages: [{ role: "user", content: contentBlocks }],
     }),
-    signal: AbortSignal.timeout(120000),
+    signal: AbortSignal.timeout(280000),
   });
 
   if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`);
@@ -581,14 +581,18 @@ If the document has real content, generate between 5 and 60 pairs. Respond [] on
       },
       body: JSON.stringify({
         model: "claude-sonnet-5",
-        max_tokens: 8192,
+        // Each replacement echoes the original passage verbatim in "find" plus
+        // a full rewrite in "replace", so a real deck runs well past the old
+        // 8192 ceiling and got truncated mid-array. Sonnet 5 allows up to 64k.
+        max_tokens: 32000,
         // See the note on the Excel path: adaptive thinking ate most of the
         // output budget here and truncated the replacement list, which then
         // silently returned the untouched template.
         thinking: { type: "disabled" },
         messages: [{ role: "user", content: contentBlocks }],
       }),
-      signal: AbortSignal.timeout(120000),
+      // Generous, but still inside this route's maxDuration of 300s.
+      signal: AbortSignal.timeout(280000),
     });
 
     if (!res.ok) {
@@ -634,7 +638,8 @@ If the document has real content, generate between 5 and 60 pairs. Respond [] on
 // Accepts multipart/form-data:
 //   templateId  (string)
 //   companyId   (string)
-//   files[]     (File[]) — optional backup/context documents
+//   blobUrls    (JSON [{name,url,type}]) — context docs already uploaded to Blob
+//   files[]     (File[]) — legacy inline path, kept for backwards compatibility
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -645,6 +650,9 @@ export async function POST(req: NextRequest) {
   const companyId   = formData.get("companyId")   as string | null;
   const userPrompt  = (formData.get("userPrompt") as string | null)?.trim() || null;
   const contextFileEntries = formData.getAll("files") as File[];
+  const blobUrlsRaw = formData.get("blobUrls") as string | null;
+  let blobUrls: { name: string; url: string; type: string }[] = [];
+  try { blobUrls = blobUrlsRaw ? JSON.parse(blobUrlsRaw) : []; } catch { blobUrls = []; }
 
   if (!templateId) {
     return NextResponse.json({ error: "templateId required" }, { status: 400 });
@@ -698,8 +706,20 @@ export async function POST(req: NextRequest) {
   }
   const ext = template.type;
 
-  // Process context files
+  // Process context files — blob-hosted first (the normal path), then any
+  // legacy inline uploads.
   const contextFiles: ContextFile[] = [];
+  for (const bf of blobUrls.slice(0, 5)) {
+    try {
+      const r = await fetch(bf.url);
+      if (!r.ok) continue;
+      contextFiles.push({
+        name: bf.name,
+        buffer: Buffer.from(await r.arrayBuffer()),
+        mimeType: bf.type || "application/octet-stream",
+      });
+    } catch { /* skip unreadable files */ }
+  }
   for (const f of contextFileEntries) {
     if (f.size === 0) continue;
     const buf = Buffer.from(await f.arrayBuffer());
