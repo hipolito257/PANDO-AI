@@ -10,6 +10,15 @@ export const maxDuration = 300;
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "templates");
 
+// ── Anthropic response text ───────────────────────────────────────────────────
+// Never read content[0] directly: with thinking enabled the first block is a
+// "thinking" block whose .text is undefined, which silently yields "" and looks
+// exactly like the model returning nothing. Always collect the text blocks.
+function extractText(data: unknown): string {
+  const blocks = (data as { content?: { type?: string; text?: string }[] })?.content ?? [];
+  return blocks.filter(b => b?.type === "text").map(b => b.text ?? "").join("\n").trim();
+}
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmtB(n: unknown): string {
   if (n == null) return "N/D";
@@ -404,6 +413,11 @@ Generate between 1 and 4 sheets with real, complete data. Do not use placeholder
     body: JSON.stringify({
       model: "claude-sonnet-5",
       max_tokens: 8192,
+      // Sonnet 5 thinks adaptively by default, and on a long extraction prompt
+      // like this it spent ~4k of the 8k output budget thinking, truncating the
+      // JSON before it finished. This is mechanical structuring, not reasoning,
+      // so thinking buys nothing here and costs the whole response.
+      thinking: { type: "disabled" },
       messages: [{ role: "user", content: contentBlocks }],
     }),
     signal: AbortSignal.timeout(120000),
@@ -411,10 +425,16 @@ Generate between 1 and 4 sheets with real, complete data. Do not use placeholder
 
   if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`);
   const data = await res.json();
-  const aiText: string = data?.content?.[0]?.text ?? "";
+  const aiText: string = extractText(data);
 
   const jsonMatch = aiText.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Claude did not return valid JSON for the Excel");
+  if (!jsonMatch) {
+    throw new Error(
+      data?.stop_reason === "max_tokens"
+        ? "Claude's response was cut off before it finished the Excel. Try a smaller template or fewer context files."
+        : "Claude did not return valid JSON for the Excel",
+    );
+  }
 
   const plan: { sheets: { name: string; headers: string[]; rows: (string|number)[][] }[] } = JSON.parse(jsonMatch[0]);
 
@@ -562,6 +582,10 @@ If the document has real content, generate between 5 and 60 pairs. Respond [] on
       body: JSON.stringify({
         model: "claude-sonnet-5",
         max_tokens: 8192,
+        // See the note on the Excel path: adaptive thinking ate most of the
+        // output budget here and truncated the replacement list, which then
+        // silently returned the untouched template.
+        thinking: { type: "disabled" },
         messages: [{ role: "user", content: contentBlocks }],
       }),
       signal: AbortSignal.timeout(120000),
@@ -570,18 +594,24 @@ If the document has real content, generate between 5 and 60 pairs. Respond [] on
     if (!res.ok) {
       const errText = await res.text();
       console.error("Anthropic API error:", res.status, errText);
-      return { buffer: templateBuffer, replacements: [] };
+      throw new Error(`Anthropic API error ${res.status}. The document was not modified.`);
     }
 
     const data = await res.json();
-    const aiText = data?.content?.[0]?.text ?? "";
+    const aiText = extractText(data);
     console.log("[generate] Claude raw response (first 500):", aiText.slice(0, 500));
 
     // Parse replacements — Claude sometimes wraps in ```json ... ```
     const jsonMatch = aiText.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      console.error("[generate] No JSON array found in Claude response");
-      return { buffer: templateBuffer, replacements: [] };
+      // Previously this returned the untouched template, so a failed AI step
+      // looked to the user like "it just downloaded the template" with no error.
+      console.error("[generate] No JSON array found in Claude response. stop_reason:", data?.stop_reason);
+      throw new Error(
+        data?.stop_reason === "max_tokens"
+          ? "Claude's response was cut off before it finished. Try a smaller template or fewer context files."
+          : "Claude did not return any changes to apply, so the document was left unchanged.",
+      );
     }
 
     const replacements: { find: string; replace: string }[] = JSON.parse(jsonMatch[0]);

@@ -6,6 +6,15 @@ import { eq } from "drizzle-orm";
 import { getFirmThesis, FIRM_SETTINGS_ID } from "@/lib/firmThesis";
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
+// Collect the text blocks of an Anthropic response. Never read content[0]:
+// when thinking is on the first block is a "thinking" block with no .text, so
+// indexing it silently returns nothing and the caller sees an empty result.
+function extractText(data: unknown, fallback: string): string {
+  const blocks = (data as { content?: { type?: string; text?: string }[] })?.content ?? [];
+  const text = blocks.filter(b => b?.type === "text").map(b => b.text ?? "").join("\n").trim();
+  return text || fallback;
+}
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // ── RSS parser ────────────────────────────────────────────────────────────────
@@ -208,7 +217,7 @@ Return ONLY this JSON (no markdown):
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const text: string = data?.content?.[0]?.text ?? "{}";
+    const text: string = extractText(data, "{}");
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return null;
     return JSON.parse(match[0]);
@@ -413,7 +422,7 @@ Return ONLY a valid JSON array. If no companies found, return [].`;
     });
     if (!res.ok) return [];
     const data = await res.json();
-    const text: string = data?.content?.[0]?.text ?? "[]";
+    const text: string = extractText(data, "[]");
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) return [];
     return JSON.parse(match[0]);
@@ -460,7 +469,7 @@ ${JSON.stringify(candidates, null, 2)}`;
     });
     if (!res.ok) return candidates;
     const data = await res.json();
-    const text: string = data?.content?.[0]?.text ?? "[]";
+    const text: string = extractText(data, "[]");
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) return candidates;
     return JSON.parse(match[0]);

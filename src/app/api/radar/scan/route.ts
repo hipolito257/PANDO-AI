@@ -145,6 +145,9 @@ RULES:
     const msg = await client.messages.create({
       model: "claude-sonnet-5",
       max_tokens: 4096,
+      // Structured extraction, not reasoning: adaptive thinking would eat the
+      // output budget and truncate the JSON (see documents/generate).
+      thinking: { type: "disabled" },
       system: systemPrompt,
       messages: [{
         role: "user",
@@ -167,7 +170,13 @@ RULES:
       }],
     });
 
-    const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "{}";
+    // Collect every text block: content[0] is a thinking block whenever
+    // thinking is on, and reading it directly silently yields nothing.
+    const text = msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map(b => b.text)
+      .join("\n")
+      .trim() || "{}";
     const match = text.match(/\{[\s\S]*\}/);
     const parsed = match ? JSON.parse(match[0]) : {};
 
