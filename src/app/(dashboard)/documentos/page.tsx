@@ -1029,7 +1029,7 @@ export default function DocumentosPage() {
                   <h3 className="text-[15px] font-semibold text-carbon">Document preview</h3>
                   <p className="text-[11px] text-slate mt-0.5">
                     {genResult.replacements.length > 0
-                      ? `${genResult.replacements.length} change${genResult.replacements.length > 1 ? "s" : ""} made by AI`
+                      ? `${genResult.replacements.length} change${genResult.replacements.length > 1 ? "s" : ""} applied to the template`
                       : "Document ready — no AI changes detected"}
                   </p>
                 </div>

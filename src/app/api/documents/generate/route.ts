@@ -224,10 +224,14 @@ function escapeXml(str: string): string {
 }
 
 // ── Apply text replacements to Office docs ────────────────────────────────────
+// Returns the applied subset alongside the buffer. A "find" the model invented,
+// or lifted from an attached source file instead of the template, matches
+// nothing and is silently a no-op — so the caller must know what actually
+// landed rather than trusting what the model proposed.
 function applyReplacementsToOffice(
   buffer: Buffer, type: string,
   replacements: { find: string; replace: string }[]
-): Buffer {
+): { buffer: Buffer; applied: { find: string; replace: string }[] } {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const PizZip = require("pizzip");
   const zip = new PizZip(buffer);
@@ -236,7 +240,7 @@ function applyReplacementsToOffice(
     if (type === "docx") return !!name.match(/^word\/(document|header\d*|footer\d*).*\.xml$/);
     return false;
   });
-  let totalMatched = 0;
+  const appliedFinds = new Set<string>();
   for (const fname of xmlFiles) {
     try {
       let content = type === "pptx"
@@ -246,7 +250,7 @@ function applyReplacementsToOffice(
         : zip.files[fname].asText();
       for (const { find, replace } of replacements) {
         if (find && find.length > 1 && content.includes(find)) {
-          totalMatched++;
+          appliedFinds.add(find);
           // Escape replacement value so special chars don't break the XML
           content = content.split(find).join(escapeXml(replace));
         }
@@ -254,32 +258,42 @@ function applyReplacementsToOffice(
       zip.file(fname, content);
     } catch { /* skip */ }
   }
-  console.log(`[applyReplacementsToOffice] ${type}: ${totalMatched}/${replacements.length} replacements matched at least one file`);
-  return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
+  console.log(`[applyReplacementsToOffice] ${type}: ${appliedFinds.size}/${replacements.length} replacements matched`);
+  return {
+    buffer: zip.generate({ type: "nodebuffer", compression: "DEFLATE" }),
+    applied: replacements.filter(r => appliedFinds.has(r.find)),
+  };
 }
 
 // ── Apply replacements to XLSX ─────────────────────────────────────────────────
 async function applyReplacementsToXlsx(
   buffer: Buffer, replacements: { find: string; replace: string }[]
-): Promise<Buffer> {
+): Promise<{ buffer: Buffer; applied: { find: string; replace: string }[] }> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ExcelJS = require("exceljs");
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
+  const appliedFinds = new Set<string>();
   wb.eachSheet((sheet: any) => {
     sheet.eachRow({ includeEmpty: false }, (row: any) => {
       row.eachCell({ includeEmpty: false }, (cell: any) => {
         if (typeof cell.value === "string") {
           let v = cell.value;
           for (const { find, replace } of replacements) {
-            if (find) v = v.split(find).join(replace);
+            if (find && v.includes(find)) {
+              appliedFinds.add(find);
+              v = v.split(find).join(replace);
+            }
           }
           cell.value = v;
         }
       });
     });
   });
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  return {
+    buffer: Buffer.from(await wb.xlsx.writeBuffer()),
+    applied: replacements.filter(r => appliedFinds.has(r.find)),
+  };
 }
 
 // ── Generate with {{}} placeholders (docxtemplater) ───────────────────────────
@@ -524,7 +538,9 @@ Date: ${today()}
   if (contextFiles.length > 0) {
     contentBlocks.push({
       type: "text",
-      text: `Below are ${contextFiles.length} supporting document(s). Read them carefully to extract relevant data:`
+      text: `===== SOURCE MATERIAL (${contextFiles.length} attached file(s)) =====\n`
+        + `These files describe the TARGET subject. They are your source of FACTS.\n`
+        + `They are NOT the document you are editing, and you must never quote them in a "find" value.`
     });
     for (const f of contextFiles) {
       const block = buildContextBlock(f);
@@ -546,20 +562,27 @@ Date: ${today()}
 
   contentBlocks.push({
     type: "text",
-    text: `You are an expert in document analysis and professional content generation. You are re-using a document as a FORMAT TEMPLATE for a different subject.
+    text: `You are an expert in document analysis and professional content generation.
 
-THE TEMPLATE IS A FORMAT REFERENCE ONLY — READ THIS FIRST:
-The document below belongs to an unrelated company. It shows you the desired structure, section order, tone, and level of detail. Its FACTS ARE NOT ABOUT YOUR SUBJECT and must not survive into the output: no company or brand names, people, dates, locations, customers, investors, or figures from it may appear in the final document. Treat every concrete fact in it as placeholder text to be overwritten. The finished document must read as if it had been written from scratch about the target subject, with zero traces of the original company.
+There are TWO different documents in this task. Do not confuse them:
+  • SOURCE MATERIAL — the attached file(s) above${hasCompanyData ? " and the target company data below" : ""}. These describe the TARGET subject and are where FACTS come from.
+  • TEMPLATE TO EDIT — the text between the ===== markers below. This is an old document about a DIFFERENT, UNRELATED company. It is the ONLY document you are editing, and every "find" value must be copied out of it.
 
-${hasCompanyData ? `TARGET COMPANY DATA:\n${companySection}` : ""}
+Your job: rewrite the TEMPLATE TO EDIT so it describes the TARGET subject instead, keeping the template's structure, section order, tone and level of detail while replacing all of its facts.
+
+The template's facts must NOT survive: no company or brand names, people, dates, locations, customers, investors, or figures belonging to the template's original company may appear in the finished document. Treat every concrete fact in it as placeholder text to be overwritten. The result must read as if written from scratch about the target subject.
+
+${hasCompanyData ? `TARGET COMPANY DATA (source material):\n${companySection}` : ""}
 ${hasInstructions ? `${userInstructions}` : ""}
 ${!hasCompanyData && !hasInstructions ? "No company data or specific instructions were provided. Adapt the document generically: replace company names with \"[Company]\" and financial data with \"N/D\", keeping the structure." : ""}
 
-TEMPLATE DOCUMENT CONTENT (section by section):
+===== TEMPLATE TO EDIT (the document you are rewriting) =====
 ${templateText || "(document with no extractable text)"}
+===== END OF TEMPLATE TO EDIT =====
 
 MODIFICATION RULES:
-1. Generate one replacement for EVERY element that carries information about the original company, using the EXACT text from the document in "find". Be exhaustive: work through the document from top to bottom and do not stop early. Any element you skip keeps the wrong company's information in the final file, which is the single worst outcome here.
+0. EVERY "find" value must be text copied verbatim from between the TEMPLATE TO EDIT markers above. A "find" taken from the attached source files, or written from memory, matches nothing and is silently discarded, leaving the old company's text in the file. Before answering, check each "find" against the template text.
+1. Generate one replacement for EVERY element that carries information about the original company. Be exhaustive: work through the template from top to bottom and do not stop early. Any element you skip keeps the wrong company's information in the final file, which is the single worst outcome here.
 2. ${hasCompanyData ? "Replace everything specific to the original company with the target subject's own information: name(s), metrics, history, people, investors, geography, customers, dates." : "Apply the changes indicated in the instructions to the document text."}
 3. Mirror the original's tone, length and level of detail, but never its facts.
 4. Keep UNCHANGED (in content): generic section titles, column labels, structural headers — do not remove or restructure them. These are part of the format, not the original company's information.
@@ -623,15 +646,27 @@ Produce as many pairs as the document actually needs — there is no upper limit
     }
 
     const replacements: { find: string; replace: string }[] = JSON.parse(jsonMatch[0]);
-    console.log("[generate] Replacements count:", replacements.length);
-    if (!replacements.length) return { buffer: templateBuffer, replacements: [] };
+    console.log("[generate] Replacements proposed:", replacements.length);
+    if (!replacements.length) {
+      throw new Error("The AI proposed no changes, so the document would be identical to the template.");
+    }
 
-    // Apply replacements
-    const buffer = templateType === "xlsx"
+    // Apply replacements, then report only what actually landed. A "find" the
+    // model took from an attached source file instead of the template matches
+    // nothing, so proposing 56 edits and applying 0 must not look like success.
+    const { buffer, applied } = templateType === "xlsx"
       ? await applyReplacementsToXlsx(templateBuffer, replacements)
       : applyReplacementsToOffice(templateBuffer, templateType, replacements);
 
-    return { buffer, replacements };
+    console.log(`[generate] Replacements applied: ${applied.length}/${replacements.length}`);
+    if (!applied.length) {
+      throw new Error(
+        `The AI proposed ${replacements.length} edits but none matched the template's actual text, so nothing was changed. ` +
+        "This usually means it quoted the backup file instead of the template. Try again.",
+      );
+    }
+
+    return { buffer, replacements: applied };
   } catch (e: any) {
     console.error("AI generate error:", e.message);
     throw new Error(`Error generating with AI: ${e.message}`);
@@ -761,7 +796,9 @@ export async function POST(req: NextRequest) {
       };
       usedReplacements = Object.entries(values).map(([k, v]) => ({ find: `{{${k}}}`, replace: v }));
       if (ext === "xlsx") {
-        outBuffer = await applyReplacementsToXlsx(templateBuffer, usedReplacements);
+        const r = await applyReplacementsToXlsx(templateBuffer, usedReplacements);
+        outBuffer = r.buffer;
+        usedReplacements = r.applied;
       } else {
         outBuffer = generateWithPlaceholders(templateBuffer, values);
       }
