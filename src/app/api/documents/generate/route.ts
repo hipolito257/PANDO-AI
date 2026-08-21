@@ -534,7 +534,7 @@ Date: ${today()}
 
   // Main instruction
   const companySection = companyCard
-    ? `COMPANY DATA (PANDO database):\n${companyCard}\n\n${contextFiles.length > 0 ? "IMPORTANT: The supporting documents above contain additional information. Prioritize that data if it is more detailed or current than the database's." : ""}`
+    ? `COMPANY DATA (PANDO database):\n${companyCard}\n\n${contextFiles.length > 0 ? "IMPORTANT: The attached documents above are the primary, authoritative source for facts, figures and narrative. Where they and this database summary disagree, follow the attached documents." : ""}`
     : "";
 
   const userInstructions = userPrompt
@@ -546,20 +546,24 @@ Date: ${today()}
 
   contentBlocks.push({
     type: "text",
-    text: `You are an expert in document analysis and professional content generation. Your task is to modify an existing document according to the instructions and data provided.
+    text: `You are an expert in document analysis and professional content generation. You are re-using a document as a FORMAT TEMPLATE for a different subject.
+
+THE TEMPLATE IS A FORMAT REFERENCE ONLY — READ THIS FIRST:
+The document below belongs to an unrelated company. It shows you the desired structure, section order, tone, and level of detail. Its FACTS ARE NOT ABOUT YOUR SUBJECT and must not survive into the output: no company or brand names, people, dates, locations, customers, investors, or figures from it may appear in the final document. Treat every concrete fact in it as placeholder text to be overwritten. The finished document must read as if it had been written from scratch about the target subject, with zero traces of the original company.
 
 ${hasCompanyData ? `TARGET COMPANY DATA:\n${companySection}` : ""}
 ${hasInstructions ? `${userInstructions}` : ""}
 ${!hasCompanyData && !hasInstructions ? "No company data or specific instructions were provided. Adapt the document generically: replace company names with \"[Company]\" and financial data with \"N/D\", keeping the structure." : ""}
 
-CURRENT DOCUMENT CONTENT (section by section):
+TEMPLATE DOCUMENT CONTENT (section by section):
 ${templateText || "(document with no extractable text)"}
 
 MODIFICATION RULES:
-1. Generate one replacement per element that needs to change, using the EXACT text from the document in "find".
-2. ${hasCompanyData ? "Replace everything specific to the original company with target company data: name(s), metrics, history, people, investors, geography." : "Apply the changes indicated in the instructions to the document text."}
-3. For narrative text, keep the same tone and length as the original.
-4. Keep UNCHANGED (in content): generic section titles, column labels, structural headers — do not remove or restructure them.
+1. Generate one replacement for EVERY element that carries information about the original company, using the EXACT text from the document in "find". Be exhaustive: work through the document from top to bottom and do not stop early. Any element you skip keeps the wrong company's information in the final file, which is the single worst outcome here.
+2. ${hasCompanyData ? "Replace everything specific to the original company with the target subject's own information: name(s), metrics, history, people, investors, geography, customers, dates." : "Apply the changes indicated in the instructions to the document text."}
+3. Mirror the original's tone, length and level of detail, but never its facts.
+4. Keep UNCHANGED (in content): generic section titles, column labels, structural headers — do not remove or restructure them. These are part of the format, not the original company's information.
+4b. If the source material genuinely says nothing about a point the template covers, write a neutral, accurate statement for the target subject or "N/D" for a figure. Never leave the original company's value in place, and never invent a fact to fill the gap.
 5. LANGUAGE — CRITICAL: The final document must be entirely in English, with no mixed languages. This applies to every piece of text you write in "replace", INCLUDING generic section titles/column labels/structural headers if they are not already in English — translate them to English as part of your replacements rather than leaving them unchanged. Never output Spanish (or any other language) text anywhere in "replace".
 6. CRITICAL: The "find" field must be the EXACT text as it appears in the document (including "&amp;" if "&amp;" appears), even if that text is in a non-English language.
 7. MONEY FORMAT: Write every money figure exactly like this: "USD $200 m" (millions), "USD $850 k" (thousands), "USD $1.2 bn" (billions) — currency code, then symbol+number, then a space and lowercase suffix (k/m/bn). Use "MXN $" or "EUR €" instead of "USD $" when the figure is explicitly in pesos or euros. Never write "$200M", "200 million dollars", or similar.
@@ -567,7 +571,7 @@ MODIFICATION RULES:
 Respond ONLY with a JSON array (no text, no markdown):
 [{"find": "exact text from the document", "replace": "new content"}, ...]
 
-If the document has real content, generate between 5 and 60 pairs. Respond [] only if the document is blank or nothing needs to change.`
+Produce as many pairs as the document actually needs — there is no upper limit, and covering every company-specific element matters more than being concise. Respond [] only if the document is blank.`
   });
 
   try {
