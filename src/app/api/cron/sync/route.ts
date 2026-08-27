@@ -478,9 +478,19 @@ ${JSON.stringify(candidates, null, 2)}`;
 
 // ── Main cron handler ─────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
+  // Fail closed. This used to be `if (cronSecret && ...)`, so with CRON_SECRET
+  // unset the check was skipped and anyone could trigger a full discovery run
+  // — Google News fetches plus Anthropic calls billed to the system key — just
+  // by loading the URL. A missing secret must never mean "open to everyone".
+  // Vercel attaches this bearer token to scheduled invocations automatically
+  // once CRON_SECRET exists on the project.
   const authHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error("[cron/sync] CRON_SECRET is not configured — refusing to run.");
+    return NextResponse.json({ error: "Cron is not configured" }, { status: 503 });
+  }
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
