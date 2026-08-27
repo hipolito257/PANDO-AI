@@ -543,23 +543,50 @@ function ScanTab({ onCompaniesAdded }: { onCompaniesAdded: () => void }) {
     setProgress("Reading PDF...");
 
     try {
-      // Read PDF as base64 in the browser
-      const arrayBuffer = await file.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-      );
+      // Upload the PDF in chunks rather than inlining it in the request. Sent
+      // inline it became base64 (a third larger) and anything over ~3.3 MB was
+      // rejected at the edge before reaching the route, even though this form
+      // accepts files up to 20 MB.
+      const CHUNK = 3 * 1024 * 1024;
+      const uploadId = crypto.randomUUID();
+      const totalChunks = Math.ceil(file.size / CHUNK) || 1;
+      const chunkUrls: string[] = [];
+      for (let i = 0; i < totalChunks; i++) {
+        setProgress(`Uploading PDF${totalChunks > 1 ? ` (${i + 1}/${totalChunks})` : ""}...`);
+        const fd = new FormData();
+        fd.append("chunk", file.slice(i * CHUNK, (i + 1) * CHUNK));
+        fd.append("uploadId", uploadId);
+        fd.append("chunkIndex", String(i));
+        fd.append("filename", file.name);
+        const up = await fetch("/api/templates/chunk", { method: "POST", body: fd });
+        if (!up.ok) throw new Error(`Upload failed on part ${i + 1} of ${totalChunks}`);
+        chunkUrls.push((await up.json()).chunkUrl);
+      }
+
+      const fin = await fetch("/api/templates/chunk/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkUrls, filename: `scan_${Date.now()}_${file.name}` }),
+      });
+      if (!fin.ok) throw new Error("Could not assemble the uploaded PDF");
+      const { blobUrl } = await fin.json();
 
       setProgress("Sending to Claude for analysis...");
       const res = await fetch("/api/radar/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdfBase64: base64, userPrompt: prompt || null, filename: file.name }),
+        body: JSON.stringify({ blobUrl, userPrompt: prompt || null, filename: file.name }),
       });
 
       setProgress("Processing results...");
-      const data = await res.json();
+      // Don't assume JSON: a rejection from the edge is HTML, and parsing it
+      // would surface a syntax error instead of what actually went wrong.
+      const data = await res.json().catch(() => ({} as any));
 
-      if (!res.ok) { setError(data.error ?? "Error processing the document."); setScanning(false); setProgress(""); return; }
+      if (!res.ok) {
+        setError(data.error ?? `Error processing the document (HTTP ${res.status}).`);
+        setScanning(false); setProgress(""); return;
+      }
 
       setResult(data);
       if (data.companiesAdded > 0) onCompaniesAdded();

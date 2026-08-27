@@ -8,8 +8,9 @@ import { getFirmThesis } from "@/lib/firmThesis";
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
-// Max ~4MB base64 PDF to stay within Vercel serverless body limits
-export const maxDuration = 60; // seconds
+// PDFs arrive via Blob rather than inline, so the old ~4MB body-size ceiling no
+// longer applies and a full CIM can take a while to read.
+export const maxDuration = 300; // seconds
 
 type ScannedCompany = {
   name: string;
@@ -43,20 +44,38 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let pdfBase64: string;
+  let pdfBase64: string | undefined;
+  let blobUrl: string | undefined;
   let userPrompt: string | null;
   let filename: string;
 
   try {
     const body = await req.json();
-    pdfBase64  = body.pdfBase64;
+    pdfBase64  = body.pdfBase64;   // legacy inline path, kept for compatibility
+    blobUrl    = body.blobUrl;     // normal path: PDF already uploaded to Blob
     userPrompt = body.userPrompt?.trim() || null;
     filename   = body.filename ?? "document.pdf";
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  if (!pdfBase64) return NextResponse.json({ error: "pdfBase64 required" }, { status: 400 });
+  // Sending the PDF inline capped uploads at roughly 3.3 MB: base64 inflates by
+  // a third and Vercel rejects bodies over 4.5 MB at the edge, before this route
+  // runs — so a real CIM failed instantly with no server-side error to show.
+  if (blobUrl && !pdfBase64) {
+    try {
+      const r = await fetch(blobUrl);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      pdfBase64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+    } catch (e) {
+      return NextResponse.json(
+        { error: `Could not read the uploaded PDF: ${e instanceof Error ? e.message : "unknown error"}` },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (!pdfBase64) return NextResponse.json({ error: "A PDF is required" }, { status: 400 });
 
   // ── Load context: firm thesis + mandates + existing company names ─────────
   const [firmThesis, activeMandates, existingCompanies] = await Promise.all([
@@ -176,9 +195,32 @@ RULES:
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map(b => b.text)
       .join("\n")
-      .trim() || "{}";
+      .trim();
+
+    // Falling back to "{}" here used to turn a cut-off or unparseable response
+    // into a confident "no companies found", which is indistinguishable from a
+    // genuinely empty document. Say what actually happened instead.
     const match = text.match(/\{[\s\S]*\}/);
-    const parsed = match ? JSON.parse(match[0]) : {};
+    if (!match) {
+      console.error("[radar/scan] no JSON in response. stop_reason:", msg.stop_reason, "raw:", text.slice(0, 500));
+      return NextResponse.json({
+        error: msg.stop_reason === "max_tokens"
+          ? "The analysis was cut off before it finished. Try scanning a shorter document or a specific section."
+          : "The AI did not return a readable analysis of this document. Try again.",
+      }, { status: 502 });
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch {
+      console.error("[radar/scan] malformed JSON. stop_reason:", msg.stop_reason);
+      return NextResponse.json({
+        error: msg.stop_reason === "max_tokens"
+          ? "The analysis was cut off mid-way and could not be read. Try a shorter document."
+          : "The AI returned a malformed analysis. Try again.",
+      }, { status: 502 });
+    }
 
     scanResult = {
       summary:      parsed.summary      ?? "No summary generated.",

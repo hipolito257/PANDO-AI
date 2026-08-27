@@ -7,7 +7,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
 
-export const maxDuration = 120;
+// Raised alongside max_tokens: with thinking on, a longer answer needs longer
+// to produce, and hitting the function limit would fail after doing the work.
+export const maxDuration = 300;
 
 function median(arr: number[]): number | null {
   if (!arr.length) return null;
@@ -107,7 +109,13 @@ ${peersLine}`.trim();
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 4000,
+      // Thinking is on by default on Sonnet 5 and draws from this same budget.
+      // Working through entry multiples, leverage and a multi-year operating
+      // ramp can spend several thousand tokens before a single character of
+      // JSON is emitted, which left almost nothing for the answer at 4000 and
+      // truncated the plan. Keep thinking (it earns its place on this task)
+      // and give it room.
+      max_tokens: 16000,
       system: `You are a senior PE analyst at PANDO drafting the INPUT ASSUMPTIONS for an LBO model — you are NOT computing the model yourself (the app's own Excel formulas do every calculation). Your only job is to suggest sane, well-grounded numeric inputs for the user to review and edit before anything is built.
 
 COMPANY DATA:
