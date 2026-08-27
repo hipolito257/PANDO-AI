@@ -9,7 +9,9 @@ import { extractPlainText } from "@/lib/extractDocumentText";
 import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
 import { getFirmThesis } from "@/lib/firmThesis";
 
-export const maxDuration = 120;
+// Thinking draws from the same budget as the answer, so a long draft
+// needs both a bigger max_tokens and longer to produce it.
+export const maxDuration = 300;
 
 const WORDS_PER_PAGE = 550;
 
@@ -133,7 +135,7 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
     const claude = new Anthropic({ apiKey });
     const resp = await claude.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 8000,
+      max_tokens: 16000,
       system: `You are a senior investment professional at PANDO, a private equity fund, writing an Internal Review Letter (IRL): an internal, IC-facing due-diligence memo used to support an investment committee decision. This is NOT a marketing document — write directly, risk-aware, and recommendation-oriented. Where the evidence is thin or a question is unanswered, say so plainly rather than smoothing it over.
 
 PANDO INVESTMENT THESIS (the fund's mandate and underwriting policy; evaluate the opportunity against this):

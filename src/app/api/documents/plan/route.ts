@@ -8,7 +8,9 @@ import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
 import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
 
-export const maxDuration = 120;
+// Thinking draws from the same budget as the answer, so a long plan needs
+// longer to produce than the old 120s allowed.
+export const maxDuration = 300;
 
 function median(arr: number[]): number | null {
   if (!arr.length) return null;
