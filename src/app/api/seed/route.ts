@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { users, dataSources, companies, signals, companyTags, mandates, mandateMatches } from "@/lib/schema";
 import { eq } from "drizzle-orm";
@@ -70,8 +71,16 @@ const DEMO_MATCHES = [
   { companyId: "comp_nowports", mandateId: "mand_latam_consumer", score: 62, tier: "candidate", rationale: "Digital logistics with strong growth, though negative EBITDA is a risk." },
 ];
 
-// GET /api/seed — create initial data
+// GET /api/seed — create initial data. ADMIN ONLY.
+// This was reachable by anyone on the internet: it is excluded from the auth
+// middleware and had no check of its own, so a stranger could POST here to
+// write demo records into production and, if the seed account did not exist,
+// create an ADMIN user whose password is written in this file.
 export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.user.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const results: string[] = [];
   try {
     // ── User ─────────────────────────────────────────────────────────────────────
