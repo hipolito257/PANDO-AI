@@ -208,6 +208,46 @@ export function expandMultilineReplacements(
   return out;
 }
 
+// ── Paragraph-level replacement for PPTX ──────────────────────────────────────
+// extractPptxStructured shows the model a paragraph's runs concatenated, but
+// normalizeXmlRuns only merges runs that carry no <a:rPr>. Every run in a real
+// deck has one (font, size, colour), so the string the model was given existed
+// nowhere in the XML and no replacement could ever match — the deck came back
+// untouched. Matching per paragraph sidesteps run splitting entirely, and only
+// the paragraphs that actually change get rebuilt, so styling elsewhere is
+// untouched. The rebuilt paragraph keeps its <a:pPr> and the first run's
+// <a:rPr>, which is the same trade docx already makes.
+export function replaceInPptxParagraphs(
+  xml: string, replacements: { find: string; replace: string }[]
+): { xml: string; applied: Set<string> } {
+  const applied = new Set<string>();
+  const out = xml.replace(/<a:p\b([^>]*)>([\s\S]*?)<\/a:p>/g, (full, pAttrs: string, inner: string) => {
+    // Fields and line breaks carry structure that a single merged run loses.
+    if (/<a:fld\b|<a:br\b/.test(inner)) return full;
+
+    const texts = [...inner.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(m => m[1]);
+    if (!texts.length) return full;
+    const paraText = texts.join("");
+    if (!paraText.trim()) return full;
+
+    const hit = replacements.find(r => {
+      if (!r.find || r.find.length <= 1) return false;
+      return paraText === r.find || paraText.trim() === r.find.trim() || paraText.includes(r.find);
+    });
+    if (!hit) return full;
+
+    const whole = paraText === hit.find || paraText.trim() === hit.find.trim();
+    const newText = whole ? hit.replace : paraText.split(hit.find).join(hit.replace);
+    applied.add(hit.find);
+
+    const pPr = inner.match(/<a:pPr\b[\s\S]*?(?:\/>|<\/a:pPr>)/)?.[0] ?? "";
+    const rPr = inner.match(/<a:rPr\b[\s\S]*?(?:\/>|<\/a:rPr>)/)?.[0] ?? "";
+    const endParaRPr = inner.match(/<a:endParaRPr\b[\s\S]*?(?:\/>|<\/a:endParaRPr>)/)?.[0] ?? "";
+    return `<a:p${pAttrs}>${pPr}<a:r>${rPr}<a:t>${escapeXml(newText)}</a:t></a:r>${endParaRPr}</a:p>`;
+  });
+  return { xml: out, applied };
+}
+
 // ── Apply text replacements to Office docs ────────────────────────────────────
 // Returns the applied subset alongside the buffer. A "find" the model invented,
 // or lifted from an attached source file instead of the template, matches
@@ -234,7 +274,21 @@ export function applyReplacementsToOffice(
         : type === "docx"
         ? normalizeWordRuns(zip.files[fname].asText())
         : zip.files[fname].asText();
+
+      // PPTX first goes through paragraph-level matching, which is immune to
+      // runs being split by formatting. The raw pass below then picks up
+      // anything left (a fragment inside a field-bearing paragraph, say).
+      // Scoped per file: a find handled here must not be re-applied to this
+      // same file, but may still match a different slide or a docx header.
+      const handledHere = new Set<string>();
+      if (type === "pptx") {
+        const res = replaceInPptxParagraphs(content, expanded);
+        content = res.xml;
+        for (const f of res.applied) { appliedFinds.add(f); handledHere.add(f); }
+      }
+
       for (const { find, replace } of expanded) {
+        if (handledHere.has(find)) continue;
         if (!find || find.length <= 1) continue;
         // The extractor keeps a paragraph's trailing spaces while models tend
         // to trim them, so try the trimmed form before giving up.
