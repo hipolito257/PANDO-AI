@@ -16,6 +16,7 @@ const NAV = [
   { href: "/financial-models", label: "Models" },
   { href: "/translate",   label: "Translate"   },
   { href: "/conectores",  label: "Connectors"  },
+  { href: "/equipo",      label: "Team"        },
 ];
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -28,6 +29,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   "/financial-models": <IconModels />,
   "/translate":   <IconTranslate />,
   "/conectores":  <IconConectores />,
+  "/equipo":      <IconTeam />,
 };
 
 type Badges = { radar?: number; exit?: number };
@@ -214,6 +216,16 @@ function IconConectores() {
       <circle cx="11" cy="11" r="2" stroke="currentColor" strokeWidth="1.2" />
       <line x1="5" y1="6" x2="9" y2="4" stroke="currentColor" strokeWidth="1" />
       <line x1="5" y1="8" x2="9" y2="10" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  );
+}
+function IconTeam() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="5" cy="4.5" r="2" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M1.5 12c0-2 1.6-3.5 3.5-3.5S8.5 10 8.5 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="10" cy="5" r="1.6" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M9.5 8.6c1.7-.2 3 1.1 3 3.4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
     </svg>
   );
 }

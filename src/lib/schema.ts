@@ -410,3 +410,23 @@ export const cronLogs = pgTable("CronLog", {
   status:              text("status").notNull().default("ok"),
   errorMsg:            text("errorMsg"),
 });
+
+// ── Team Availability (staffing) ──────────────────────────────────────────────
+// Append-only: each update is a new row, so the latest row per user is their
+// current status and older rows are the history.
+
+export const availabilityUpdates = pgTable("AvailabilityUpdate", {
+  id:            text("id").primaryKey(),
+  userId:        text("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  level:         text("level").notNull(),   // "available" | "partial" | "nearly_full" | "full" | "away"
+  comment:       text("comment"),
+  currentWork:   text("currentWork"),
+  availableFrom: text("availableFrom"),     // YYYY-MM-DD; for "away" this is the return date
+  interests:     text("interests"),
+  createdBy:     text("createdBy"),         // userId of whoever saved it (admins can edit others)
+  createdAt:     text("createdAt").default(sql`now()`),
+});
+
+export const availabilityUpdatesRelations = relations(availabilityUpdates, ({ one }) => ({
+  user: one(users, { fields: [availabilityUpdates.userId], references: [users.id] }),
+}));
