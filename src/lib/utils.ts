@@ -18,11 +18,16 @@ export function fmt(n: number | null | undefined, opts?: Intl.NumberFormatOption
   return new Intl.NumberFormat("es-MX", opts).format(n);
 }
 
+// Money values on Company / FinancialSnapshot are whole USD (the edit form,
+// AI fill and file extraction all store e.g. $5M as 5000000).
 export function fmtM(n: number | null | undefined) {
   if (n == null) return "—";
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}B`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}M`;
-  return `$${n.toFixed(0)}K`;
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${sign}$${(a / 1e3).toFixed(0)}K`;
+  return `${sign}$${a.toFixed(0)}`;
 }
 
 const DOC_CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", MXN: "$", EUR: "€", GBP: "£" };

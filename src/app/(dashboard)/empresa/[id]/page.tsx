@@ -18,6 +18,8 @@ import { NewsRefreshButton } from "@/components/company/NewsRefreshButton";
 import { WebsiteLink } from "@/components/ui/WebsiteLink";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
 import { CompanyHeroBg } from "@/components/company/CompanyHeroBg";
+import { CompanyFilesPanel } from "@/components/company/CompanyFilesPanel";
+import { EXTRACTABLE_FIELDS } from "@/lib/companyFileExtract";
 
 // Thin wrapper — keeps empresa page as a server component
 function NotesSection({ companyId }: { companyId: string }) {
@@ -45,8 +47,8 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
   const snapshots = (company.financialHistory ?? []).filter((s) => s.quarter === 0);
   const chartYears = snapshots.map((s) => s.year.toString());
-  const chartRevenues = snapshots.map((s) => (s.revenueUsd ?? 0) / 1000);
-  const chartEbitda = snapshots.map((s) => (s.ebitdaUsd ?? 0) / 1000);
+  const chartRevenues = snapshots.map((s) => (s.revenueUsd ?? 0) / 1_000_000);
+  const chartEbitda = snapshots.map((s) => (s.ebitdaUsd ?? 0) / 1_000_000);
 
   const capTable = [
     { label: "Founders",      value: 38, color: "#202020" },
@@ -133,6 +135,17 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
             </div>
           </Card>
         </div>
+
+        {/* Files + AI extraction */}
+        <Card>
+          <SectionHeader title="Files" subtitle="Upload decks, models or reports. PANDO reads them and proposes updates to this profile" className="mb-3" />
+          <CompanyFilesPanel
+            companyId={company.id}
+            current={Object.fromEntries(EXTRACTABLE_FIELDS.map((f) => [f, (company as Record<string, unknown>)[f] as string | number | null]))}
+            snapshots={snapshots.map(({ year, revenueUsd, ebitdaUsd, employees }) => ({ year, revenueUsd, ebitdaUsd, employees }))}
+            founderNames={company.founders.map((f) => f.name)}
+          />
+        </Card>
 
         {/* Signals + Cap Table */}
         <div className="grid grid-cols-3 gap-4">

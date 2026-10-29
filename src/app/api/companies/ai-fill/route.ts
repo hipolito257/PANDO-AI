@@ -5,13 +5,10 @@ import { userSettings } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { getFirmThesis } from "@/lib/firmThesis";
+import { SECTORS, COUNTRIES, STAGES, FUNDING_STAGES } from "@/lib/companyOptions";
 
 export const maxDuration = 60;
 
-const SECTORS = ["Fintech", "Software", "SaaS", "Logistics", "Healthcare", "Consumer", "Retail", "Mobility", "Edtech", "Proptech", "Agritech", "Other"];
-const COUNTRIES = ["México", "Colombia", "Chile", "Perú", "Brasil", "Argentina"];
-const STAGES = ["pre-seed", "seed", "series-a", "series-b", "series-c", "growth", "mature"];
-const FUNDING_STAGES = ["Pre-seed", "Seed", "Serie A", "Serie B", "Serie C", "Serie D+", "Growth", "Bridge", "Deuda"];
 
 // Fields the AI is allowed to fill in, mapped 1:1 to the CompanyModal form / Company schema.
 interface FilledFields {

@@ -411,6 +411,31 @@ export const cronLogs = pgTable("CronLog", {
   errorMsg:            text("errorMsg"),
 });
 
+// ── Company Files (deck / Excel uploads + AI extraction) ──────────────────────
+// The blob at blobUrl is AES-256-GCM encrypted (see blobCrypto.ts) because the
+// Blob store is public-access only.
+
+export const companyFiles = pgTable("CompanyFile", {
+  id:             text("id").primaryKey(),
+  companyId:      text("companyId").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  filename:       text("filename").notNull(),
+  ext:            text("ext").notNull(),          // "pdf" | "pptx" | "xlsx" | "docx" | "csv" | "txt" | "png" | "jpg" | ...
+  sizeBytes:      integer("sizeBytes").notNull().default(0),
+  blobUrl:        text("blobUrl").notNull(),
+  uploadedBy:     text("uploadedBy"),
+  uploadedByName: text("uploadedByName"),
+  extractionStatus: text("extractionStatus").notNull().default("none"), // "none" | "done" | "error"
+  extraction:     text("extraction"),             // JSON: see companyFileExtract.ts ExtractionResult
+  extractionError: text("extractionError"),
+  extractionCostUsd: doublePrecision("extractionCostUsd"),
+  extractedAt:    text("extractedAt"),
+  createdAt:      text("createdAt").default(sql`now()`),
+});
+
+export const companyFilesRelations = relations(companyFiles, ({ one }) => ({
+  company: one(companies, { fields: [companyFiles.companyId], references: [companies.id] }),
+}));
+
 // ── Team Availability (staffing) ──────────────────────────────────────────────
 // Append-only: each update is a new row, so the latest row per user is their
 // current status and older rows are the history.

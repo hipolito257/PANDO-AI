@@ -33,7 +33,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const radarVals = [85, 78, 90, 72, 80, 65];
   const revTrend = company.financialHistory
     .filter((s) => s.quarter === 0)
-    .map((s) => (s.revenueUsd ?? 0) / 1000);
+    .map((s) => (s.revenueUsd ?? 0) / 1_000_000);
 
   const RECOMMENDATION = company.score >= 85 ? "PROCEED" : company.score >= 70 ? "INVESTIGATE FURTHER" : "MONITOR";
   const REC_COLOR = company.score >= 85 ? "#059669" : company.score >= 70 ? "#d97706" : "#828282";
