@@ -5,6 +5,7 @@ import { documentTemplates, companies, compSets, publicComps } from "@/lib/schem
 import path from "path";
 import fs from "fs";
 import { fmtMoneyDoc } from "@/lib/utils";
+import { companyFileBlocks, parseCompanyFileIds } from "@/lib/companyContext";
 import {
   extractOfficeText, applyReplacementsToOffice,
 } from "@/lib/officeReplace";
@@ -98,7 +99,8 @@ function generateWithPlaceholders(buffer: Buffer, values: Record<string, string>
 // ── Context file → Claude content block ───────────────────────────────────────
 // Claude natively reads: PDFs as "document", images as "image",
 // everything else we extract text and send as plain text.
-interface ContextFile { name: string; buffer: Buffer; mimeType: string; }
+// `blocks` carries ready-made content (company-profile files) instead of a raw buffer.
+interface ContextFile { name: string; buffer: Buffer; mimeType: string; blocks?: unknown[]; }
 
 function buildContextBlock(file: ContextFile): any {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -162,6 +164,7 @@ Date: ${today()}
   if (contextFiles.length > 0) {
     contentBlocks.push({ type: "text", text: `Reference documents (${contextFiles.length}):` });
     for (const f of contextFiles) {
+      if (f.blocks) { contentBlocks.push(...f.blocks); continue; }
       const block = buildContextBlock(f);
       if (block) contentBlocks.push(block);
     }
@@ -327,6 +330,7 @@ Date: ${today()}
         + `They are NOT the document you are editing, and you must never quote them in a "find" value.`
     });
     for (const f of contextFiles) {
+      if (f.blocks) { contentBlocks.push(...f.blocks); continue; }
       const block = buildContextBlock(f);
       if (block) contentBlocks.push(block);
     }
@@ -551,6 +555,12 @@ export async function POST(req: NextRequest) {
     if (f.size === 0) continue;
     const buf = Buffer.from(await f.arrayBuffer());
     contextFiles.push({ name: f.name, buffer: buf, mimeType: f.type });
+  }
+
+  // Files uploaded to the company's profile (decks, models, reports)
+  const companyFilesCtx = await companyFileBlocks(companyId, parseCompanyFileIds(formData.get("companyFileIds")));
+  if (companyFilesCtx.blocks.length) {
+    contextFiles.unshift({ name: companyFilesCtx.names.join(", "), buffer: Buffer.alloc(0), mimeType: "", blocks: companyFilesCtx.blocks });
   }
 
   // Load user's API key

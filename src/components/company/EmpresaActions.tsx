@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CompanyModal } from "./CompanyModal";
@@ -29,9 +29,27 @@ type CompanyData = {
   status: string;
 };
 
+// Generators open with this company (and its uploaded files) preselected.
+const GENERATE_OPTIONS = [
+  { label: "2-pager",           hint: "Investment brief",            href: (id: string) => `/documentos?company=${id}&type=twopager` },
+  { label: "Presentation",      hint: "PowerPoint deck",             href: (id: string) => `/documentos?company=${id}&type=pptx` },
+  { label: "Word document",     hint: "Memo or report",              href: (id: string) => `/documentos?company=${id}&type=docx` },
+  { label: "IRL",               hint: "Information request list",    href: (id: string) => `/documentos?company=${id}&type=irl` },
+  { label: "LBO model (Excel)", hint: "Financial model",             href: (id: string) => `/financial-models?company=${id}` },
+];
+
 export function EmpresaActions({ company }: { company: CompanyData }) {
   const [editOpen, setEditOpen] = useState(false);
+  const [genOpen, setGenOpen] = useState(false);
+  const genRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!genOpen) return;
+    const close = (e: MouseEvent) => { if (genRef.current && !genRef.current.contains(e.target as Node)) setGenOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [genOpen]);
 
   return (
     <>
@@ -46,11 +64,33 @@ export function EmpresaActions({ company }: { company: CompanyData }) {
           </svg>
           Edit
         </button>
-        <Link href={`/review/${company.slug}`}>
-          <button className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors">
-            Generate 2-pager
+        <div ref={genRef} className="relative">
+          <button
+            onClick={() => setGenOpen(v => !v)}
+            className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors flex items-center gap-1.5"
+          >
+            Generate
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
-        </Link>
+          {genOpen && (
+            <div className="absolute right-0 top-9 w-[230px] bg-paper border border-chalk rounded-[10px] shadow-xl z-50 py-1">
+              {GENERATE_OPTIONS.map(o => (
+                <Link key={o.label} href={o.href(company.id)} onClick={() => setGenOpen(false)}
+                  className="block px-3 py-2 hover:bg-fog transition-colors">
+                  <span className="block text-[12px] font-medium text-carbon">{o.label}</span>
+                  <span className="block text-[10px] text-slate">{o.hint}</span>
+                </Link>
+              ))}
+              <div className="border-t border-chalk my-1" />
+              <Link href={`/review/${company.slug}`} onClick={() => setGenOpen(false)}
+                className="block px-3 py-2 hover:bg-fog transition-colors">
+                <span className="block text-[12px] font-medium text-carbon">Internal review page</span>
+                <span className="block text-[10px] text-slate">Quick on-screen summary</span>
+              </Link>
+              <p className="px-3 pt-1 pb-1.5 text-[10px] text-slate">Uses this company&apos;s data and the files uploaded to its profile.</p>
+            </div>
+          )}
+        </div>
         <Link href="/comparables">
           <button className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors">
             View comps

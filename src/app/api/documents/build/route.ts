@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { documentTemplates, companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { companyFileBlocks, companyFilesInstruction, parseCompanyFileIds } from "@/lib/companyContext";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
 import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
@@ -350,6 +351,10 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
 
         // ── Download context files ──────────────────────────────────────────
         const contextParts: Anthropic.MessageParam["content"] = [];
+        // Company-profile files first; their cache breakpoint lets every
+        // section call below reuse them at cache-read prices.
+        const companyFilesCtx = await companyFileBlocks(companyId, parseCompanyFileIds(formData.get("companyFileIds")));
+        contextParts.push(...companyFilesCtx.blocks);
         for (const bf of blobUrls.slice(0, 5)) {
           try {
             const r = await fetch(bf.url);
@@ -448,6 +453,7 @@ EV/EBITDA   median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`.trim();
               slidesOutline,
               "",
               userPrompt ? `ADDITIONAL INSTRUCTIONS: ${userPrompt}` : null,
+              companyFilesInstruction(companyFilesCtx.names),
               blobUrls.length
                 ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")} — their actual content is included above as document/image/text blocks. These are the primary, authoritative source for company facts, numbers, and narrative — use the real figures, names, and claims from them instead of inventing plausible-sounding but fictional data.`
                 : null,

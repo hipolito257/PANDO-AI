@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { companyFileBlocks, companyFilesInstruction, parseCompanyFileIds } from "@/lib/companyContext";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
 import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
@@ -74,6 +75,10 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
 
     // Download blob files and build multimodal content parts
     const msgContent: Anthropic.MessageParam["content"] = [];
+    // Files uploaded to the company profile go first so their cached prefix
+    // survives plan revisions.
+    const companyFilesCtx = await companyFileBlocks(companyId, parseCompanyFileIds(formData.get("companyFileIds")));
+    msgContent.push(...companyFilesCtx.blocks);
     for (const bf of blobUrls.slice(0, 5)) {
       try {
         const r = await fetch(bf.url);
@@ -93,6 +98,7 @@ Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Descrip
 
     const userText = [
       userPrompt ? `USER INSTRUCTIONS:\n${userPrompt}` : null,
+      companyFilesInstruction(companyFilesCtx.names),
       blobUrls.length
         ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")} — their actual content is included above as document/image/text blocks. These are the primary, authoritative source for company facts, numbers, and narrative. Base the plan on THEM, not on any prior knowledge or assumption about the company name. If a file's content could not be extracted, say so rather than inventing facts.`
         : null,

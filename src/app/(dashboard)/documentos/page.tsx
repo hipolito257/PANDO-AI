@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { useDocJobs } from "../DocJobsContext";
+import { CompanyFilesPicker } from "@/components/company/CompanyFilesPicker";
 
 interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
@@ -143,6 +144,8 @@ export default function DocumentosPage() {
   // inputs, or already-uploaded context files.
   const [docType, setDocType]         = usePersistentState<DocType | null>("documentos:docType", null);
   const [companyId, setCompanyId]     = usePersistentState("documentos:companyId", "");
+  // Which files from the company's profile the AI reads (null = API default: newest 3)
+  const [companyFileIds, setCompanyFileIds] = usePersistentState<string[] | null>("documentos:companyFileIds", null);
   const [contextFiles, setContextFiles] = useState<File[]>([]); // raw File objects can't be persisted; see contextBlobUrls below
   const [userPrompt, setUserPrompt]    = usePersistentState("documentos:userPrompt", "");
   const [hasApiKey, setHasApiKey]     = useState(true);
@@ -334,6 +337,7 @@ export default function DocumentosPage() {
       const blobUrls = await ensureContextBlobsUploaded();
       const fd = new FormData();
       if (companyId) fd.append("companyId", companyId);
+      if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
       if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
       if (feedback?.trim()) fd.append("feedback", feedback.trim());
       fd.append("pageCount", String(pageCount));
@@ -483,6 +487,7 @@ export default function DocumentosPage() {
       const blobUrls = await ensureContextBlobsUploaded();
       const fd = new FormData();
       if (companyId) fd.append("companyId", companyId);
+      if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
       if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
       if (feedback?.trim()) fd.append("feedback", feedback.trim());
       fd.append("pageCount", String(irlPageCount));
@@ -567,6 +572,17 @@ export default function DocumentosPage() {
     setIrlPlan(null); setIrlEdits({}); setIrlFeedback(""); setIrlPlanErr(null); setIrlBuildErr(null); setIrlLastDownload(null);
     setIrlQuestions(prev => prev.map(q => ({ ...q, answer: "" })));
   }
+  // Deep link from a company page: /documentos?company=<id>&type=<docType>
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const company = params.get("company");
+    const type = params.get("type") as DocType | null;
+    if (!company && !type) return;
+    if (company) { setCompanyId(company); setCompanyFileIds(null); }
+    if (type && ["pptx", "docx", "twopager", "irl"].includes(type)) chooseDocType(type);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function backToLanding() {
     setDocType(null);
   }
@@ -706,6 +722,7 @@ export default function DocumentosPage() {
     const fd = new FormData();
     fd.append("templateId", selected.id);
     if (companyId) fd.append("companyId", companyId);
+    if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
     if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
     if (blobs.length) fd.append("blobUrls", JSON.stringify(blobs));
 
@@ -793,6 +810,7 @@ export default function DocumentosPage() {
       const blobUrls = await ensureContextBlobsUploaded();
       const fd = new FormData();
       if (companyId) fd.append("companyId", companyId);
+      if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
       if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
       if (feedback?.trim()) fd.append("feedback", feedback.trim());
       if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
@@ -853,6 +871,7 @@ export default function DocumentosPage() {
       const fd = new FormData();
       fd.append("templateId", selected.id);
       if (companyId) fd.append("companyId", companyId);
+      if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
       if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
       if (plan) fd.append("approvedPlan", JSON.stringify(plan));
       if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
@@ -1288,6 +1307,7 @@ export default function DocumentosPage() {
                   <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
                 ))}
               </select>
+              <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
               {companyId && (
                 <div className="mt-2 text-[10px] text-slate">
                   AI will use the financial data, comparables and metrics for this company from the radar.
@@ -1772,6 +1792,7 @@ export default function DocumentosPage() {
                   <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
                 ))}
               </select>
+              <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
             </div>
 
             {/* Step 2 — Context files */}
@@ -2055,6 +2076,7 @@ export default function DocumentosPage() {
                   <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
                 ))}
               </select>
+              <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
             </div>
 
             {/* Step 2 — Diligence files */}

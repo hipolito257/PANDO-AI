@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { TrendingUp, Upload, X, Loader2, Download, Trash2, Eye } from "lucide-react";
 import { useDocJobs } from "../DocJobsContext";
+import { CompanyFilesPicker } from "@/components/company/CompanyFilesPicker";
 
 interface Company { id: string; name: string; sector: string | null; stage: string | null; }
 interface SavedModel {
@@ -114,6 +115,15 @@ export default function FinancialModelsPage() {
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState("");
+  const [companyFileIds, setCompanyFileIds] = useState<string[] | null>(null);
+
+  // Deep link from a company page: /financial-models?company=<id>
+  useEffect(() => {
+    const company = new URLSearchParams(window.location.search).get("company");
+    if (!company) return;
+    setCompanyId(company);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   const [companyNameFreeform, setCompanyNameFreeform] = useState("");
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -227,6 +237,7 @@ export default function FinancialModelsPage() {
       const blobUrls = await ensureContextBlobsUploaded();
       const fd = new FormData();
       if (companyId) fd.append("companyId", companyId);
+      if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
       if (!companyId && companyNameFreeform.trim()) fd.append("companyName", companyNameFreeform.trim());
       if (fb?.trim()) fd.append("feedback", fb.trim());
       if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
@@ -349,6 +360,7 @@ export default function FinancialModelsPage() {
               <option value="">— No specific company (early screening) —</option>
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
             {!companyId && (
               <input
                 type="text" placeholder="Company name (optional, for a target not yet tracked)"

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { companyFileBlocks, companyFilesInstruction, parseCompanyFileIds } from "@/lib/companyContext";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
 
@@ -76,6 +77,10 @@ ${peersLine}`.trim();
 
     // ── Download and read any uploaded context files (CIM, diligence Excel/PDF) ──
     const msgContent: Anthropic.MessageParam["content"] = [];
+    // Files uploaded to the company profile go first so their cached prefix
+    // survives plan revisions.
+    const companyFilesCtx = await companyFileBlocks(companyId, parseCompanyFileIds(formData.get("companyFileIds")));
+    msgContent.push(...companyFilesCtx.blocks);
     for (const bf of blobUrls.slice(0, 5)) {
       try {
         const r = await fetch(bf.url);
@@ -94,6 +99,7 @@ ${peersLine}`.trim();
     }
 
     const userText = [
+      companyFilesInstruction(companyFilesCtx.names),
       blobUrls.length
         ? `ATTACHED SUPPORTING FILES: ${blobUrls.map(b => b.name).join(", ")} — their actual content is included above as document/image/text blocks. These are the PRIMARY, AUTHORITATIVE source for deal terms, purchase price expectations, financing terms, and projections. Prefer numbers stated in these files over generic comp-based defaults whenever both are present.`
         : null,
