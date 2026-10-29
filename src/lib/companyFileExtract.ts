@@ -12,6 +12,7 @@
 //  - DOCX / CSV / TXT: plain text.  PNG / JPG / WEBP / GIF: image block.
 import Anthropic from "@anthropic-ai/sdk";
 import path from "path";
+import sharp from "sharp";
 import { extractDocxTexts, docxPartNames } from "@/lib/documentTranslate";
 import { SECTORS, COUNTRIES, STAGES, FUNDING_STAGES } from "@/lib/companyOptions";
 
@@ -19,18 +20,21 @@ export const EXTRACT_MODEL = "claude-sonnet-5-5";
 // USD per million tokens for EXTRACT_MODEL.
 const PRICE_INPUT = 2, PRICE_OUTPUT = 10, PRICE_CACHE_WRITE = 2.5, PRICE_CACHE_READ = 0.2;
 
-export const SUPPORTED_EXTS = ["pdf", "pptx", "xlsx", "docx", "csv", "txt", "png", "jpg", "jpeg", "webp", "gif"];
+export const SUPPORTED_EXTS = ["pdf", "pptx", "xlsx", "docx", "csv", "txt", "png", "jpg", "jpeg", "webp", "gif", "tif", "tiff"];
 export const LEGACY_EXTS: Record<string, string> = { ppt: "pptx or PDF", xls: "xlsx", doc: "docx or PDF", key: "PDF", numbers: "xlsx" };
 
 const MAX_PDF_BYTES   = 23 * 1024 * 1024;  // base64 inflates ~33%; the API caps a request at 32 MB
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;   // API limit per image
 const MIN_IMAGE_BYTES = 15 * 1024;         // smaller embedded images are almost always logos / icons
+const MAX_SOURCE_IMAGE_BYTES = 40 * 1024 * 1024;
 const MAX_IMAGES      = 80;
+const MAX_IMAGE_B64_TOTAL = 20 * 1024 * 1024; // keeps the whole request under the 32 MB API cap
+// Claude downsizes anything larger anyway, and requests with many images
+// reject any side over 3000 px.
+const IMAGE_MAX_SIDE  = 1568;
 const MAX_TEXT_CHARS  = 600_000;           // ~150K tokens of text
 
-const IMAGE_MEDIA: Record<string, "image/png" | "image/jpeg" | "image/webp" | "image/gif"> = {
-  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif",
-};
+// Formats sharp can decode; everything is re-encoded to JPEG before sending.
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp", "gif", "tif", "tiff"]);
 
 export const EXTRACTABLE_FIELDS = [
   "description", "sector", "subsector", "country", "city", "stage", "fundingStage", "website", "linkedinUrl",
@@ -72,6 +76,24 @@ export type ExtractionResult = {
 // ── Content building ─────────────────────────────────────────────────────────
 
 type Block = Anthropic.ContentBlockParam;
+
+// Downscale to IMAGE_MAX_SIDE and re-encode as JPEG (transparency on white).
+// Returns the base64 data, or null for images sharp can't decode.
+async function toJpegBase64(data: Buffer): Promise<string | null> {
+  try {
+    const out = await sharp(data, { animated: false })
+      .rotate()
+      .resize({ width: IMAGE_MAX_SIDE, height: IMAGE_MAX_SIDE, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 82 })
+      .toBuffer();
+    return out.toString("base64");
+  } catch {
+    return null;
+  }
+}
+
+const jpegBlock = (b64: string): Block => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } });
 
 function decodeXml(s: string): string {
   return s
@@ -161,15 +183,17 @@ function slidesInOrder(zip: any): string[] {
     .sort((a, b) => Number(a.match(/(\d+)\.xml$/)![1]) - Number(b.match(/(\d+)\.xml$/)![1]));
 }
 
-function pptxBlocks(buffer: Buffer, notes: string[]): Block[] {
+async function pptxBlocks(buffer: Buffer, notes: string[]): Promise<Block[]> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const PizZip = require("pizzip");
   const zip = new PizZip(buffer);
   const blocks: Block[] = [];
   const seenMedia = new Set<string>();
-  let imageCount = 0, skippedImages = 0, chartCount = 0;
+  let imageCount = 0, skippedImages = 0, chartCount = 0, imageBytes = 0;
 
-  slidesInOrder(zip).forEach((slidePath, i) => {
+  const slides = slidesInOrder(zip);
+  for (let i = 0; i < slides.length; i++) {
+    const slidePath = slides[i];
     const xml: string = zip.files[slidePath].asText();
     const { tables, rest } = extractTables(xml);
     const parts: string[] = [`=== Slide ${i + 1} ===`];
@@ -190,23 +214,25 @@ function pptxBlocks(buffer: Buffer, notes: string[]): Block[] {
         if (noteText.length) parts.push(`Speaker notes:\n${noteText.join("\n")}`);
       } else if (rel.type.endsWith("/image")) {
         const ext = target.split(".").pop()?.toLowerCase() ?? "";
-        const media = IMAGE_MEDIA[ext];
-        if (!media || seenMedia.has(target) || !zip.files[target]) continue;
+        if (!IMAGE_EXTS.has(ext) || seenMedia.has(target) || !zip.files[target]) continue;
         seenMedia.add(target);
         const data: Buffer = Buffer.from(zip.files[target].asUint8Array());
         if (data.length < MIN_IMAGE_BYTES) continue;
-        if (data.length > MAX_IMAGE_BYTES || imageCount >= MAX_IMAGES) { skippedImages++; continue; }
+        if (data.length > MAX_SOURCE_IMAGE_BYTES || imageCount >= MAX_IMAGES) { skippedImages++; continue; }
+        const b64 = await toJpegBase64(data);
+        if (!b64 || imageBytes + b64.length > MAX_IMAGE_B64_TOTAL) { skippedImages++; continue; }
+        imageBytes += b64.length;
         imageCount++;
-        slideImages.push({ type: "image", source: { type: "base64", media_type: media, data: data.toString("base64") } });
+        slideImages.push(jpegBlock(b64));
       }
     }
     if (slideImages.length) parts.push(`(${slideImages.length} image(s) from this slide follow)`);
     blocks.push({ type: "text", text: parts.join("\n\n") }, ...slideImages);
-  });
+  }
 
   if (!blocks.length) throw new Error("No slides found in this PowerPoint file.");
   notes.push(`PowerPoint: ${blocks.filter(b => b.type === "text").length} slides, ${chartCount} native chart(s), ${imageCount} image(s) sent.`);
-  if (skippedImages) notes.push(`${skippedImages} image(s) skipped (over 5 MB or more than ${MAX_IMAGES} images). Upload as PDF if key data lives in those images.`);
+  if (skippedImages) notes.push(`${skippedImages} image(s) skipped (unreadable format, too large, or over the ${MAX_IMAGES}-image limit). Upload as PDF if key data lives in those images.`);
   return blocks;
 }
 
@@ -257,7 +283,7 @@ export async function buildFileContent(buffer: Buffer, ext: string): Promise<{ b
       }
       return { blocks: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: buffer.toString("base64") } }], notes };
     case "pptx":
-      return { blocks: pptxBlocks(buffer, notes), notes };
+      return { blocks: await pptxBlocks(buffer, notes), notes };
     case "xlsx":
       return { blocks: [{ type: "text", text: capText(await xlsxText(buffer, notes), notes) }], notes };
     case "docx": {
@@ -271,10 +297,10 @@ export async function buildFileContent(buffer: Buffer, ext: string): Promise<{ b
     case "txt":
       return { blocks: [{ type: "text", text: capText(buffer.toString("utf-8"), notes) }], notes };
     default: {
-      const media = IMAGE_MEDIA[ext];
-      if (!media) throw new Error(`Unsupported file type: .${ext}`);
-      if (buffer.length > MAX_IMAGE_BYTES) throw new Error("Images must be under 5 MB to be analysed.");
-      return { blocks: [{ type: "image", source: { type: "base64", media_type: media, data: buffer.toString("base64") } }], notes };
+      if (!IMAGE_EXTS.has(ext)) throw new Error(`Unsupported file type: .${ext}`);
+      const b64 = await toJpegBase64(buffer);
+      if (!b64) throw new Error("This image couldn't be read. Save it as PNG or JPG and upload it again.");
+      return { blocks: [jpegBlock(b64)], notes };
     }
   }
 }
@@ -366,7 +392,17 @@ export async function extractCompanyData(opts: {
       content: [...blocks, { type: "text", text: buildInstructions(opts.companyName, opts.filename, opts.current) }],
     }],
   });
-  const msg = await stream.finalMessage();
+  let msg: Anthropic.Message;
+  try {
+    msg = await stream.finalMessage();
+  } catch (err) {
+    // Surface the API's own message instead of the raw JSON body.
+    if (err instanceof Anthropic.APIError) {
+      const detail = (err.error as { error?: { message?: string } } | undefined)?.error?.message ?? err.message;
+      throw new Error(`Claude API error${err.status ? ` (${err.status})` : ""}: ${detail}`);
+    }
+    throw err;
+  }
 
   if (msg.stop_reason === "refusal") throw new Error("The model declined to analyse this document.");
   if (msg.stop_reason === "max_tokens") throw new Error("The analysis ran out of room. Try splitting the document into smaller files.");
