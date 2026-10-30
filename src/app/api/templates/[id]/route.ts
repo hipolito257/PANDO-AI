@@ -20,8 +20,12 @@ export async function DELETE(
 
   // Delete file
   if (row.filePath.startsWith("http")) {
-    // Vercel Blob URL
-    await del(row.filePath);
+    // Vercel Blob URL; best-effort so the template is still removed if the blob is already gone
+    try {
+      await del(row.filePath, { storeId: process.env.BLOBPUBLIC_STORE_ID ?? process.env.BLOB_STORE_ID ?? "" } as Parameters<typeof del>[1]);
+    } catch (err) {
+      console.error("[templates DELETE] blob delete failed", err);
+    }
   } else if (row.filePath.startsWith("local:")) {
     // Local dev filesystem
     const path = await import("path");

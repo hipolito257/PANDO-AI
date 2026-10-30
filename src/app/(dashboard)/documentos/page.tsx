@@ -566,9 +566,7 @@ export default function DocumentosPage() {
   // scratch or from their own optional firmSettings template instead.
   const pptxTemplates = templates.filter(t => t.type === "pptx");
   const selected: DocTemplate | null = docType === "pptx"
-    ? pptxTemplates.find(t => t.id === pptxTemplateId)
-      ?? pptxTemplates.find(t => t.name === DEFAULT_TEMPLATE_NAME.pptx)
-      ?? pptxTemplates[0] ?? null
+    ? pptxTemplates.find(t => t.id === pptxTemplateId) ?? null
     : docType && docType !== "twopager" && docType !== "irl"
       ? templates.find(t => t.type === docType && t.name === DEFAULT_TEMPLATE_NAME[docType]) ?? null
       : null;
@@ -592,6 +590,15 @@ export default function DocumentosPage() {
     if (type && ["pptx", "docx", "twopager", "irl"].includes(type)) chooseDocType(type);
     window.history.replaceState(null, "", window.location.pathname);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function deletePptxTemplate(t: DocTemplate) {
+    if (!confirm(`Delete the template "${t.name}"? Presentations already generated are not affected.`)) return;
+    const res = await fetch(`/api/templates/${t.id}`, { method: "DELETE" });
+    if (!res.ok) { alert("Could not delete the template."); return; }
+    setTemplates(prev => prev.filter(x => x.id !== t.id));
+    if (pptxTemplateId === t.id) setPptxTemplateId("");
+    setPlan(null);
+  }
 
   function backToLanding() {
     setDocType(null);
@@ -1275,16 +1282,19 @@ export default function DocumentosPage() {
         )}
 
         {/* ── Default template not configured yet ──────────────────────── */}
-        {docType && docType !== "twopager" && docType !== "irl" && !selected && (
+        {docType && docType !== "twopager" && docType !== "irl" && !selected && !(docType === "pptx" && pptxTemplates.length > 0) && (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <button onClick={backToLanding} className="flex items-center gap-1 text-[12px] text-slate hover:text-carbon mb-6">
               <ChevronLeft size={14} /> Change document type
             </button>
             <div className="flex justify-center mb-4">{DOC_TYPE_META[docType].icon(40)}</div>
-            <h3 className="text-[18px] font-semibold text-carbon mb-2">No {DOC_TYPE_META[docType].label} template configured</h3>
+            <h3 className="text-[18px] font-semibold text-carbon mb-2">
+              {docType === "pptx" ? "Add your first PowerPoint template" : `No ${DOC_TYPE_META[docType].label} template configured`}
+            </h3>
             <p className="text-[13px] text-slate max-w-md mb-6 leading-relaxed">
-              This document type doesn&apos;t have a fixed template yet. Upload the {DOC_TYPE_META[docType].label.toLowerCase()} file
-              that should be used as the base template for every future document of this type.
+              {docType === "pptx"
+                ? "Upload a finished deck whose design you want to reuse. You can add several and pick one for each presentation."
+                : `This document type doesn't have a fixed template yet. Upload the ${DOC_TYPE_META[docType].label.toLowerCase()} file that should be used as the base template for every future document of this type.`}
             </p>
             <button onClick={() => setShowUpload(true)}
               className="flex items-center gap-2 px-6 py-3 bg-orange text-white rounded-[10px] text-[14px] font-medium hover:opacity-85 transition-colors shadow-sm">
@@ -1298,7 +1308,7 @@ export default function DocumentosPage() {
         )}
 
         {/* ── Template ready — generation panel ────────────────────────── */}
-        {docType && selected && (
+        {docType && (selected || (docType === "pptx" && pptxTemplates.length > 0)) && (
           <div className="py-10 px-6 space-y-4 max-w-3xl mx-auto">
 
             <button onClick={backToLanding} className="flex items-center gap-1 text-[12px] text-slate hover:text-carbon">
@@ -1307,11 +1317,11 @@ export default function DocumentosPage() {
 
             {/* Header */}
             <div className="flex items-center gap-4">
-              <div className="shrink-0"><DocTypeIcon type={selected.type} size={44} /></div>
+              <div className="shrink-0"><DocTypeIcon type={selected?.type ?? "pptx"} size={44} /></div>
               <div className="flex-1">
                 <h1 className="text-[20px] font-semibold text-carbon">New {DOC_TYPE_META[docType].label} document</h1>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${TYPE_COLOR[selected.type]}`}>{TYPE_LABEL[selected.type]}</span>
+                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${TYPE_COLOR[selected?.type ?? "pptx"]}`}>{TYPE_LABEL[selected?.type ?? "pptx"]}</span>
                   <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-medium"><Sparkles size={11} />AI</span>
                 </div>
               </div>
@@ -1335,12 +1345,22 @@ export default function DocumentosPage() {
                     + Add template
                   </button>
                 </div>
-                <select value={selected?.id ?? ""} onChange={e => { setPptxTemplateId(e.target.value); setPlan(null); }}
-                  className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
-                  {pptxTemplates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name === DEFAULT_TEMPLATE_NAME.pptx ? "PANDO (default)" : t.name}</option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-2">
+                  <select value={selected?.id ?? ""} onChange={e => { setPptxTemplateId(e.target.value); setPlan(null); }}
+                    className={`flex-1 border rounded-[8px] px-3 py-2.5 text-[13px] bg-white focus:outline-none focus:border-carbon ${selected ? "border-chalk text-carbon" : "border-orange text-slate"}`}>
+                    <option value="" disabled>Choose a template…</option>
+                    {pptxTemplates.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  {selected && (
+                    <button onClick={() => deletePptxTemplate(selected)} title="Delete this template"
+                      className="shrink-0 p-2.5 border border-chalk rounded-[8px] text-slate hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+                {selected?.description && <div className="mt-2 text-[10px] text-slate">{selected.description}</div>}
                 {selected && !selected.analyzed && (
                   <div className="mt-2 text-[10px] text-slate">First use: PANDO studies this template slide by slide while planning (about a minute, once).</div>
                 )}
@@ -1572,6 +1592,10 @@ export default function DocumentosPage() {
                 )}
               </button>
 
+
+              {docType === "pptx" && !selected && (
+                <div className="mt-3 text-[11px] text-slate text-center">Choose a design template above to plan the presentation.</div>
+              )}
 
               {/* Advanced Build button — PPTX only */}
               {selected?.type === "pptx" && !plan && (
