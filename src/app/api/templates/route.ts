@@ -57,9 +57,10 @@ export async function GET() {
     orderBy: [desc(documentTemplates.createdAt)],
   });
 
-  return NextResponse.json(rows.map((r) => ({
+  return NextResponse.json(rows.map(({ profile, ...r }) => ({
     ...r,
     placeholders: JSON.parse(r.placeholders ?? "[]") as string[],
+    analyzed: !!profile,
   })));
 }
 

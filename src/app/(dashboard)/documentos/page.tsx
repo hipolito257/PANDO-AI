@@ -13,6 +13,7 @@ interface DocTemplate {
   id: string; name: string; type: "pptx" | "docx" | "xlsx";
   description: string | null; fileSize: number | null;
   placeholders: string[]; createdAt: string | null;
+  analyzed?: boolean;
 }
 interface Company { id: string; name: string; sector: string | null; stage: string | null; }
 interface GenResult {
@@ -34,6 +35,7 @@ interface DeckSlide {
   section?: string;
   takeaway?: string;
   chart?: string;
+  template_slide?: number;
 }
 interface DeckPlan {
   deck_title: string;
@@ -176,6 +178,9 @@ export default function DocumentosPage() {
   const [ctxDragOver, setCtxDragOver] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadDesc, setUploadDesc]   = useState("");
+  const [uploadName, setUploadName]   = useState("");
+  // PowerPoint decks copy the design of a template picked from the library
+  const [pptxTemplateId, setPptxTemplateId] = usePersistentState("documentos:pptxTemplateId", "");
   const templateFileRef = useRef<HTMLInputElement>(null);
   const contextFileRef  = useRef<HTMLInputElement>(null);
 
@@ -559,9 +564,14 @@ export default function DocumentosPage() {
   // The one hardcoded template for the currently chosen document type.
   // "twopager"/"irl" have no uploaded template in this table — generated from
   // scratch or from their own optional firmSettings template instead.
-  const selected: DocTemplate | null = docType && docType !== "twopager" && docType !== "irl"
-    ? templates.find(t => t.type === docType && t.name === DEFAULT_TEMPLATE_NAME[docType]) ?? null
-    : null;
+  const pptxTemplates = templates.filter(t => t.type === "pptx");
+  const selected: DocTemplate | null = docType === "pptx"
+    ? pptxTemplates.find(t => t.id === pptxTemplateId)
+      ?? pptxTemplates.find(t => t.name === DEFAULT_TEMPLATE_NAME.pptx)
+      ?? pptxTemplates[0] ?? null
+    : docType && docType !== "twopager" && docType !== "irl"
+      ? templates.find(t => t.type === docType && t.name === DEFAULT_TEMPLATE_NAME[docType]) ?? null
+      : null;
 
   function chooseDocType(t: DocType) {
     setDocType(t);
@@ -658,13 +668,16 @@ export default function DocumentosPage() {
       }
       const { blobUrl } = await finalRes.json();
 
-      // Register as THE default template for this doc type (fixed reserved name)
+      // PowerPoint: add to the template library. Word: register as THE default template.
+      const name = docType === "pptx"
+        ? (uploadName.trim() || pendingFile.name.replace(/\.pptx$/i, ""))
+        : DEFAULT_TEMPLATE_NAME[docType];
       const regRes = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           blobUrl,
-          name: DEFAULT_TEMPLATE_NAME[docType],
+          name,
           description: uploadDesc.trim() || undefined,
           type: docType,
         }),
@@ -675,9 +688,15 @@ export default function DocumentosPage() {
       }
 
       const t = await regRes.json() as DocTemplate;
-      // Keep only the newest row for this type+name so lookup is unambiguous
-      setTemplates(prev => [t, ...prev.filter(x => !(x.type === docType && x.name === DEFAULT_TEMPLATE_NAME[docType]))]);
-      setShowUpload(false); setPendingFile(null); setUploadDesc("");
+      if (docType === "pptx") {
+        setTemplates(prev => [t, ...prev]);
+        setPptxTemplateId(t.id);
+        setPlan(null);
+      } else {
+        // Keep only the newest row for this type+name so lookup is unambiguous
+        setTemplates(prev => [t, ...prev.filter(x => !(x.type === docType && x.name === DEFAULT_TEMPLATE_NAME[docType]))]);
+      }
+      setShowUpload(false); setPendingFile(null); setUploadDesc(""); setUploadName("");
 
     } catch (err: any) {
       setUploadErr(err?.message ?? "Error uploading file");
@@ -809,6 +828,7 @@ export default function DocumentosPage() {
     await runJob("pptxPlan", async () => {
       const blobUrls = await ensureContextBlobsUploaded();
       const fd = new FormData();
+      fd.append("templateId", selected.id);
       if (companyId) fd.append("companyId", companyId);
       if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
       if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
@@ -978,10 +998,12 @@ export default function DocumentosPage() {
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h3 className="text-[15px] font-semibold text-carbon">
-                    {selected ? "Replace" : "Set up"} the {DOC_TYPE_META[docType].label} template
+                    {docType === "pptx" ? "Add a PowerPoint template" : `${selected ? "Replace" : "Set up"} the ${DOC_TYPE_META[docType].label} template`}
                   </h3>
                   <p className="text-[11px] text-slate mt-0.5">
-                    This becomes the fixed template used for every {DOC_TYPE_META[docType].label} document — users won&apos;t choose between templates.
+                    {docType === "pptx"
+                      ? "Upload a finished deck whose design you want to reuse. New presentations copy its slides exactly and only change the content."
+                      : <>This becomes the fixed template used for every {DOC_TYPE_META[docType].label} document — users won&apos;t choose between templates.</>}
                   </p>
                 </div>
                 <button onClick={() => { setShowUpload(false); setPendingFile(null); setUploadErr(null); }} className="text-slate hover:text-carbon">
@@ -1018,6 +1040,14 @@ export default function DocumentosPage() {
                   <input ref={templateFileRef} type="file" accept={`.${docType}`} className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) setPendingFile(f); }} />
                 </div>
+                {docType === "pptx" && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-graphite mb-1.5">Template name</label>
+                    <input value={uploadName} onChange={e => setUploadName(e.target.value)}
+                      placeholder={pendingFile?.name.replace(/\.pptx$/i, "") ?? "e.g. PANDO investment deck"}
+                      className="w-full border border-chalk rounded-[8px] px-3 py-2 text-[13px] text-carbon placeholder:text-slate/50 focus:outline-none focus:border-carbon"/>
+                  </div>
+                )}
                 <div>
                   <label className="block text-[11px] font-medium text-graphite mb-1.5">Description (optional)</label>
                   <input value={uploadDesc} onChange={e => setUploadDesc(e.target.value)}
@@ -1285,11 +1315,37 @@ export default function DocumentosPage() {
                   <span className="inline-flex items-center gap-1 text-[11px] text-green-600 font-medium"><Sparkles size={11} />AI</span>
                 </div>
               </div>
-              <button onClick={() => setShowUpload(true)}
-                className="text-[11px] font-medium text-slate hover:text-carbon border border-chalk px-3 py-1.5 rounded-[7px] hover:bg-fog transition-colors shrink-0">
-                Replace template
-              </button>
+              {docType !== "pptx" && (
+                <button onClick={() => setShowUpload(true)}
+                  className="text-[11px] font-medium text-slate hover:text-carbon border border-chalk px-3 py-1.5 rounded-[7px] hover:bg-fog transition-colors shrink-0">
+                  Replace template
+                </button>
+              )}
             </div>
+
+            {docType === "pptx" && (
+              <div className="bg-white border border-chalk rounded-[12px] p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-[13px] font-semibold text-carbon">Design template</div>
+                    <div className="text-[10px] text-slate">The deck copies this template&apos;s slides exactly (layouts, fonts, colors, charts) and only changes the content.</div>
+                  </div>
+                  <button onClick={() => setShowUpload(true)}
+                    className="text-[11px] font-medium text-slate hover:text-carbon border border-chalk px-3 py-1.5 rounded-[7px] hover:bg-fog transition-colors shrink-0">
+                    + Add template
+                  </button>
+                </div>
+                <select value={selected?.id ?? ""} onChange={e => { setPptxTemplateId(e.target.value); setPlan(null); }}
+                  className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
+                  {pptxTemplates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name === DEFAULT_TEMPLATE_NAME.pptx ? "PANDO (default)" : t.name}</option>
+                  ))}
+                </select>
+                {selected && !selected.analyzed && (
+                  <div className="mt-2 text-[10px] text-slate">First use: PANDO studies this template slide by slide while planning (about a minute, once).</div>
+                )}
+              </div>
+            )}
 
             {/* Step 1 — Company (optional) */}
             <div className="bg-white border border-chalk rounded-[12px] p-5">
@@ -1631,7 +1687,9 @@ export default function DocumentosPage() {
                           <div className="text-[12px] font-semibold text-carbon">{slide.title}</div>
                           {slide.chart && (
                             <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-[9px] font-medium text-[#004F46] bg-[#004F46]/10 rounded px-1.5 py-0.5 shrink-0">chart</span>
+                              <span className="text-[9px] font-medium text-[#004F46] bg-[#004F46]/10 rounded px-1.5 py-0.5 shrink-0">
+                                {slide.template_slide ? `template slide ${slide.template_slide}` : "chart"}
+                              </span>
                               <span className="text-[11px] text-slate truncate">{slide.chart}</span>
                             </div>
                           )}

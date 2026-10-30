@@ -289,6 +289,7 @@ export const documentTemplates = pgTable("DocumentTemplate", {
   filePath:     text("filePath").notNull(),        // Vercel Blob URL in production
   fileSize:     integer("fileSize"),
   placeholders: text("placeholders").notNull().default("[]"),
+  profile:      text("profile"),                   // pptx only: cached TemplateProfile JSON (see pptxTemplates.ts)
   createdAt:    text("createdAt").default(sql`now()`),
   createdBy:    text("createdBy"),
 });

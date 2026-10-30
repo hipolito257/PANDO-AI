@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
+import { companies, compSets, publicComps, userSettings, financialSnapshots, documentTemplates } from "@/lib/schema";
 import { eq, inArray, desc } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { companyFileBlocks, companyFilesInstruction, parseCompanyFileIds } from "@/lib/companyContext";
 import { jsonrepair } from "jsonrepair";
 import { extractPlainText } from "@/lib/extractDocumentText";
 import { stripEmDashes, fmtMoneyDoc } from "@/lib/utils";
+import { getTemplateProfile, guideSummary } from "@/lib/pptxTemplates";
 
 // Thinking draws from the same budget as the answer, so a long plan needs
 // longer to produce than the old 120s allowed.
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const companyId  = formData.get("companyId")  as string | null;
+    const templateId = formData.get("templateId") as string | null;
     const userPrompt = (formData.get("userPrompt") as string | null)?.trim() || null;
     const feedback   = (formData.get("feedback")   as string | null)?.trim() || null;
     const blobUrlsRaw = (formData.get("blobUrls") as string | null) || null;
@@ -40,6 +42,13 @@ export async function POST(req: NextRequest) {
     const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, session.user.id)).limit(1);
     const apiKey = settings?.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "API key not configured" }, { status: 400 });
+
+    // The deck reuses the slides of this template; the first plan for a new
+    // template file also analyses it (about a minute), later ones use the cache.
+    if (!templateId) return NextResponse.json({ error: "Choose a PowerPoint template first" }, { status: 400 });
+    const [template] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, templateId)).limit(1);
+    if (!template || template.type !== "pptx") return NextResponse.json({ error: "PowerPoint template not found" }, { status: 404 });
+    const profile = await getTemplateProfile(template, apiKey);
 
     // Load company + peers
     let companyCard = "No company was selected.";
@@ -53,8 +62,8 @@ export async function POST(req: NextRequest) {
         const [snap] = await db.select().from(financialSnapshots).where(eq(financialSnapshots.companyId, companyId)).orderBy(desc(financialSnapshots.year)).limit(1);
         companyCard = `
 Company: ${co.name} | Sector: ${co.sector ?? "N/D"} | Country: ${co.country ?? "N/D"} | Stage: ${co.stage ?? "N/D"}
-Revenue: ${fmt(co.revenueUsd ?? snap?.revenueUsd)} | Growth: ${co.revenueGrowth != null ? `${(co.revenueGrowth * 100).toFixed(0)}%` : "N/D"} YoY
-EBITDA: ${fmt(co.ebitdaUsd ?? snap?.ebitdaUsd)} | Margin: ${co.ebitdaMargin != null ? `${(co.ebitdaMargin * 100).toFixed(0)}%` : "N/D"}
+Revenue: ${fmt(co.revenueUsd ?? snap?.revenueUsd)} | Growth: ${co.revenueGrowth != null ? `${co.revenueGrowth.toFixed(0)}%` : "N/D"} YoY
+EBITDA: ${fmt(co.ebitdaUsd ?? snap?.ebitdaUsd)} | Margin: ${co.ebitdaMargin != null ? `${co.ebitdaMargin.toFixed(0)}%` : "N/D"}
 Employees: ${co.employees ?? "N/D"} | Funding: ${fmt(co.totalFunding)} | Description: ${co.description ?? "N/D"}`.trim();
 
         const [cs] = await db.select().from(compSets).where(eq(compSets.companyId, companyId)).limit(1);
@@ -132,52 +141,34 @@ INSTRUCTIONS:
 - IB-QUALITY DISCIPLINE (this is what separates a banker-grade deck from a generic one):
   - Frame data comparatively, not in isolation, wherever the data supports it: vs. peers, vs. plan/budget, pre vs. post, perception vs. reality. A single bare metric ("Revenue: USD $50 m") is weaker than the same metric next to what it should be compared against.
   - Every chart needs its "so what" spelled out in the takeaway — a reader skimming only titles and takeaways (never the charts) should still get the thesis.
-  - Reference-quality PANDO slides are DENSE, not sparse: fill the content area — if the main chart only needs part of the slide's height, plan a complementary second element (a pill_row of proof points, a small table, a stat_row) that reinforces the same takeaway with real numbers, rather than leaving a single small chart floating in whitespace.
+  - Reference-quality slides are DENSE, not sparse: choose template slides whose every chart, table and text block you can fill with real data, rather than a rich layout you can only half fill.
 
-ELEMENT TYPES (to indicate in the plan) — vary these across the deck, don't reuse the same one every slide:
-- bar chart: comparing 2+ series by category
-- line chart: trend over time
-- line_multi: multiple series over time
-- donut: parts of a whole (market share, mix)
-- hbar_float: ranges by category (e.g. valuation football field)
-- waterfall: a financial bridge/walk with a start, deltas, and an end (e.g. Revenue → EBITDA, valuation build-up) — use this instead of hbar_float when it's actually a bridge, not just ranges
-- scatter: XY positioning (e.g. growth vs margin)
-- quadrant: 2x2 matrix
-- table: tabular data (comparables, financials)
-- stat_row: a row of headline KPI numbers when the slide's story IS the numbers, no chart needed
-- icon_row: qualitative narrative points (thesis pillars, risks, value-creation levers) as icon + header + description
-- comparison_cards: before/after or options comparison as 2-4 cards, not a table
-- timeline: roadmap, process, or deal milestones as numbered steps
-- alt_timeline: company history over the years — milestones alternating above/below a horizontal axis (richer than timeline; use for any COMPANY HISTORY slide)
-- org_chart: corporate/holding structure — boxes per entity with jurisdiction and ownership % connectors (use for CORPORATE STRUCTURE / transaction perimeter)
-- process_flow: value chain or step sequence as arrowed boxes with descriptions (use for BUSINESS MODEL slides)
-- pill_row: 3-5 rounded KPI proof-point callouts, usually under a diagram
-- multiple donuts side by side with center KPI text: customer/segment mix comparison across brands
-- band_scatter: dot plot over shaded range bands with a brand-color legend (use for PAYBACK PERIOD / cohort-timing slides — many individual deals/stores plotted over time)
-- bar with hatched perception vs solid experience series + pps-delta call-outs: stated PERCEPTION vs measured EXPERIENCE comparison across attributes
+THE DECK IS BUILT FROM THIS TEMPLATE. Every slide of the new deck is a copy of one template slide (same design, new content), so plan around what the template offers.
+Template style: ${profile.guide.deck_style}
+Template slides available:
+${guideSummary(profile)}
+
+- For every slide set "template_slide" to the number of the template slide to copy. Cover, dividers and back cover use the template's cover / divider / back_cover slides.
+- Pick the template slide whose structure matches the content: a history goes on the timeline slide, a mix comparison on the doughnut slide, a structure on the corporate-structure slide. The same template slide can be used several times.
+- Respect each template slide's capacity (e.g. a slide made for 3 doughnuts or 11 milestones). If the data doesn't fit any template slide well, choose the closest one and say in "chart" what should replace its chart.
+- In "chart", describe the concrete content and visuals of the slide in one line (which data goes in which chart or table).
+- If the template has no divider slide, don't plan dividers.
 
 NEVER use em-dashes (—) anywhere in any field — not in deck_title, titles, takeaways, or section names. Use a comma, colon, or period instead.
 
 Format every money figure exactly like this: "USD $200 m" (millions), "USD $850 k" (thousands), "USD $1.2 bn" (billions) — currency code, then symbol+number, then a space and lowercase suffix (k/m/bn). Use "MXN $" or "EUR €" instead of "USD $" when the figure is explicitly in pesos or euros. Never write "$200M", "200 million dollars", or similar.
 
-RESPONSE FORMAT — your entire reply must be ONLY this JSON object and nothing else: no preamble, no summary of the attached document, no analysis, no markdown code fences. The first character of your reply must be "{".
+RESPONSE FORMAT (template_slide numbers below are illustrative; use the template slide list above) — your entire reply must be ONLY this JSON object and nothing else: no preamble, no summary of the attached document, no analysis, no markdown code fences. The first character of your reply must be "{".
 {
   "deck_title": "Company Name, Investment Overview",
   "deck_subtitle": "Private & Confidential | ${today}",
   "company": "${companyName}",
   "slides": [
-    { "index": 0, "type": "cover", "title": "Company Name", "subtitle": "Investment Overview | ${today}" },
-    { "index": 1, "type": "divider", "section": "THE COMPANY" },
-    { "index": 2, "type": "slide", "section": "THE COMPANY", "title": "COMPANY OVERVIEW", "takeaway": "Specific key message with real data", "chart": "stat_row: Revenue, EBITDA, employees, founded" },
-    { "index": 3, "type": "slide", "section": "THE COMPANY", "title": "BRAND POSITIONING", "takeaway": "...", "chart": "bar: perception vs experience + table: NPS vs peers" },
-    { "index": 4, "type": "divider", "section": "THE MARKET" },
-    { "index": 5, "type": "slide", "section": "THE MARKET", "title": "MARKET SIZE AND GROWTH", "takeaway": "...", "chart": "line: TAM evolution 2020-2025" },
-    { "index": 6, "type": "divider", "section": "FINANCIALS" },
-    { "index": 7, "type": "slide", "section": "FINANCIALS", "title": "FINANCIAL EVOLUTION", "takeaway": "...", "chart": "line_multi: revenue and EBITDA 2021-2025" },
-    { "index": 8, "type": "divider", "section": "INVESTMENT" },
-    { "index": 9, "type": "slide", "section": "INVESTMENT", "title": "INVESTMENT THESIS", "takeaway": "...", "chart": "icon_row: 4 investment pillars" },
-    { "index": 10, "type": "slide", "section": "INVESTMENT", "title": "VALUATION", "takeaway": "...", "chart": "hbar_float: valuation ranges by methodology" },
-    { "index": 11, "type": "back_cover" }
+    { "index": 0, "type": "cover", "template_slide": 1, "title": "Company Name", "subtitle": "Investment Opportunity | ${today}" },
+    { "index": 1, "type": "divider", "template_slide": 13, "section": "THE COMPANY" },
+    { "index": 2, "type": "slide", "template_slide": 2, "section": "THE COMPANY", "title": "COMPANY HISTORY", "takeaway": "Specific key message with real data", "chart": "Timeline: 9 milestones 2015-2025 from the deck" },
+    { "index": 3, "type": "slide", "template_slide": 7, "section": "THE COMPANY", "title": "CUSTOMER SATISFACTION", "takeaway": "...", "chart": "Left chart: satisfaction by attribute vs market; right chart: NPS vs 4 peers" },
+    { "index": 4, "type": "back_cover", "template_slide": 15 }
   ]
 }`,
       messages: [{ role: "user", content: msgContent }],
