@@ -116,6 +116,8 @@ function ComparablesPage() {
   const [loadingSet,  setLoadingSet]  = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const [refreshLog,  setRefreshLog]  = useState("");
+  // Comparables found in the company's uploaded documents
+  const [docSync, setDocSync] = useState<{ running: boolean; message: string | null }>({ running: false, message: null });
   const [refreshErrors, setRefreshErrors] = useState<Record<string, string>>({});
   const [activeTab,   setActiveTab]   = useState<"datos"|"graficas"|"valuacion">("datos");
   const [showSearch,  setShowSearch]  = useState(false);
@@ -174,6 +176,41 @@ function ComparablesPage() {
   useEffect(() => {
     if (selectedCompanyId) loadCompSet(selectedCompanyId);
     else { setCompSet(null); setLoadingSet(false); }
+  }, [selectedCompanyId, loadCompSet]);
+
+  // Pull in the listed comparables named in the company's documents (each
+  // document is processed once; older ones may need extracting first).
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    let cancelled = false;
+    const cid = selectedCompanyId;
+    (async () => {
+      setDocSync({ running: true, message: null });
+      const added: string[] = [];
+      const unresolved: string[] = [];
+      try {
+        for (let round = 0; round < 4 && !cancelled; round++) {
+          const res = await fetch("/api/comparables/from-documents", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ companyId: cid }),
+          });
+          if (!res.ok) break;
+          const data = await res.json() as { added: string[]; unresolved: string[]; pending: number };
+          added.push(...data.added);
+          unresolved.push(...data.unresolved);
+          if (data.added.length && !cancelled) loadCompSet(cid);
+          if (!data.pending) break;
+        }
+      } catch { /* non-critical: the page works without it */ }
+      if (cancelled) return;
+      setDocSync({
+        running: false,
+        message: added.length
+          ? `Added ${added.length} comparable(s) from this company's documents: ${added.join(", ")}.${unresolved.length ? ` Not found on the stock market: ${unresolved.join(", ")}.` : ""} Press "Refresh data" to load their market data.`
+          : null,
+      });
+    })();
+    return () => { cancelled = true; };
   }, [selectedCompanyId, loadCompSet]);
 
   const selectCompany = (id: string) => {
@@ -405,6 +442,13 @@ function ComparablesPage() {
             </div>
           ) : (
             <div className="p-5 space-y-4">
+              {(docSync.running || docSync.message) && (
+                <div className={`rounded-[10px] border px-4 py-2.5 text-[12px] ${docSync.running ? "bg-paper border-chalk text-slate" : "bg-emerald-50 border-emerald-200 text-emerald-800"}`}>
+                  {docSync.running
+                    ? "Checking this company's documents for comparables… (documents not yet analysed can take a minute)"
+                    : docSync.message}
+                </div>
+              )}
               {/* Company header */}
               <div className="bg-forest rounded-[10px] border border-chalk p-4">
                 <div className="flex items-start gap-3 flex-wrap">

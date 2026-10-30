@@ -3,13 +3,15 @@ import { db, companies, companyFiles, userSettings } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { decryptBuffer } from "@/lib/blobCrypto";
 import { extractCompanyData, EXTRACTABLE_FIELDS } from "@/lib/companyFileExtract";
+import { syncFileComps } from "@/lib/companyDocComps";
 import { and, eq } from "drizzle-orm";
 
 // A 70-page deck takes roughly 1–3 minutes.
 export const maxDuration = 300;
 
-// POST — run Claude over the file and store the proposed values. Nothing on
-// the company is changed here; the user reviews and applies via /apply-extraction.
+// POST — run Claude over the file and store the proposed values. Listed
+// comparables it names are added to the company's comp set right away; profile
+// fields, financials and people wait for the user to review and apply (/apply-extraction).
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string; fileId: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,7 +45,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       extractedAt: new Date().toISOString(),
     }).where(eq(companyFiles.id, fileId));
 
-    return NextResponse.json(result);
+    // Listed comparables named in the document go straight into Comparables.
+    let comps = { added: [] as string[], unresolved: [] as string[] };
+    try {
+      comps = await syncFileComps(file, result, company.name);
+    } catch (err) {
+      console.error("[company file extract] comps sync failed", err);
+    }
+
+    return NextResponse.json({ ...result, compsAdded: comps.added, compsUnresolved: comps.unresolved });
   } catch (err) {
     console.error("[company file extract]", err);
     const message = err instanceof Error ? err.message : "Extraction failed";

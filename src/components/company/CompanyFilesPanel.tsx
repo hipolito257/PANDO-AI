@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { fmtM } from "@/lib/utils";
 import type { ExtractionResult, ExtractedField, ExtractedFinancial } from "@/lib/companyFileExtract";
 
-type Applied = { at: string; fields: number; years: number; founders: number; comps: number };
+type Applied = { at: string; fields: number; years: number; founders: number };
 
 type CompanyFile = {
   id: string; companyId: string; filename: string; ext: string; sizeBytes: number;
@@ -139,6 +139,7 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
       const data = await res.json().catch(() => ({ error: `Extraction failed (HTTP ${res.status})` }));
       if (!res.ok) throw new Error(data.error ?? "Extraction failed");
       await load();
+      if (data.compsAdded?.length) setNotice(`${data.compsAdded.length} comparable(s) from "${file.filename}" added to Comparables: ${data.compsAdded.join(", ")}.`);
       setReviewId(file.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Extraction failed");
@@ -198,10 +199,9 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
                       f.extraction.applied.fields && `${f.extraction.applied.fields} profile field(s)`,
                       f.extraction.applied.years && `${f.extraction.applied.years} year(s) of financials`,
                       f.extraction.applied.founders && `${f.extraction.applied.founders} people`,
-                      f.extraction.applied.comps && `${f.extraction.applied.comps} comparable(s)`,
                     ].filter(Boolean).join(" · ") || "reviewed, nothing new"}</span>
                   : f.extractionStatus === "done"
-                    ? <span className="text-amber-700">Extracted, not applied yet</span>
+                    ? <span className="text-amber-700">Extracted, profile data not applied yet</span>
                     : <span className="text-slate">Feeds generated documents and the chat</span>}
               </p>
               {f.extractionStatus === "error" && extracting !== f.id && (
@@ -298,7 +298,6 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
   const [finSel, setFinSel] = useState<boolean[]>(() => x.financials.map(f => f.period === "actual"));
   const [founderSel, setFounderSel] = useState<boolean[]>(() => x.founders.map(f => !existingFounders.has(f.name.trim().toLowerCase())));
   const comps = x.comparables ?? [];
-  const [compSel, setCompSel] = useState<boolean[]>(() => comps.map(() => true));
   const [saveNote, setSaveNote] = useState(true);
   const [applying, setApplying] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -311,7 +310,7 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
   const finOn = (i: number) => finSel[i] && !finBlocked(x.financials[i]);
   const missingFx = currencies.filter(c => !(Number(fx[c]) > 0));
   const count = x.fields.filter((_, i) => fieldOn(i)).length + x.financials.filter((_, i) => finOn(i)).length
-    + founderSel.filter(Boolean).length + compSel.filter(Boolean).length + (saveNote ? 1 : 0);
+    + founderSel.filter(Boolean).length + (saveNote ? 1 : 0);
 
   async function apply() {
     setApplying(true);
@@ -320,11 +319,10 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
       const fields = Object.fromEntries(x.fields.flatMap((f, i) => (fieldOn(i) ? [[f.field, fieldValue(f)!]] : [])));
       const financials = x.financials.flatMap((f, i) => (finOn(i) ? [{ year: f.year, ...finUsd(f), employees: f.employees }] : []));
       const founders = x.founders.filter((_, i) => founderSel[i]);
-      const comparables = comps.filter((_, i) => compSel[i]);
       const res = await fetch(`/api/companies/${companyId}/apply-extraction`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields, financials, founders, comparables, fileId: file.id, fileName: file.filename }),
+        body: JSON.stringify({ fields, financials, founders, fileId: file.id, fileName: file.filename }),
       });
       const result = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(result.error ?? "Failed to apply changes");
@@ -337,10 +335,7 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
           body: JSON.stringify({ companyId, content: `From "${file.filename}" (${x.documentType}):\n${x.summary}${facts ? `\n\nKey facts:\n${facts}` : ""}` }),
         });
       }
-      const compMsg = comparables.length
-        ? ` ${result.compsAdded?.length ?? 0} comparable(s) added to Comparables${result.compsUnresolved?.length ? ` (not found on the stock market: ${result.compsUnresolved.join(", ")})` : ""}.`
-        : "";
-      onApplied(`Applied data from "${file.filename}".${compMsg}`);
+      onApplied(`Applied data from "${file.filename}".`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to apply changes");
       setApplying(false);
@@ -498,7 +493,7 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
           {comps.length > 0 && (
             <section>
               <h4 className="text-[13px] font-semibold text-carbon mb-1">Public comparables</h4>
-              <p className="text-[10px] text-slate mb-1.5">Checked companies are added to this company&apos;s set in Comparables (live market data loads when you refresh there). Figures below are as stated in the document.</p>
+              <p className="text-[10px] text-slate mb-1.5">Already added to this company&apos;s set in Comparables (remove any there). Live market data loads when you refresh in Comparables; figures below are as stated in the document.</p>
               <div className="space-y-1.5">
                 {comps.map((c, i) => {
                   const figs = [
@@ -509,14 +504,14 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
                     c.ebitda_margin != null && `EBITDA mgn ${c.ebitda_margin}%`,
                   ].filter(Boolean).join(" · ");
                   return (
-                    <label key={i} className="flex items-start gap-2 text-[12px] text-carbon">
-                      <input type="checkbox" className="mt-0.5" checked={compSel[i]} onChange={() => toggle(compSel, setCompSel, i)} />
+                    <div key={i} className="flex items-start gap-2 text-[12px] text-carbon">
+                      <span className="text-emerald-700 mt-0.5">✓</span>
                       <span>
                         <strong>{c.name}</strong>{c.ticker && <span className="text-slate"> · {c.ticker}</span>}{c.relation && <span className="text-slate"> · {c.relation}</span>}
                         {figs && <span className="block text-[11px] text-graphite">{figs}{c.as_of ? ` (${c.as_of})` : ""}</span>}
                         <span className="block text-[10px] text-slate">{c.source}</span>
                       </span>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
