@@ -1,7 +1,7 @@
 // Adds public comparables to a company's comp set (the one the Comparables
 // page shows), used when comps are found in the company's documents.
 import { db, compSets, publicComps } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 type Quote = { ticker: string; name: string; exchange: string };
@@ -50,6 +50,7 @@ export async function addCompsToCompany(
   comps: { quote: Quote; note: string }[],
 ): Promise<string[]> {
   if (!comps.length) return [];
+  comps = comps.filter((c, i) => comps.findIndex(o => o.quote.ticker === c.quote.ticker) === i);
   for (const { quote } of comps) {
     const existing = await db.query.publicComps.findFirst({ where: eq(publicComps.ticker, quote.ticker) });
     if (!existing) {
@@ -57,7 +58,8 @@ export async function addCompsToCompany(
     }
   }
 
-  let set = await db.query.compSets.findFirst({ where: eq(compSets.companyId, companyId) });
+  // Same set the Comparables page shows: the company's newest.
+  let set = await db.query.compSets.findFirst({ where: eq(compSets.companyId, companyId), orderBy: [desc(compSets.createdAt)] });
   if (!set) {
     const id = randomUUID();
     await db.insert(compSets).values({ id, name: `${companyName} — Comparables`, companyId, tickers: "[]" });

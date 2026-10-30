@@ -46,14 +46,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }).where(eq(companyFiles.id, fileId));
 
     // Listed comparables named in the document go straight into Comparables.
-    let comps = { added: [] as string[], unresolved: [] as string[] };
+    let comps: Awaited<ReturnType<typeof syncFileComps>> | null = null;
     try {
       comps = await syncFileComps(file, result, company.name);
     } catch (err) {
       console.error("[company file extract] comps sync failed", err);
     }
 
-    return NextResponse.json({ ...result, compsAdded: comps.added, compsUnresolved: comps.unresolved });
+    return NextResponse.json({ ...result, compsReport: comps });
   } catch (err) {
     console.error("[company file extract]", err);
     const message = err instanceof Error ? err.message : "Extraction failed";

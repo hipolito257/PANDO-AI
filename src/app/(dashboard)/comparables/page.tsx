@@ -117,7 +117,7 @@ function ComparablesPage() {
   const [refreshing,  setRefreshing]  = useState(false);
   const [refreshLog,  setRefreshLog]  = useState("");
   // Comparables found in the company's uploaded documents
-  const [docSync, setDocSync] = useState<{ running: boolean; message: string | null }>({ running: false, message: null });
+  const [docSync, setDocSync] = useState<{ running: boolean; lines: string[]; tone: "info" | "success" | "error" }>({ running: false, lines: [], tone: "info" });
   const [refreshErrors, setRefreshErrors] = useState<Record<string, string>>({});
   const [activeTab,   setActiveTab]   = useState<"datos"|"graficas"|"valuacion">("datos");
   const [showSearch,  setShowSearch]  = useState(false);
@@ -179,39 +179,56 @@ function ComparablesPage() {
   }, [selectedCompanyId, loadCompSet]);
 
   // Pull in the listed comparables named in the company's documents (each
-  // document is processed once; older ones may need extracting first).
+  // document is processed once; older ones may need analysing first).
+  const syncDocComps = useCallback(async (cid: string, force: boolean, isCancelled: () => boolean = () => false) => {
+    setDocSync({ running: true, lines: [], tone: "info" });
+    type Report = { file: string; found: string[]; added: string[]; already: string[]; unresolved: string[]; error?: string };
+    const reports: Report[] = [];
+    let documents = 0;
+    let failed: string | null = null;
+    try {
+      for (let round = 0; round < 4 && !isCancelled(); round++) {
+        const res = await fetch("/api/comparables/from-documents", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyId: cid, force: force && round === 0 }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { failed = data.error ?? `HTTP ${res.status}`; break; }
+        documents = data.documents ?? documents;
+        reports.push(...(data.reports ?? []));
+        if ((data.reports ?? []).some((r: Report) => r.added.length) && !isCancelled()) loadCompSet(cid);
+        if (!data.pending) break;
+      }
+    } catch (e) {
+      failed = e instanceof Error ? e.message : "network error";
+    }
+    if (isCancelled()) return;
+    if (failed) { setDocSync({ running: false, lines: [`Could not check this company's documents for comparables: ${failed}`], tone: "error" }); return; }
+    if (!reports.length) {
+      // Nothing new to process: stay quiet unless the user asked for a re-scan.
+      setDocSync({ running: false, lines: force ? [documents ? "All documents already checked." : "This company has no documents. Upload them in its page (Documents & sources)."] : [], tone: "info" });
+      return;
+    }
+    const lines = reports.map(r => {
+      if (r.error) return `"${r.file}": ${r.error}`;
+      if (!r.found.length) return `"${r.file}": no listed comparables mentioned.`;
+      const parts = [`found ${r.found.join(", ")}`];
+      if (r.added.length) parts.push(`added ${r.added.join(", ")}`);
+      if (r.already.length) parts.push(`already in the set: ${r.already.join(", ")}`);
+      if (r.unresolved.length) parts.push(`not found on the stock market: ${r.unresolved.join(", ")}`);
+      return `"${r.file}": ${parts.join(" · ")}.`;
+    });
+    const anyAdded = reports.some(r => r.added.length);
+    if (anyAdded) lines.push('Press "Refresh data" to load their market data.');
+    setDocSync({ running: false, lines, tone: anyAdded ? "success" : "info" });
+  }, [loadCompSet]);
+
   useEffect(() => {
     if (!selectedCompanyId) return;
     let cancelled = false;
-    const cid = selectedCompanyId;
-    (async () => {
-      setDocSync({ running: true, message: null });
-      const added: string[] = [];
-      const unresolved: string[] = [];
-      try {
-        for (let round = 0; round < 4 && !cancelled; round++) {
-          const res = await fetch("/api/comparables/from-documents", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ companyId: cid }),
-          });
-          if (!res.ok) break;
-          const data = await res.json() as { added: string[]; unresolved: string[]; pending: number };
-          added.push(...data.added);
-          unresolved.push(...data.unresolved);
-          if (data.added.length && !cancelled) loadCompSet(cid);
-          if (!data.pending) break;
-        }
-      } catch { /* non-critical: the page works without it */ }
-      if (cancelled) return;
-      setDocSync({
-        running: false,
-        message: added.length
-          ? `Added ${added.length} comparable(s) from this company's documents: ${added.join(", ")}.${unresolved.length ? ` Not found on the stock market: ${unresolved.join(", ")}.` : ""} Press "Refresh data" to load their market data.`
-          : null,
-      });
-    })();
+    syncDocComps(selectedCompanyId, false, () => cancelled);
     return () => { cancelled = true; };
-  }, [selectedCompanyId, loadCompSet]);
+  }, [selectedCompanyId, syncDocComps]);
 
   const selectCompany = (id: string) => {
     setSelectedCompanyId(id);
@@ -442,13 +459,26 @@ function ComparablesPage() {
             </div>
           ) : (
             <div className="p-5 space-y-4">
-              {(docSync.running || docSync.message) && (
-                <div className={`rounded-[10px] border px-4 py-2.5 text-[12px] ${docSync.running ? "bg-paper border-chalk text-slate" : "bg-emerald-50 border-emerald-200 text-emerald-800"}`}>
-                  {docSync.running
-                    ? "Checking this company's documents for comparables… (documents not yet analysed can take a minute)"
-                    : docSync.message}
+              <div className={`rounded-[10px] border px-4 py-2.5 text-[12px] ${
+                docSync.tone === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : docSync.tone === "error" ? "bg-red-50 border-red-200 text-red-700"
+                : "bg-paper border-chalk text-slate"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    {docSync.running
+                      ? <p>Checking this company&apos;s documents for comparables… (a document not analysed yet can take a minute)</p>
+                      : docSync.lines.length
+                        ? docSync.lines.map((l, i) => <p key={i}>{l}</p>)
+                        : <p>Comparables named in this company&apos;s documents are added here automatically.</p>}
+                  </div>
+                  <button
+                    onClick={() => selectedCompanyId && syncDocComps(selectedCompanyId, true)}
+                    disabled={docSync.running}
+                    className="shrink-0 text-[11px] font-medium border border-chalk bg-paper text-carbon rounded-[7px] px-2.5 py-1 hover:border-carbon disabled:opacity-50">
+                    Re-scan documents
+                  </button>
                 </div>
-              )}
+              </div>
               {/* Company header */}
               <div className="bg-forest rounded-[10px] border border-chalk p-4">
                 <div className="flex items-start gap-3 flex-wrap">

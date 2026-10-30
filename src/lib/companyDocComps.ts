@@ -22,7 +22,9 @@ function compNote(c: ExtractedComparable, fileName: string): string {
 }
 
 /** Adds the comparables of one extracted document to the company's comp set and marks it synced. */
-export async function syncFileComps(file: FileRow, extraction: StoredExtraction, companyName: string): Promise<{ added: string[]; unresolved: string[] }> {
+export type FileCompsReport = { file: string; found: string[]; added: string[]; already: string[]; unresolved: string[]; error?: string };
+
+export async function syncFileComps(file: FileRow, extraction: StoredExtraction, companyName: string): Promise<FileCompsReport> {
   const resolved = [];
   const unresolved: string[] = [];
   for (const c of (extraction.comparables ?? []).slice(0, 25)) {
@@ -34,7 +36,13 @@ export async function syncFileComps(file: FileRow, extraction: StoredExtraction,
   const added = await addCompsToCompany(file.companyId, companyName, resolved);
   extraction.compsSynced = new Date().toISOString();
   await db.update(companyFiles).set({ extraction: JSON.stringify(extraction) }).where(eq(companyFiles.id, file.id));
-  return { added, unresolved };
+  return {
+    file: file.filename,
+    found: (extraction.comparables ?? []).map(c => c.ticker ? `${c.name} (${c.ticker})` : c.name),
+    added,
+    already: resolved.map(r => r.quote.ticker).filter(t => !added.includes(t)),
+    unresolved,
+  };
 }
 
 /**
@@ -43,26 +51,25 @@ export async function syncFileComps(file: FileRow, extraction: StoredExtraction,
  * Processes at most `maxExtractions` new extractions per call to stay within
  * the request time limit; `pending` tells the caller to call again.
  */
-export async function syncCompanyDocumentComps(companyId: string, apiKey: string | null, maxExtractions = 2): Promise<{
-  added: string[]; unresolved: string[]; processed: string[]; pending: number;
+export async function syncCompanyDocumentComps(companyId: string, apiKey: string | null, opts: { force?: boolean; maxExtractions?: number } = {}): Promise<{
+  reports: FileCompsReport[]; pending: number; documents: number;
 }> {
   const company = await db.query.companies.findFirst({ where: eq(companies.id, companyId) });
-  if (!company) return { added: [], unresolved: [], processed: [], pending: 0 };
+  if (!company) return { reports: [], pending: 0, documents: 0 };
   const files = await db.query.companyFiles.findMany({ where: eq(companyFiles.companyId, companyId) });
 
-  const added: string[] = [];
-  const unresolved: string[] = [];
-  const processed: string[] = [];
-  let extractionsLeft = maxExtractions;
+  const reports: FileCompsReport[] = [];
+  let extractionsLeft = opts.maxExtractions ?? 2;
   let pending = 0;
 
   for (const f of files) {
     let x: StoredExtraction | null = null;
     try { x = f.extraction ? JSON.parse(f.extraction) : null; } catch { x = null; }
-    if (x?.compsSynced) continue;
+    if (x?.compsSynced && !opts.force) continue;
 
     if (!x || x.comparables === undefined) {
-      if (!apiKey || extractionsLeft <= 0) { pending++; continue; }
+      if (!apiKey) { reports.push({ file: f.filename, found: [], added: [], already: [], unresolved: [], error: "No Anthropic API key configured to analyse it" }); continue; }
+      if (extractionsLeft <= 0) { pending++; continue; }
       extractionsLeft--;
       try {
         const res = await fetch(f.blobUrl);
@@ -78,14 +85,17 @@ export async function syncCompanyDocumentComps(companyId: string, apiKey: string
         }).where(eq(companyFiles.id, f.id));
       } catch (err) {
         console.error("[syncCompanyDocumentComps] extraction failed", f.filename, err);
+        reports.push({ file: f.filename, found: [], added: [], already: [], unresolved: [], error: err instanceof Error ? err.message : "Analysis failed" });
         continue;
       }
     }
 
-    const r = await syncFileComps(f, x, company.name);
-    added.push(...r.added);
-    unresolved.push(...r.unresolved);
-    processed.push(f.filename);
+    try {
+      reports.push(await syncFileComps(f, x, company.name));
+    } catch (err) {
+      console.error("[syncCompanyDocumentComps] comps sync failed", f.filename, err);
+      reports.push({ file: f.filename, found: [], added: [], already: [], unresolved: [], error: err instanceof Error ? err.message : "Could not add comparables" });
+    }
   }
-  return { added, unresolved, processed, pending };
+  return { reports, pending, documents: files.length };
 }

@@ -139,7 +139,12 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
       const data = await res.json().catch(() => ({ error: `Extraction failed (HTTP ${res.status})` }));
       if (!res.ok) throw new Error(data.error ?? "Extraction failed");
       await load();
-      if (data.compsAdded?.length) setNotice(`${data.compsAdded.length} comparable(s) from "${file.filename}" added to Comparables: ${data.compsAdded.join(", ")}.`);
+      const r = data.compsReport as { found: string[]; added: string[]; already: string[]; unresolved: string[] } | null;
+      if (r) {
+        setNotice(r.found.length
+          ? `Comparables in "${file.filename}": ${r.added.length} added to Comparables${r.added.length ? ` (${r.added.join(", ")})` : ""}${r.already.length ? `, ${r.already.length} already there` : ""}${r.unresolved.length ? `, not found on the stock market: ${r.unresolved.join(", ")}` : ""}.`
+          : `No listed comparables mentioned in "${file.filename}".`);
+      }
       setReviewId(file.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Extraction failed");
