@@ -4,7 +4,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db, companyFiles } from "@/lib/db";
 import { decryptBuffer } from "@/lib/blobCrypto";
-import { buildFileContent } from "@/lib/companyFileExtract";
+import { buildFileContent, type ExtractionResult } from "@/lib/companyFileExtract";
 import { desc, eq } from "drizzle-orm";
 
 const DEFAULT_FILE_COUNT = 3;
@@ -35,6 +35,37 @@ function blockSize(b: Block): number {
 }
 
 /**
+ * Digest of everything extracted from ALL of the company's documents (summary,
+ * key facts, financials as reported, comparables named). Cheap enough to send
+ * on every request, so any feature working on the company knows what its
+ * documents say even when their full content isn't attached.
+ */
+export async function companyKnowledgeText(companyId: string | null, maxChars = 12000): Promise<string> {
+  if (!companyId) return "";
+  const rows = await db.query.companyFiles.findMany({
+    where: eq(companyFiles.companyId, companyId),
+    orderBy: [desc(companyFiles.createdAt)],
+  }).catch(() => []);
+  const parts: string[] = [];
+  for (const f of rows) {
+    if (f.extractionStatus !== "done" || !f.extraction) continue;
+    let x: ExtractionResult;
+    try { x = JSON.parse(f.extraction); } catch { continue; }
+    const lines = [`From "${f.filename}" (${x.documentType}, uploaded ${f.createdAt?.slice(0, 10) ?? "n/a"}):`, x.summary];
+    if (x.keyFacts?.length) lines.push(`Key facts: ${x.keyFacts.map(k => `${k.label}: ${k.value}`).join("; ")}`);
+    if (x.financials?.length) {
+      lines.push(`Financials as reported: ${x.financials.map(r => `${r.year} ${r.period} revenue ${r.revenue ?? "n/a"} EBITDA ${r.ebitda ?? "n/a"} ${r.currency}`).join("; ")}`);
+    }
+    if (x.founders?.length) lines.push(`People: ${x.founders.map(p => `${p.name}${p.title ? ` (${p.title})` : ""}`).join(", ")}`);
+    if (x.comparables?.length) lines.push(`Comparables named: ${x.comparables.map(c => `${c.name}${c.ticker ? ` (${c.ticker})` : ""}`).join(", ")}`);
+    parts.push(lines.join("\n"));
+  }
+  if (!parts.length) return "";
+  const text = `WHAT THE COMPANY'S DOCUMENTS SAY (extracted from ${parts.length} document(s) on its profile):\n\n${parts.join("\n\n")}`;
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+}
+
+/**
  * Content blocks for the company's files, each wrapped in a labelled header.
  * The last block carries a cache breakpoint so repeated calls within a few
  * minutes (plan revisions, one call per deck section) read the files from cache.
@@ -43,7 +74,11 @@ export async function companyFileBlocks(companyId: string | null, fileIds: strin
   blocks: Block[]; names: string[]; skipped: string[];
 }> {
   const empty = { blocks: [], names: [], skipped: [] };
-  if (!companyId || (fileIds && fileIds.length === 0)) return empty;
+  if (!companyId) return empty;
+  const knowledge = await companyKnowledgeText(companyId);
+  if (fileIds && fileIds.length === 0) {
+    return knowledge ? { blocks: [{ type: "text", text: knowledge, cache_control: { type: "ephemeral" } }], names: [], skipped: [] } : empty;
+  }
 
   let rows = await db.query.companyFiles.findMany({
     where: eq(companyFiles.companyId, companyId),
@@ -51,7 +86,7 @@ export async function companyFileBlocks(companyId: string | null, fileIds: strin
   }).catch(() => []);
   rows = fileIds ? rows.filter(r => fileIds.includes(r.id)) : rows.slice(0, DEFAULT_FILE_COUNT);
 
-  const blocks: Block[] = [];
+  const blocks: Block[] = knowledge ? [{ type: "text", text: knowledge }] : [];
   const names: string[] = [];
   const skipped: string[] = [];
   let total = 0;

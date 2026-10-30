@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userSettings, companies, compSets, publicComps, signals, notes } from "@/lib/schema";
 import { eq, desc } from "drizzle-orm";
+import { companyKnowledgeText } from "@/lib/companyContext";
 
 function fmtB(n: unknown): string {
   if (n == null) return "N/D";
@@ -16,7 +17,7 @@ function fmtB(n: unknown): string {
 function fmtPct(n: unknown): string {
   if (n == null) return "N/D";
   const v = Number(n);
-  return isNaN(v) ? "N/D" : `${(v * 100).toFixed(1)}%`;
+  return isNaN(v) ? "N/D" : `${v.toFixed(1)}%`; // stored as percentages (42 = 42%)
 }
 
 // Build rich system context from DB
@@ -27,13 +28,17 @@ async function buildContext(): Promise<string> {
     limit: 50,
   });
 
-  const companySummaries = allCompanies.map(c => {
+  // What each company's uploaded documents say (only companies that have extracted documents)
+  const knowledge = await Promise.all(allCompanies.map(c => companyKnowledgeText(c.id, 2500).catch(() => "")));
+
+  const companySummaries = allCompanies.map((c, i) => {
     const lines = [
       `• ${c.name} (${c.sector ?? "N/A"} | ${c.country} | ${c.stage ?? "N/A"} | Score: ${c.score?.toFixed(1) ?? "N/A"})`,
       `  Revenue: ${fmtB(c.revenueUsd)} | Growth: ${fmtPct(c.revenueGrowth)} | EBITDA: ${fmtB(c.ebitdaUsd)} | Margin: ${fmtPct(c.ebitdaMargin)}`,
       `  Employees: ${c.employees ?? "N/A"} | Total funding: ${fmtB(c.totalFunding)} | Last round: ${fmtB(c.lastFundingAmt)} | Funding stage: ${c.fundingStage ?? "N/A"}`,
       c.description ? `  Description: ${c.description.slice(0, 150)}` : "",
       c.signals?.length ? `  Recent signals: ${c.signals.map((s: any) => s.title).join("; ")}` : "",
+      knowledge[i] ? `  ${knowledge[i].replace(/\n/g, "\n  ")}` : "",
     ].filter(Boolean);
     return lines.join("\n");
   }).join("\n\n");

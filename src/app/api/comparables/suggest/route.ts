@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { companies, userSettings } from "@/lib/schema";
+import { companies, userSettings, compSets } from "@/lib/schema";
+import { companyKnowledgeText } from "@/lib/companyContext";
+import { fmtMoneyDoc } from "@/lib/utils";
 import { auth } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
@@ -99,6 +101,10 @@ export async function GET(req: NextRequest) {
 
   const client = new Anthropic({ apiKey });
 
+  const knowledge = await companyKnowledgeText(companyId, 8000);
+  const set = await db.query.compSets.findFirst({ where: eq(compSets.companyId, companyId) });
+  const current: string[] = set ? JSON.parse(set.tickers || "[]") : [];
+
   const prompt = `You are a senior private equity analyst building a trading comps table for a valuation. Use web search to actually research the target company and candidate comps — do not rely on memory alone, and never guess a ticker.
 
 Target private company:
@@ -107,9 +113,9 @@ Target private company:
 - Description: ${company.description?.slice(0, 500) ?? "N/A"}
 - Country: ${company.country}
 - Stage: ${company.fundingStage ?? company.stage ?? "Unknown"}
-- Revenue: ${company.revenueUsd ? `$${company.revenueUsd}M USD` : "Unknown"}
+- Revenue: ${company.revenueUsd ? fmtMoneyDoc(company.revenueUsd) : "Unknown"}
 ${company.website ? `- Website: ${company.website}` : ""}
-
+${knowledge ? `\n${knowledge}\n\nUse the company's own documents above to understand precisely what it sells. Listed companies they name as comparables or competitors are strong candidates (still verify they are public).\n` : ""}${current.length ? `\nAlready in the comp set, do not suggest again: ${current.join(", ")}\n` : ""}
 ${userPrompt ? `SPECIFIC INSTRUCTIONS FROM USER:\n${userPrompt}\n\nThese instructions take priority over the default criteria below.\n\n` : ""}RESEARCH PROCESS — do this before answering, but be search-efficient:
 1. One search to understand the target company's actual business (its website, news, what it specifically sells and to whom) — not just its sector label.
 2. A small number of broad searches to surface direct public competitors in that specific niche (e.g. "<company>'s direct competitor publicly traded"), rather than one narrow search per candidate. Verify each candidate's actual current business via search, don't assume from the company name alone (many companies pivot).

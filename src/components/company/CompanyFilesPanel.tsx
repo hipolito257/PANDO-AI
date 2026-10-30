@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/Button";
 import { fmtM } from "@/lib/utils";
 import type { ExtractionResult, ExtractedField, ExtractedFinancial } from "@/lib/companyFileExtract";
 
+type Applied = { at: string; fields: number; years: number; founders: number; comps: number };
+
 type CompanyFile = {
   id: string; companyId: string; filename: string; ext: string; sizeBytes: number;
   uploadedByName: string | null; createdAt: string | null;
-  extractionStatus: "none" | "done" | "error"; extraction: ExtractionResult | null;
+  extractionStatus: "none" | "done" | "error"; extraction: (ExtractionResult & { applied?: Applied }) | null;
   extractionError: string | null; extractionCostUsd: number | null; extractedAt: string | null;
 };
 
@@ -74,6 +76,7 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
   const [uploading, setUploading] = useState<{ name: string; done: number; total: number } | null>(null);
   const [extracting, setExtracting] = useState<string | null>(null);
   const [error, setError]       = useState<string | null>(null);
+  const [notice, setNotice]     = useState<string | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -146,7 +149,7 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
   }
 
   async function remove(file: CompanyFile) {
-    if (!confirm(`Delete "${file.filename}"? This can't be undone.`)) return;
+    if (!confirm(`Delete "${file.filename}"?\n\nIt will no longer feed documents, comparables suggestions or the chat. Data already applied to the profile stays (edit it there if needed). This can't be undone.`)) return;
     const res = await fetch(`/api/companies/${companyId}/files/${file.id}`, { method: "DELETE" });
     if (res.ok) setFiles(prev => prev.filter(f => f.id !== file.id));
   }
@@ -172,6 +175,7 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
       </div>
 
       {error && <p className="text-[12px] text-red-600 mt-2">{error}</p>}
+      {notice && <p className="text-[12px] text-emerald-700 mt-2">{notice}</p>}
 
       {/* File list */}
       <div className="mt-3 divide-y divide-chalk">
@@ -187,6 +191,18 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
               <p className="text-[10px] text-slate">
                 {fmtSize(f.sizeBytes)} · {f.uploadedByName ?? "—"} · {fmtWhen(f.createdAt)}
                 {f.extractionStatus === "done" && f.extractionCostUsd != null && <> · analysed for ${f.extractionCostUsd.toFixed(2)}</>}
+              </p>
+              <p className="text-[10px] mt-0.5">
+                {f.extraction?.applied
+                  ? <span className="text-emerald-700">Applied {fmtWhen(f.extraction.applied.at)}: {[
+                      f.extraction.applied.fields && `${f.extraction.applied.fields} profile field(s)`,
+                      f.extraction.applied.years && `${f.extraction.applied.years} year(s) of financials`,
+                      f.extraction.applied.founders && `${f.extraction.applied.founders} people`,
+                      f.extraction.applied.comps && `${f.extraction.applied.comps} comparable(s)`,
+                    ].filter(Boolean).join(" · ") || "reviewed, nothing new"}</span>
+                  : f.extractionStatus === "done"
+                    ? <span className="text-amber-700">Extracted, not applied yet</span>
+                    : <span className="text-slate">Feeds generated documents and the chat</span>}
               </p>
               {f.extractionStatus === "error" && extracting !== f.id && (
                 <p className="text-[10px] text-red-600 mt-0.5">{f.extractionError}</p>
@@ -226,7 +242,7 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
           snapshots={snapshots}
           founderNames={founderNames}
           onClose={() => setReviewId(null)}
-          onApplied={() => { setReviewId(null); router.refresh(); }}
+          onApplied={(msg) => { setReviewId(null); setNotice(msg); load(); router.refresh(); }}
         />
       )}
     </div>
@@ -237,7 +253,7 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
 
 function ReviewModal({ companyId, file, current, snapshots, founderNames, onClose, onApplied }: {
   companyId: string; file: CompanyFile; current: Props["current"]; snapshots: Snapshot[]; founderNames: string[];
-  onClose: () => void; onApplied: () => void;
+  onClose: () => void; onApplied: (message: string) => void;
 }) {
   const x = file.extraction!;
   const existingFounders = new Set(founderNames.map(n => n.trim().toLowerCase()));
@@ -281,6 +297,8 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
   // Defaults: actual years only; forecasts/budgets/LTM would be saved as that year's figures.
   const [finSel, setFinSel] = useState<boolean[]>(() => x.financials.map(f => f.period === "actual"));
   const [founderSel, setFounderSel] = useState<boolean[]>(() => x.founders.map(f => !existingFounders.has(f.name.trim().toLowerCase())));
+  const comps = x.comparables ?? [];
+  const [compSel, setCompSel] = useState<boolean[]>(() => comps.map(() => true));
   const [saveNote, setSaveNote] = useState(true);
   const [applying, setApplying] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -293,7 +311,7 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
   const finOn = (i: number) => finSel[i] && !finBlocked(x.financials[i]);
   const missingFx = currencies.filter(c => !(Number(fx[c]) > 0));
   const count = x.fields.filter((_, i) => fieldOn(i)).length + x.financials.filter((_, i) => finOn(i)).length
-    + founderSel.filter(Boolean).length + (saveNote ? 1 : 0);
+    + founderSel.filter(Boolean).length + compSel.filter(Boolean).length + (saveNote ? 1 : 0);
 
   async function apply() {
     setApplying(true);
@@ -302,12 +320,14 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
       const fields = Object.fromEntries(x.fields.flatMap((f, i) => (fieldOn(i) ? [[f.field, fieldValue(f)!]] : [])));
       const financials = x.financials.flatMap((f, i) => (finOn(i) ? [{ year: f.year, ...finUsd(f), employees: f.employees }] : []));
       const founders = x.founders.filter((_, i) => founderSel[i]);
+      const comparables = comps.filter((_, i) => compSel[i]);
       const res = await fetch(`/api/companies/${companyId}/apply-extraction`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields, financials, founders, fileName: file.filename }),
+        body: JSON.stringify({ fields, financials, founders, comparables, fileId: file.id, fileName: file.filename }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Failed to apply changes");
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error ?? "Failed to apply changes");
 
       if (saveNote) {
         const facts = x.keyFacts.map(k => `• ${k.label}: ${k.value} (${k.source})`).join("\n");
@@ -317,7 +337,10 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
           body: JSON.stringify({ companyId, content: `From "${file.filename}" (${x.documentType}):\n${x.summary}${facts ? `\n\nKey facts:\n${facts}` : ""}` }),
         });
       }
-      onApplied();
+      const compMsg = comparables.length
+        ? ` ${result.compsAdded?.length ?? 0} comparable(s) added to Comparables${result.compsUnresolved?.length ? ` (not found on the stock market: ${result.compsUnresolved.join(", ")})` : ""}.`
+        : "";
+      onApplied(`Applied data from "${file.filename}".${compMsg}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to apply changes");
       setApplying(false);
@@ -464,6 +487,35 @@ function ReviewModal({ companyId, file, current, snapshots, founderNames, onClos
                     <label key={i} className={`flex items-start gap-2 text-[12px] ${exists ? "text-slate" : "text-carbon"}`}>
                       <input type="checkbox" className="mt-0.5" disabled={exists} checked={founderSel[i] && !exists} onChange={() => toggle(founderSel, setFounderSel, i)} />
                       <span><strong>{f.name}</strong>{f.title && `, ${f.title}`}{exists && " (already on profile)"}{f.bio && <span className="block text-[11px] text-graphite">{f.bio}</span>}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Public comparables */}
+          {comps.length > 0 && (
+            <section>
+              <h4 className="text-[13px] font-semibold text-carbon mb-1">Public comparables</h4>
+              <p className="text-[10px] text-slate mb-1.5">Checked companies are added to this company&apos;s set in Comparables (live market data loads when you refresh there). Figures below are as stated in the document.</p>
+              <div className="space-y-1.5">
+                {comps.map((c, i) => {
+                  const figs = [
+                    c.ev_ebitda != null && `EV/EBITDA ${c.ev_ebitda}x`,
+                    c.ev_revenue != null && `EV/Rev ${c.ev_revenue}x`,
+                    c.pe != null && `P/E ${c.pe}x`,
+                    c.revenue_growth != null && `growth ${c.revenue_growth}%`,
+                    c.ebitda_margin != null && `EBITDA mgn ${c.ebitda_margin}%`,
+                  ].filter(Boolean).join(" · ");
+                  return (
+                    <label key={i} className="flex items-start gap-2 text-[12px] text-carbon">
+                      <input type="checkbox" className="mt-0.5" checked={compSel[i]} onChange={() => toggle(compSel, setCompSel, i)} />
+                      <span>
+                        <strong>{c.name}</strong>{c.ticker && <span className="text-slate"> · {c.ticker}</span>}{c.relation && <span className="text-slate"> · {c.relation}</span>}
+                        {figs && <span className="block text-[11px] text-graphite">{figs}{c.as_of ? ` (${c.as_of})` : ""}</span>}
+                        <span className="block text-[10px] text-slate">{c.source}</span>
+                      </span>
                     </label>
                   );
                 })}

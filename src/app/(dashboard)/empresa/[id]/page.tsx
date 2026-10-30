@@ -138,7 +138,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
         {/* Files + AI extraction */}
         <Card>
-          <SectionHeader title="Files" subtitle="Upload decks, models or reports. PANDO reads them and proposes updates to this profile" className="mb-3" />
+          <SectionHeader title="Documents & sources" subtitle="Decks, models and reports about this company. They update its profile and comparables, and feed every document, deck and chat answer generated for it." className="mb-3" />
           <CompanyFilesPanel
             companyId={company.id}
             current={Object.fromEntries(EXTRACTABLE_FIELDS.map((f) => [f, (company as Record<string, unknown>)[f] as string | number | null]))}

@@ -58,6 +58,14 @@ export type ExtractedFinancial = {
   currency: string; source: string; note: string;
 };
 export type FxRate = { currency: string; unitsPerUsd: number; basis: string };
+// Listed companies the document uses as comparables / peers / competitors.
+// Multiples are as stated in the document (not live market data).
+export type ExtractedComparable = {
+  name: string; ticker: string; exchange: string; relation: string;
+  ev_revenue: number | null; ev_ebitda: number | null; pe: number | null;
+  revenue_growth: number | null; ebitda_margin: number | null;
+  as_of: string; source: string;
+};
 export type ExtractedFounder = { name: string; title: string; bio: string; source: string };
 export type ExtractionResult = {
   documentType: string;
@@ -67,6 +75,7 @@ export type ExtractionResult = {
   founders: ExtractedFounder[];
   keyFacts: { label: string; value: string; source: string }[];
   fxRates: FxRate[];
+  comparables?: ExtractedComparable[];
   warnings: string[];
   // Added server-side
   usage?: { inputTokens: number; outputTokens: number; costUsd: number; model: string };
@@ -333,6 +342,15 @@ const OUTPUT_SCHEMA = obj({
   founders: { type: "array", items: obj({ name: str, title: str, bio: str, source: str }) },
   keyFacts: { type: "array", items: obj({ label: str, value: str, source: str }) },
   fxRates: { type: "array", items: obj({ currency: str, unitsPerUsd: { type: "number" }, basis: str }) },
+  comparables: {
+    type: "array",
+    items: obj({
+      name: str, ticker: str, exchange: str, relation: str,
+      ev_revenue: nullableNumber, ev_ebitda: nullableNumber, pe: nullableNumber,
+      revenue_growth: nullableNumber, ebitda_margin: nullableNumber,
+      as_of: str, source: str,
+    }),
+  },
   warnings: { type: "array", items: str },
 });
 
@@ -369,6 +387,8 @@ fields — one entry per profile field you can fill; "value" is a string:
 financials — one row per fiscal year that has revenue, EBITDA or headcount, amounts in the original currency (ISO code in "currency"). Mark each as actual, forecast (projections), budget, or ltm. Use null for missing numbers.
 
 founders — founders and key executives the document names, with title and a one-line bio if given.
+
+comparables — publicly listed companies the document presents as comparables, peers, competitors or valuation benchmarks (trading comps tables, competitive landscapes, "listed peers" pages, benchmarking charts). Include them even when no metrics are given. Do not include private companies, the subject company itself, or investors. "ticker": the stock ticker if the document states it or you are certain of it (e.g. "WRBY", "FIELMANN.DE"), otherwise "". "relation": a few words on how the document uses it ("trading comp", "direct competitor", "benchmark on NPS"). Multiples (ev_revenue, ev_ebitda, pe) as plain numbers (12.3 for 12.3x); revenue_growth and ebitda_margin as percentages (42 for 42%); null when not stated. "as_of": the date of those figures if stated.
 
 keyFacts — up to 15 other decision-relevant metrics (GMV, customers, ARR, churn, CAC, unit economics, market size, use of funds, valuation asked, etc.).
 
