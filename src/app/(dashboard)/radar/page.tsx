@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, type ReactElement } from "react";
+import { fetchJson } from "@/lib/fetchJson";
 import { Topbar } from "@/components/layout/Topbar";
 import { Card } from "@/components/ui/Card";
 import { SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
@@ -46,6 +47,7 @@ export default function RadarPage() {
   const [exitedCompanies, setExited]      = useState<Company[]>([]);
   const [mandates, setMandates]           = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading]             = useState(true);
+  const [loadError, setLoadError]         = useState(false);
   const [activeTab, setActiveTab]         = useState<"radar"|"pipeline"|"salidas"|"scan">("radar");
 
   const [q, setQ]             = useState("");
@@ -59,6 +61,7 @@ export default function RadarPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
@@ -66,14 +69,14 @@ export default function RadarPage() {
       if (country) params.set("country", country);
       if (stage) params.set("stage", stage);
       if (mandateId) params.set("mandate", mandateId);
-      const res = await fetch(`/api/companies?${params}`, { signal: AbortSignal.timeout(15000) });
-      const main = res.ok ? await res.json() : [];
-      const mainData = Array.isArray(main) ? main : (main.companies ?? []);
+      const main = await fetchJson<unknown>(`/api/companies?${params}`);
+      const mainData = Array.isArray(main) ? main : ((main as { companies?: Company[] }).companies ?? []);
       setCompanies(mainData.filter((c: Company) => c.status === "monitoring"));
       setPipeline(mainData.filter((c: Company) => c.status === "pipeline"));
       setExited(mainData.filter((c: Company) => EXIT_STATUSES.includes(c.status)));
     } catch {
-      // Network/API error — show empty state instead of infinite spinner
+      // Show an error with a retry, not an empty radar that looks like missing data
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -216,6 +219,11 @@ export default function RadarPage() {
         <Card padding="none">
           {loading ? (
             <div className="flex items-center justify-center h-40 text-slate text-[13px]">Loading...</div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center justify-center h-40 text-slate gap-2">
+              <p className="text-[14px] font-medium text-carbon">Couldn&apos;t load the companies</p>
+              <button onClick={() => loadAll()} className="text-[12px] font-medium border border-chalk rounded-[8px] px-3 py-1.5 hover:border-carbon">Try again</button>
+            </div>
           ) : companies.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-slate">
               <p className="text-[14px] font-medium">No results</p>

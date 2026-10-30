@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { fetchJson } from "@/lib/fetchJson";
 import { Topbar } from "@/components/layout/Topbar";
 import { Card, SectionHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -35,8 +36,7 @@ export default function MandatosPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/mandatos", { signal: AbortSignal.timeout(15000) });
-      setMandates(res.ok ? await res.json() : []);
+      setMandates(await fetchJson<Mandate[]>("/api/mandatos"));
     } catch {
       setMandates([]);
     } finally {

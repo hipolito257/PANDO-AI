@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { fetchJson } from "@/lib/fetchJson";
 import { Topbar } from "@/components/layout/Topbar";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
 import { WebsiteLink } from "@/components/ui/WebsiteLink";
@@ -128,18 +129,23 @@ function ComparablesPage() {
   const [editedCells, setEditedCells] = useState<Record<string, Set<keyof PublicComp>>>({});
   const [editedPrivate, setEditedPrivate] = useState<Set<keyof Company>>(new Set());
   const [listOpen, setListOpen] = useState(true);
+  const [companiesState, setCompaniesState] = useState<"loading" | "ok" | "error">("loading");
 
   useEffect(() => { setMounted(true); }, []);
 
-  useEffect(() => {
-    fetch("/api/companies?limit=200", { signal: AbortSignal.timeout(15000) })
-      .then(r => r.ok ? r.json() : [])
+  const loadCompanies = useCallback(async () => {
+    setCompaniesState("loading");
+    try {
+      const d = await fetchJson<Company[]>("/api/companies?limit=200");
       // Exclude exits (public/acquired/closed) and inactive — keep monitoring + pipeline
-      .then(d => Array.isArray(d)
-        ? setCompanies(d.filter((c: Company) => !["public","acquired","closed","inactive"].includes(c.status)))
-        : setCompanies([]))
-      .catch(() => setCompanies([]));
+      setCompanies(Array.isArray(d) ? d.filter(c => !["public", "acquired", "closed", "inactive"].includes(c.status)) : []);
+      setCompaniesState("ok");
+    } catch {
+      setCompaniesState("error");
+    }
   }, []);
+
+  useEffect(() => { loadCompanies(); }, [loadCompanies]);
 
   const loadCompSet = useCallback(async (cid: string) => {
     setLoadingSet(true);
@@ -417,7 +423,16 @@ function ComparablesPage() {
                 <>
                   {renderGroup("Radar", "bg-orange", radar)}
                   {renderGroup("Pipeline", "bg-blue-500", pipeline)}
-                  {filtered.length === 0 && (
+                  {companiesState === "loading" && (
+                    <p className="text-[11px] text-slate text-center py-6 px-3">Loading companies…</p>
+                  )}
+                  {companiesState === "error" && (
+                    <div className="text-center py-6 px-3">
+                      <p className="text-[11px] text-carbon mb-2">Couldn&apos;t load the companies</p>
+                      <button onClick={loadCompanies} className="text-[11px] font-medium border border-chalk rounded-[7px] px-2.5 py-1 hover:border-carbon">Try again</button>
+                    </div>
+                  )}
+                  {companiesState === "ok" && filtered.length === 0 && (
                     <p className="text-[11px] text-slate text-center py-6 px-3">No results for "{companySearch}"</p>
                   )}
                 </>

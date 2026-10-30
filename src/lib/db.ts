@@ -8,6 +8,11 @@ function createDb() {
 
   const client = postgres(connectionString, {
     max: 1,          // Serverless: max 1 connection per function instance
+    // DATABASE_URL is Supabase's transaction pooler (port 6543), which hands
+    // each query to whichever server connection is free. Prepared statements
+    // live on one server connection, so with them on, queries intermittently
+    // fail ("prepared statement ... does not exist") and pages load empty.
+    prepare: false,
     idle_timeout: 20,
     connect_timeout: 10,
     ssl: "require",  // Supabase requires SSL
