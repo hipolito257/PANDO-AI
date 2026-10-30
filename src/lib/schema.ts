@@ -148,6 +148,7 @@ export const compSets = pgTable("CompSet", {
   tickers:        text("tickers").notNull().default("[]"),
   notes:          text("notes"),
   aiDescriptions: text("aiDescriptions"),
+  valuation:      text("valuation"),   // JSON: football-field config (see components/comparables/ValuationPanel.tsx)
   createdAt:      text("createdAt").default(sql`now()`),
 });
 

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { ValuationPanel } from "@/components/comparables/ValuationPanel";
 import { fetchJson } from "@/lib/fetchJson";
 import { Topbar } from "@/components/layout/Topbar";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
@@ -42,6 +43,7 @@ type AIDesc = { reason: string; businessModel: string; similarity: string };
 type CompSet = {
   id: string; name: string; tickers: string; notes: string | null;
   aiDescriptions: string | null;
+  valuation?: string | null;
   company: Company | null; comps: PublicComp[];
 };
 type AISuggestion = { ticker: string; name: string; exchange: string; website?: string; reason: string; businessModel: string; similarity: string };
@@ -103,7 +105,8 @@ function regression(pts: { x: number; y: number }[]) {
   return { slope, intercept };
 }
 
-const COLORS = ["#202020","#ea5c2b","#6366f1","#0ea5e9","#10b981","#f59e0b","#ec4899","#8b5cf6","#14b8a6","#f97316"];
+// PANDO palette (comps); the private target is highlighted in TARGET_COLOR
+const COLORS = ["#004F46", "#806E4B", "#437742", "#4B5F62", "#A5C8D1", "#42533E", "#AFC1AB", "#E2B540", "#8A9982", "#0A231F"];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
@@ -607,7 +610,8 @@ function ComparablesPage() {
                       historyData={historyData} loadingHist={loadingHist} />
                   )}
                   {activeTab === "valuacion" && mounted && (
-                    <ValuationPanel comps={comps} company={selectedCompany} />
+                    <ValuationPanel key={compSet?.id ?? selectedCompany.id} comps={comps} company={selectedCompany}
+                      compSetId={compSet?.id ?? null} saved={compSet?.valuation ?? null} />
                   )}
                 </>
               )}
@@ -1568,14 +1572,14 @@ function ChartsPanel({
                   stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="6 4" legendType="none" />
               )}
               {privateGrowthPct != null && (
-                <ReferenceLine x={privateGrowthPct} stroke="#ea5c2b" strokeWidth={2} strokeDasharray="5 3"
-                  label={{ value: company.name.split(" ")[0], position: "insideTopLeft", fill: "#ea5c2b", fontSize: 10, fontWeight: "bold" }} />
+                <ReferenceLine x={privateGrowthPct} stroke="#004F46" strokeWidth={2} strokeDasharray="5 3"
+                  label={{ value: company.name.split(" ")[0], position: "insideTopLeft", fill: "#004F46", fontSize: 10, fontWeight: "bold" }} />
               )}
-              <Scatter data={scatterData} fill="#202020" shape={(props: any) => {
+              <Scatter data={scatterData} fill="#8A9982" shape={(props: any) => {
                 const { cx, cy, payload } = props;
                 return (
                   <g>
-                    <circle cx={cx} cy={cy} r={6} fill="#202020" fillOpacity={0.8} />
+                    <circle cx={cx} cy={cy} r={6} fill="#8A9982" fillOpacity={0.8} />
                     <text x={cx + 9} y={cy + 4} fontSize={9} fill="#8a8480" fontFamily="monospace">{payload.ticker}</text>
                   </g>
                 );
@@ -1599,7 +1603,7 @@ function ChartsPanel({
             <RTooltip content={<BarTooltip />} />
             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
               {barData.map((d, i) => (
-                <Cell key={i} fill={d.isPrivate ? "#ea5c2b" : COLORS[(i) % COLORS.length]} opacity={d.isPrivate ? 1 : 0.7} />
+                <Cell key={i} fill={d.isPrivate ? "#004F46" : COLORS[(i) % COLORS.length]} opacity={d.isPrivate ? 1 : 0.7} />
               ))}
               <LabelList dataKey="value" position="top" formatter={(v: unknown) => fmtB(v as number)} style={{ fontSize: 9, fill: "#8a8480" }} />
             </Bar>
@@ -1756,8 +1760,8 @@ function ChartsPanel({
                 label={{ value: "Gross Margin (%)", angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 10, fill: "#8a8480" } }} />
               <RTooltip content={<BubbleTooltip />} />
               {privateGrowthPct != null && (
-                <ReferenceLine x={privateGrowthPct} stroke="#ea5c2b" strokeWidth={2} strokeDasharray="5 3"
-                  label={{ value: company.name.split(" ")[0], position: "insideTopLeft", fill: "#ea5c2b", fontSize: 10, fontWeight: "bold" }} />
+                <ReferenceLine x={privateGrowthPct} stroke="#004F46" strokeWidth={2} strokeDasharray="5 3"
+                  label={{ value: company.name.split(" ")[0], position: "insideTopLeft", fill: "#004F46", fontSize: 10, fontWeight: "bold" }} />
               )}
               <Scatter
                 data={bubbleData}
@@ -1766,7 +1770,7 @@ function ChartsPanel({
                   const r = 5 + Math.sqrt(payload.size / bubbleMaxSize) * 26;
                   return (
                     <g>
-                      <circle cx={cx} cy={cy} r={r} fill="#202020" fillOpacity={0.55} />
+                      <circle cx={cx} cy={cy} r={r} fill="#8A9982" fillOpacity={0.55} />
                       <text x={cx} y={cy - r - 3} fontSize={8} fill="#8a8480" textAnchor="middle" fontFamily="monospace">{payload.ticker}</text>
                     </g>
                   );
@@ -1803,7 +1807,7 @@ function ChartsPanel({
               <RTooltip content={<RankTooltip />} />
               <Bar dataKey="value" radius={[0, 3, 3, 0]}>
                 {rankItems.map((d, i) => (
-                  <Cell key={i} fill={d.isPrivate ? "#ea5c2b" : "#202020"} opacity={d.isPrivate ? 1 : 0.6} />
+                  <Cell key={i} fill={d.isPrivate ? "#004F46" : "#8A9982"} opacity={d.isPrivate ? 1 : 0.6} />
                 ))}
                 <LabelList dataKey="value" position="right" formatter={(v: unknown) => rankOpt.fmt(v as number)} style={{ fontSize: 9, fill: "#8a8480" }} />
               </Bar>
@@ -1818,129 +1822,6 @@ function ChartsPanel({
 // ══════════════════════════════════════════════════════════════════════════════
 // VALUATION PANEL
 // ══════════════════════════════════════════════════════════════════════════════
-function ValuationPanel({ comps, company }: { comps: PublicComp[]; company: Company }) {
-  const evRevArr = comps.map(c => c.evRevenue).filter((x): x is number => x != null && x > 0 && x < 200);
-  const evEbArr  = comps.map(c => c.evEbitda).filter((x): x is number => x != null && x > 0 && x < 500);
-  const rev    = company.revenueUsd;
-  const ebitda = company.ebitdaUsd;
-
-  type Method = { label: string; low: number; mid: number; high: number; basis: string; color: string };
-  const methods: Method[] = [];
-
-  if (evRevArr.length >= 2 && rev) {
-    methods.push({
-      label: "EV / Revenue", color: "#202020",
-      low:  pct(evRevArr, 25)! * rev,
-      mid:  median(evRevArr)!  * rev,
-      high: pct(evRevArr, 75)! * rev,
-      basis: `$${rev}M rev × ${pct(evRevArr,25)!.toFixed(1)}x–${pct(evRevArr,75)!.toFixed(1)}x`,
-    });
-  }
-  if (evEbArr.length >= 2 && ebitda && ebitda > 0) {
-    methods.push({
-      label: "EV / EBITDA", color: "#ea5c2b",
-      low:  pct(evEbArr, 25)! * ebitda,
-      mid:  median(evEbArr)!  * ebitda,
-      high: pct(evEbArr, 75)! * ebitda,
-      basis: `$${ebitda}M EBITDA × ${pct(evEbArr,25)!.toFixed(1)}x–${pct(evEbArr,75)!.toFixed(1)}x`,
-    });
-  }
-
-  if (!methods.length) {
-    return (
-      <div className="bg-paper rounded-[10px] border border-chalk p-8 text-center">
-        <IconDiamond size={32} className="text-chalk mx-auto mb-3" />
-        <p className="text-[13px] font-medium text-carbon">Not enough data for valuation</p>
-        <p className="text-[12px] text-slate mt-1">
-          Refresh market data and make sure {company.name} has Revenue / EBITDA configured
-        </p>
-      </div>
-    );
-  }
-
-  const allVals = methods.flatMap(m => [m.low, m.mid, m.high]);
-  const maxVal  = Math.max(...allVals) * 1.15;
-  const discLow  = Math.min(...methods.map(m => m.low))  * 0.725;
-  const discHigh = Math.max(...methods.map(m => m.high)) * 0.775;
-
-  return (
-    <div className="space-y-4">
-      {/* Football field */}
-      <div className="bg-paper rounded-[10px] border border-chalk p-5">
-        <div className="mb-5">
-          <p className="text-[15px] font-semibold text-carbon font-poly">Football field — {company.name}</p>
-          <p className="text-[11px] text-slate mt-0.5">Enterprise Value estimated applying multiples from the comparables set</p>
-        </div>
-        <div className="space-y-7">
-          {methods.map(m => {
-            const pLo = (m.low  / maxVal) * 100;
-            const pHi = (m.high / maxVal) * 100;
-            const pMd = (m.mid  / maxVal) * 100;
-            return (
-              <div key={m.label}>
-                <div className="flex items-baseline justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: m.color }} />
-                    <span className="text-[13px] font-semibold text-carbon">{m.label}</span>
-                    <span className="text-[10px] text-slate">{m.basis}</span>
-                  </div>
-                  <span className="text-[18px] font-bold text-carbon font-poly">{fmtB(m.mid)}</span>
-                </div>
-                <div className="relative h-9 bg-fog rounded-full overflow-hidden border border-chalk">
-                  <div className="absolute top-0 h-9 rounded-full"
-                    style={{ left: `${pLo}%`, width: `${pHi - pLo}%`, backgroundColor: m.color, opacity: 0.18 }} />
-                  <div className="absolute top-0 h-9 rounded-full border"
-                    style={{ left: `${pLo}%`, width: `${pHi - pLo}%`, borderColor: `${m.color}55` }} />
-                  <div className="absolute top-2 w-2 h-5 rounded-full"
-                    style={{ left: `${pMd - 0.5}%`, background: m.color }} />
-                </div>
-                <div className="flex justify-between text-[10px] mt-1.5">
-                  <span className="text-slate">P25: <span className="font-semibold text-carbon">{fmtB(m.low)}</span></span>
-                  <span className="font-semibold text-carbon">Median: {fmtB(m.mid)}</span>
-                  <span className="text-slate">P75: <span className="font-semibold text-carbon">{fmtB(m.high)}</span></span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Summary cards */}
-      <div className={`grid gap-3 ${methods.length === 2 ? "grid-cols-4" : "grid-cols-3"}`}>
-        {methods.map(m => (
-          <div key={m.label} className="bg-paper rounded-[10px] border border-chalk p-4 text-center">
-            <p className="text-[10px] text-slate mb-1">{m.label}</p>
-            <p className="text-[22px] font-bold text-carbon font-poly">{fmtB(m.mid)}</p>
-            <p className="text-[10px] text-slate mt-1">{fmtB(m.low)} – {fmtB(m.high)}</p>
-          </div>
-        ))}
-        <div className="bg-carbon rounded-[10px] p-4 text-center">
-          <p className="text-[10px] text-white/60 mb-1">Consolidated range</p>
-          <p className="text-[22px] font-bold text-white font-poly">
-            {fmtB(Math.min(...methods.map(m => m.low)))} – {fmtB(Math.max(...methods.map(m => m.high)))}
-          </p>
-          <p className="text-[10px] text-white/50 mt-1">{comps.filter(c=>c.lastRefreshed).length} peers with data</p>
-        </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-[10px] p-4 text-center">
-          <p className="text-[10px] text-amber-700 mb-1">With liquidity discount (~25%)</p>
-          <p className="text-[22px] font-bold text-amber-800 font-poly">
-            {fmtB(discLow)} – {fmtB(discHigh)}
-          </p>
-          <p className="text-[10px] text-amber-600 mt-1">Typical private company adjustment</p>
-        </div>
-      </div>
-
-      <div className="bg-fog rounded-[10px] border border-chalk p-3">
-        <p className="text-[10px] text-slate leading-relaxed">
-          ⚠️ <strong>Reference estimate.</strong> Based on market multiples from public comparables.
-          This does not constitute a formal valuation. Private companies typically carry a 20–35% liquidity discount
-          vs. public companies. A formal valuation requires DCF, precedent transactions, and financial due diligence.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
 // PEER SEARCH DRAWER
 // ══════════════════════════════════════════════════════════════════════════════

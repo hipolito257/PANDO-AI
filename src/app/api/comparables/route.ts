@@ -69,7 +69,7 @@ export async function PATCH(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, name, companyId, tickers, notes, aiDescriptions } = await req.json();
+  const { id, name, companyId, tickers, notes, aiDescriptions, valuation } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const update: Record<string, unknown> = {};
@@ -78,6 +78,17 @@ export async function PATCH(req: NextRequest) {
   if (tickers   !== undefined) update.tickers   = JSON.stringify(tickers);
   if (notes     !== undefined) update.notes     = notes;
   if (aiDescriptions !== undefined) update.aiDescriptions = JSON.stringify(aiDescriptions);
+
+  // Football-field configuration is saved on its own so a failure is reported, not swallowed.
+  if (valuation !== undefined) {
+    try {
+      await db.update(compSets).set({ valuation: JSON.stringify(valuation) }).where(eq(compSets.id, id));
+    } catch (err) {
+      console.error("[comparables PATCH valuation]", err);
+      return NextResponse.json({ error: "Could not save the valuation (is the CompSet.valuation column created?)" }, { status: 500 });
+    }
+    if (Object.keys(update).length === 0) return NextResponse.json({ ok: true });
+  }
 
   // Try with all fields; if aiDescriptions column missing, retry without it
   try {

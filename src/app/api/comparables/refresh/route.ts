@@ -65,6 +65,38 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null
   return null;
 }
 
+// ── Currency → USD ──────────────────────────────────────────────────────────
+// Yahoo reports market cap / EV in the trading currency and revenue / EBITDA /
+// FCF in the reporting currency (EUR, JPY, MXN…). Everything is stored in USD
+// so amounts are comparable across comps and with the private company.
+// Some exchanges quote in minor units (GBp pence, ZAc cents, ILA agorot).
+const MINOR_UNITS: Record<string, [string, number]> = { GBp: ["GBP", 100], GBX: ["GBP", 100], ZAc: ["ZAR", 100], ILA: ["ILS", 100] };
+const fxCache = new Map<string, number | null>();
+
+async function usdPerUnit(currency: string | null | undefined): Promise<number | null> {
+  if (!currency) return null;
+  const [code, divisor] = MINOR_UNITS[currency] ?? [currency.toUpperCase(), 1];
+  if (code === "USD") return 1 / divisor;
+  if (!fxCache.has(code)) {
+    let rate: number | null = null;
+    for (const host of ["query1", "query2"]) {
+      try {
+        const res = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${code}USD=X?range=5d&interval=1d`, {
+          headers: { "User-Agent": UA, Accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(8000),
+        });
+        if (!res.ok) continue;
+        const price = (await res.json())?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (typeof price === "number" && price > 0) { rate = price; break; }
+      } catch { /* try next host */ }
+    }
+    fxCache.set(code, rate);
+  }
+  const rate = fxCache.get(code);
+  return rate ? rate / divisor : null;
+}
+
+const toUsd = (v: number | null | undefined, fx: number | null) => (v == null ? null : fx == null ? null : v * fx);
+
 // ── Fetch one ticker from Yahoo Finance quoteSummary ─────────────────────────
 async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
   // Try both query hosts to work around occasional 401/429 from one host
@@ -75,7 +107,7 @@ async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
     try {
       const url =
         `https://${host}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}` +
-        `?modules=defaultKeyStatistics,financialData,summaryDetail,assetProfile` +
+        `?modules=defaultKeyStatistics,financialData,summaryDetail,assetProfile,price` +
         `&crumb=${encodeURIComponent(crumb)}`;
 
       const res = await fetch(url, {
@@ -102,18 +134,21 @@ async function fetchYahoo(ticker: string, crumb: string, cookie: string) {
 
       const rev    = fd.totalRevenue?.raw ?? null;
       const ebitda = fd.ebitda?.raw ?? null;
+      // Trading currency (market cap, EV) and reporting currency (financials) can differ.
+      const tradeFx  = await usdPerUnit(r.price?.currency ?? sd.currency);
+      const reportFx = await usdPerUnit(fd.financialCurrency ?? r.price?.currency ?? sd.currency);
 
       return {
-        marketCapUsd:    sd.marketCap?.raw ?? null,
-        evUsd:           ks.enterpriseValue?.raw ?? null,
-        revenueUsd:      rev,
-        ebitdaUsd:       ebitda,
+        marketCapUsd:    toUsd(sd.marketCap?.raw, tradeFx),
+        evUsd:           toUsd(ks.enterpriseValue?.raw, tradeFx),
+        revenueUsd:      toUsd(rev, reportFx),
+        ebitdaUsd:       toUsd(ebitda, reportFx),
         revenueGrowth:   fd.revenueGrowth?.raw ?? null,
         grossMargin:     fd.grossMargins?.raw ?? null,
         ebitdaMargin:    rev && ebitda ? ebitda / rev : (fd.ebitdaMargins?.raw ?? null),
         operatingMargin: fd.operatingMargins?.raw ?? null,
         netMargin:       fd.profitMargins?.raw ?? null,
-        fcfUsd:          fd.freeCashflow?.raw ?? null,
+        fcfUsd:          toUsd(fd.freeCashflow?.raw, reportFx),
         evRevenue:       ks.enterpriseToRevenue?.raw ?? null,
         evEbitda:        ks.enterpriseToEbitda?.raw ?? null,
         peRatio:         sd.trailingPE?.raw ?? ks.forwardPE?.raw ?? null,
