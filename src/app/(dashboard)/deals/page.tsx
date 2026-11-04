@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { fetchJson } from "@/lib/fetchJson";
 import { NewDealModal } from "@/components/deals/NewDealModal";
+import { StagesEditor } from "@/components/deals/StagesEditor";
 import { Avatar, DEAL_TYPE_LABEL, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
 
 type DealCard = {
@@ -30,6 +31,8 @@ export default function DealsPage() {
   const [type, setType] = useState("all");
   const [showNew, setShowNew] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [editStages, setEditStages] = useState(false);
+  const isAdmin = session?.user?.role === "admin";
 
   const load = useCallback(async () => {
     try {
@@ -78,6 +81,9 @@ export default function DealsPage() {
             <option value="all">All types</option>
             {Object.entries(DEAL_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
+          {isAdmin && (
+            <button onClick={() => setEditStages(true)} className="ml-auto text-[12px] text-slate hover:text-carbon">Edit stages</button>
+          )}
         </div>
 
         {state === "loading" ? (
@@ -161,6 +167,7 @@ export default function DealsPage() {
       </div>
 
       {showNew && <NewDealModal onClose={() => setShowNew(false)} />}
+      {editStages && <StagesEditor stages={stages} onClose={() => setEditStages(false)} onSaved={s => { setStages(s); setEditStages(false); }} />}
     </div>
   );
 }
