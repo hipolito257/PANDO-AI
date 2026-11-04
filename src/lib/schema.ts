@@ -457,3 +457,25 @@ export const availabilityUpdates = pgTable("AvailabilityUpdate", {
 export const availabilityUpdatesRelations = relations(availabilityUpdates, ({ one }) => ({
   user: one(users, { fields: [availabilityUpdates.userId], references: [users.id] }),
 }));
+
+// ── Background jobs ───────────────────────────────────────────────────────────
+// Long tasks (document extraction, deck builds, comps sync) run on the server
+// after the request returns; the browser and the jobs tray poll this table.
+
+export const jobs = pgTable("Job", {
+  id:          text("id").primaryKey(),
+  type:        text("type").notNull(),            // see src/lib/jobHandlers.ts
+  status:      text("status").notNull().default("queued"), // queued | running | done | error | cancelled
+  userId:      text("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId:   text("companyId").references(() => companies.id, { onDelete: "set null" }),
+  title:       text("title").notNull(),
+  progress:    integer("progress").notNull().default(0),   // 0–100
+  message:     text("message"),
+  input:       text("input").notNull().default("{}"),     // JSON
+  result:      text("result"),                            // JSON
+  error:       text("error"),
+  createdAt:   text("createdAt").notNull(),
+  startedAt:   text("startedAt"),
+  finishedAt:  text("finishedAt"),
+  heartbeatAt: text("heartbeatAt"),
+});

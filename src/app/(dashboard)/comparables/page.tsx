@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { startJob, waitForJob } from "@/lib/backgroundJobs";
 import { ValuationPanel } from "@/components/comparables/ValuationPanel";
 import { fetchJson } from "@/lib/fetchJson";
 import { Topbar } from "@/components/layout/Topbar";
@@ -196,20 +197,31 @@ function ComparablesPage() {
     let documents = 0;
     let failed: string | null = null;
     try {
-      for (let round = 0; round < 4 && !isCancelled(); round++) {
+      let needsJob = force;
+      if (!force) {
+        // Quick check (no document analysis): picks up comps of documents already analysed.
         const res = await fetch("/api/comparables/from-documents", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ companyId: cid, force: force && round === 0 }),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId: cid }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { failed = data.error ?? `HTTP ${res.status}`; break; }
-        documents = data.documents ?? documents;
+        if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+        documents = data.documents ?? 0;
         reports.push(...(data.reports ?? []));
         if ((data.reports ?? []).some((r: Report) => r.added.length) && !isCancelled()) loadCompSet(cid);
-        if (!data.pending) break;
+        needsJob = (data.pending ?? 0) > 0;
+      }
+      if (needsJob && !isCancelled()) {
+        // Documents that still need analysing (1–3 min each) run as a background job.
+        setDocSync({ running: true, lines: ["Analysing this company's documents for comparables in the background…"], tone: "info" });
+        const job = await startJob("sync_document_comps", { companyId: cid, force });
+        const finished = await waitForJob(job.id, j => !isCancelled() && setDocSync({ running: true, lines: [j.message ?? "Working…"], tone: "info" }));
+        const r = finished.result as { documents: number; reports: Report[] };
+        documents = r.documents;
+        reports.push(...r.reports);
+        if (!isCancelled()) loadCompSet(cid);
       }
     } catch (e) {
-      failed = e instanceof Error ? e.message : "network error";
+      if (!(e instanceof DOMException)) failed = e instanceof Error ? e.message : "network error";
     }
     if (isCancelled()) return;
     if (failed) { setDocSync({ running: false, lines: [`Could not check this company's documents for comparables: ${failed}`], tone: "error" }); return; }

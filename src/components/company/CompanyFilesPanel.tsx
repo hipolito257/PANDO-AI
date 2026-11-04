@@ -4,13 +4,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { fmtM } from "@/lib/utils";
 import type { ExtractionResult, ExtractedField, ExtractedFinancial } from "@/lib/companyFileExtract";
+import { startJob, waitForJob } from "@/lib/backgroundJobs";
 
 type Applied = { at: string; fields: number; years: number; founders: number };
 
 type CompanyFile = {
   id: string; companyId: string; filename: string; ext: string; sizeBytes: number;
   uploadedByName: string | null; createdAt: string | null;
-  extractionStatus: "none" | "done" | "error"; extraction: (ExtractionResult & { applied?: Applied }) | null;
+  extractionStatus: "none" | "running" | "done" | "error"; extraction: (ExtractionResult & { applied?: Applied }) | null;
   extractionError: string | null; extractionCostUsd: number | null; extractedAt: string | null;
 };
 
@@ -75,6 +76,7 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
   const [loading, setLoading]   = useState(true);
   const [uploading, setUploading] = useState<{ name: string; done: number; total: number } | null>(null);
   const [extracting, setExtracting] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Record<string, string>>({});
   const [error, setError]       = useState<string | null>(null);
   const [notice, setNotice]     = useState<string | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
@@ -91,6 +93,13 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
   }, [companyId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const anyRunning = files.some(f => f.extractionStatus === "running");
+  useEffect(() => {
+    if (!anyRunning || extracting) return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [anyRunning, extracting, load]);
 
   async function uploadOne(f: File) {
     const uploadId = crypto.randomUUID();
@@ -135,11 +144,14 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
     setError(null);
     setExtracting(file.id);
     try {
-      const res = await fetch(`/api/companies/${companyId}/files/${file.id}/extract`, { method: "POST" });
-      const data = await res.json().catch(() => ({ error: `Extraction failed (HTTP ${res.status})` }));
-      if (!res.ok) throw new Error(data.error ?? "Extraction failed");
+      // Runs on the server as a background job: leaving the page doesn't stop it,
+      // and the jobs tray reports when it's done.
+      const job = await startJob("extract_company_file", { companyId, fileId: file.id });
+      setFiles(prev => prev.map(f => (f.id === file.id ? { ...f, extractionStatus: "running" } : f)));
+      const finished = await waitForJob(job.id, j => setProgress(prev => ({ ...prev, [file.id]: j.message ?? "" })));
       await load();
-      const r = data.compsReport as { found: string[]; added: string[]; already: string[]; unresolved: string[] } | null;
+      const data = finished.result as { compsReport?: { found: string[]; added: string[]; already: string[]; unresolved: string[] } | null };
+      const r = data?.compsReport ?? null;
       if (r) {
         setNotice(r.found.length
           ? `Comparables in "${file.filename}": ${r.added.length} added to Comparables${r.added.length ? ` (${r.added.join(", ")})` : ""}${r.already.length ? `, ${r.already.length} already there` : ""}${r.unresolved.length ? `, not found on the stock market: ${r.unresolved.join(", ")}` : ""}.`
@@ -147,10 +159,11 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
       }
       setReviewId(file.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Extraction failed");
+      if (!(err instanceof DOMException)) setError(err instanceof Error ? err.message : "Extraction failed");
       await load();
     } finally {
       setExtracting(null);
+      setProgress(prev => { const next = { ...prev }; delete next[file.id]; return next; });
     }
   }
 
@@ -214,10 +227,10 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {extracting === f.id ? (
-                <span className="text-[11px] text-slate flex items-center gap-1.5">
-                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
-                  Reading document… long decks take 1–3 min
+              {extracting === f.id || f.extractionStatus === "running" ? (
+                <span className="text-[11px] text-slate flex items-center gap-1.5 max-w-[320px]">
+                  <svg className="animate-spin w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="10"/></svg>
+                  <span className="truncate">{progress[f.id] || "Analysing in the background… you can leave this page"}</span>
                 </span>
               ) : (
                 <>

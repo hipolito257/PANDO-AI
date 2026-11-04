@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ChatPanel } from "./ChatPanel";
+import { JobsTray } from "./JobsTray";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import {
@@ -181,6 +182,9 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
             </svg>
             <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-green-500 rounded-full" />
           </button>
+
+          {/* Background tasks */}
+          <JobsTray />
 
           {/* Notifications bell */}
           <div ref={bellRef} className="relative">

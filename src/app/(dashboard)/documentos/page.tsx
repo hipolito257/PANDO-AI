@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { startJob, waitForJob, cancelJob } from "@/lib/backgroundJobs";
 import {
   LayoutTemplate, FileText, Table2, File, ImageIcon,
   Paperclip, Sparkles, Target, Flag, Lock, FileCode, ChevronLeft,
@@ -854,6 +855,8 @@ export default function DocumentosPage() {
     });
   }
 
+  const buildJobRef = useRef<string | null>(null);
+
   interface PptxBuildOutcome {
     cancelled: boolean;
     url?: string;
@@ -895,80 +898,40 @@ export default function DocumentosPage() {
         blobUrls = await ensureContextBlobsUploaded();
       }
 
-      const fd = new FormData();
-      fd.append("templateId", selected.id);
-      if (companyId) fd.append("companyId", companyId);
-      if (companyId && companyFileIds) fd.append("companyFileIds", JSON.stringify(companyFileIds));
-      if (userPrompt.trim()) fd.append("userPrompt", userPrompt.trim());
-      if (plan) fd.append("approvedPlan", JSON.stringify(plan));
-      if (blobUrls.length) fd.append("blobUrls", JSON.stringify(blobUrls));
-
+      // The deck is built by a server background job: it keeps going if this
+      // page is closed, and the jobs tray offers the download when it's ready.
       try {
-        const res = await fetch("/api/documents/build", {
-          method: "POST",
-          body: fd,
-          signal: controller.signal,
+        const job = await startJob("deck_build", {
+          templateId: selected.id,
+          companyId: companyId || null,
+          companyFileIds: companyId ? companyFileIds : null,
+          userPrompt: userPrompt.trim(),
+          approvedPlan: plan,
+          blobUrls,
         });
-
-        if (!res.body) throw new Error("No response body");
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        const pptxChunks: string[] = [];
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const raw = line.slice(6).trim();
-            if (!raw) continue;
-            let event: { type: string; message?: string; current?: number; total?: number; index?: number; data?: string; filename?: string; slide_count?: number; warnings?: string[] };
-            try { event = JSON.parse(raw); } catch { continue; }
-
-            if (event.type === "progress") {
-              setBuildProgress({ message: event.message ?? "", current: event.current ?? 0, total: event.total ?? 0 });
-            } else if (event.type === "chunk") {
-              if (event.index !== undefined) pptxChunks[event.index] = event.data ?? "";
-            } else if (event.type === "qa_warnings") {
-              setQaWarnings(event.warnings ?? []);
-            } else if (event.type === "done") {
-              const base64 = pptxChunks.join("");
-              const mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-              const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-              const blob = new Blob([bytes], { type: mime });
-              const url = URL.createObjectURL(blob);
-              const dlFilename = event.filename!;
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = dlFilename;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              setTimeout(() => URL.revokeObjectURL(url), 60_000);
-              return { cancelled: false, url, filename: dlFilename };
-            } else if (event.type === "error") {
-              throw new Error(event.message ?? "Unknown error");
-            } else if (event.type === "cancelled") {
-              return { cancelled: true };
-            }
-          }
-        }
-        throw new Error("Stream ended unexpectedly");
+        buildJobRef.current = job.id;
+        const finished = await waitForJob(job.id, j => {
+          setBuildProgress({ message: j.message ?? "Working…", current: j.progress, total: 100 });
+        }, { signal: controller.signal });
+        const result = finished.result as { filename: string; warnings?: string[] };
+        setQaWarnings(result.warnings ?? []);
+        const url = `/api/jobs/${finished.id}/download`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return { cancelled: false, url, filename: result.filename };
       } catch (err: unknown) {
-        if ((err as Error).name === "AbortError") return { cancelled: true };
+        if (err instanceof DOMException) return { cancelled: true };
         throw err;
       }
     });
   }
 
   function handleCancelBuild() {
+    if (buildJobRef.current) cancelJob(buildJobRef.current);
     abortRef.current?.abort();
     setBuilding(false);
     setBuildProgress(null);
@@ -1752,22 +1715,12 @@ export default function DocumentosPage() {
                       </div>
                       {buildProgress.total > 0 && (
                         <div className="space-y-1.5">
-                          <div className="flex gap-1">
-                            {Array.from({ length: buildProgress.total }).map((_, idx) => (
-                              <div key={idx} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${
-                                idx < buildProgress.current
-                                  ? "bg-[#004F46]"
-                                  : idx === buildProgress.current
-                                  ? "bg-[#004F46]/50 animate-pulse"
-                                  : "bg-[#004F46]/15"
-                              }`} />
-                            ))}
+                          <div className="h-1.5 bg-[#004F46]/15 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-[#004F46] rounded-full transition-all duration-500"
+                              style={{ width: `${Math.max(3, Math.round((100 * buildProgress.current) / buildProgress.total))}%` }} />
                           </div>
                           <div className="text-[10px] text-slate">
-                            Step {buildProgress.current} of {buildProgress.total}
-                            {buildProgress.total - buildProgress.current > 0
-                              ? ` — ${buildProgress.total - buildProgress.current} remaining`
-                              : ""}
+                            {Math.round((100 * buildProgress.current) / buildProgress.total)}% · runs in the background: you can leave this page, the download appears in the tasks tray (top bar)
                           </div>
                         </div>
                       )}

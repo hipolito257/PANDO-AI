@@ -1,5 +1,5 @@
 // Prompting and plan conversion for template-cloning deck builds (used by
-// /api/documents/build). Kept out of the route file so it can be reused and tested.
+// deckBuild.ts). Kept separate so it can be reused and tested.
 import { usableSlides, catalogSlideText, type TemplateProfile, type GuideSlide } from "@/lib/pptxTemplates";
 
 // Charts the template doesn't have are drawn by pptx-service's element engine
