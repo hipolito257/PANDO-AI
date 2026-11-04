@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { userSettings, companies, compSets, publicComps, signals, notes } from "@/lib/schema";
 import { eq, desc } from "drizzle-orm";
 import { companyKnowledgeText } from "@/lib/companyContext";
+import { searchChunks } from "@/lib/docIndex";
+import { embeddingsAvailable } from "@/lib/embeddings";
 
 function fmtB(n: unknown): string {
   if (n == null) return "N/D";
@@ -103,7 +105,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Build context
-  const systemPrompt = await buildContext();
+  const [baseContext, passages] = await Promise.all([buildContext(), relevantPassages(message)]);
+  const systemPrompt = baseContext + passages;
 
   // Build message history
   const messages = [
@@ -173,4 +176,24 @@ export async function POST(req: NextRequest) {
       "Cache-Control": "no-cache",
     },
   });
+}
+
+// Passages from uploaded documents that match the question (semantic search).
+async function relevantPassages(question: string): Promise<string> {
+  if (!embeddingsAvailable()) return "";
+  try {
+    const hits = (await searchChunks(question, { limit: 8 })).filter(h => h.score > 0.25);
+    if (!hits.length) return "";
+    return `
+
+RELEVANT PASSAGES FROM UPLOADED DOCUMENTS (most relevant first):
+${hits.map(h =>
+      `--- ${h.companyName} · ${h.filename} · ${h.locator ?? ""}
+${h.text.slice(0, 1200)}`).join("\n")}
+
+When you use a passage, cite it as (document, slide/page).`;
+  } catch (err) {
+    console.error("[chat] document search failed", err);
+    return "";
+  }
 }

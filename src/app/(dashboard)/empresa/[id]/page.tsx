@@ -155,7 +155,8 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
 
         {/* Files + AI extraction */}
         <Card>
-          <SectionHeader title="Documents & sources" subtitle="Decks, models and reports about this company. They update its profile and comparables, and feed every document, deck and chat answer generated for it." className="mb-3" />
+          <SectionHeader title="Documents & sources" subtitle="Decks, models and reports about this company. They update its profile and comparables, and feed every document, deck and chat answer generated for it." className="mb-3"
+            action={<Link href={`/search?company=${company.id}`} className="text-[11px] font-medium text-forest hover:underline whitespace-nowrap">Search these documents →</Link>} />
           <CompanyFilesPanel
             companyId={company.id}
             current={Object.fromEntries(EXTRACTABLE_FIELDS.map((f) => [f, (company as Record<string, unknown>)[f] as string | number | null]))}

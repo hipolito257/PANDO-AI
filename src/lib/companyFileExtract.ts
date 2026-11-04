@@ -245,6 +245,48 @@ async function pptxBlocks(buffer: Buffer, notes: string[]): Promise<Block[]> {
   return blocks;
 }
 
+// Text only (no images) of each slide, for the document search index.
+export function pptxSlideTexts(buffer: Buffer): { locator: string; text: string }[] {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const PizZip = require("pizzip");
+  const zip = new PizZip(buffer);
+  return slidesInOrder(zip).map((slidePath, i) => {
+    const xml: string = zip.files[slidePath].asText();
+    const { tables, rest } = extractTables(xml);
+    const parts: string[] = [...drawingParagraphs(rest), ...tables];
+    for (const rel of relsOf(zip, slidePath)) {
+      const target = resolvePart(slidePath, rel.target);
+      const partXml: string | undefined = zip.files[target]?.asText();
+      if (!partXml) continue;
+      if (rel.type.endsWith("/chart")) parts.push(describeChart(partXml));
+      else if (rel.type.endsWith("/notesSlide")) {
+        const notes = drawingParagraphs(partXml).filter(t => !/^\d+$/.test(t));
+        if (notes.length) parts.push(`Speaker notes: ${notes.join(" ")}`);
+      }
+    }
+    return { locator: `Slide ${i + 1}`, text: parts.join("\n") };
+  });
+}
+
+// Rows of each worksheet as tab-separated text, for the document search index.
+export async function xlsxSheetTexts(buffer: Buffer): Promise<{ locator: string; text: string }[]> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ExcelJS = require("exceljs");
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const out: { locator: string; text: string }[] = [];
+  wb.eachSheet((sheet: any) => {
+    const rows: string[] = [];
+    sheet.eachRow({ includeEmpty: false }, (row: any, rowNumber: number) => {
+      const cells = (Array.isArray(row.values) ? row.values.slice(1) : []).map(cellToText);
+      while (cells.length && !cells[cells.length - 1]) cells.pop();
+      if (cells.some((c: string) => c)) rows.push(`R${rowNumber}\t${cells.join("\t")}`);
+    });
+    out.push({ locator: `Sheet '${sheet.name}'`, text: rows.join("\n") });
+  });
+  return out;
+}
+
 function cellToText(v: any): string {
   if (v === null || v === undefined) return "";
   if (v instanceof Date) return v.toISOString().slice(0, 10);

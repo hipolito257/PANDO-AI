@@ -4,12 +4,13 @@ interface CardProps {
   children: React.ReactNode;
   className?: string;
   padding?: "none" | "sm" | "md" | "lg";
+  id?: string;
 }
 
-export function Card({ children, className, padding = "md" }: CardProps) {
+export function Card({ children, className, padding = "md", id }: CardProps) {
   const pads = { none: "", sm: "p-4", md: "p-5", lg: "p-6" };
   return (
-    <div className={cn("bg-paper rounded-card shadow-card", pads[padding], className)}>
+    <div id={id} className={cn("bg-paper rounded-card shadow-card", pads[padding], className)}>
       {children}
     </div>
   );

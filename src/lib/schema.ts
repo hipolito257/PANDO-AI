@@ -1,5 +1,5 @@
 import {
-  pgTable, text, doublePrecision, integer, boolean, timestamp
+  pgTable, text, doublePrecision, integer, boolean, timestamp, vector
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 
@@ -431,7 +431,26 @@ export const companyFiles = pgTable("CompanyFile", {
   extractionError: text("extractionError"),
   extractionCostUsd: doublePrecision("extractionCostUsd"),
   extractedAt:    text("extractedAt"),
+  // Search index (see docIndex.ts): none | chunked | indexed | error
+  indexStatus:    text("indexStatus").notNull().default("none"),
+  indexError:     text("indexError"),
+  indexedAt:      text("indexedAt"),
+  chunkCount:     integer("chunkCount").notNull().default(0),
   createdAt:      text("createdAt").default(sql`now()`),
+});
+
+// Passages of company documents with their embeddings, for semantic search.
+// A chunk without an embedding is waiting to be indexed.
+export const docChunks = pgTable("DocChunk", {
+  id:        text("id").primaryKey(),
+  companyId: text("companyId").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  fileId:    text("fileId").notNull().references(() => companyFiles.id, { onDelete: "cascade" }),
+  position:  integer("position").notNull(),
+  locator:   text("locator"),            // "Slide 12", "Page 3", "Sheet 'P&L'"
+  text:      text("text").notNull(),
+  tokens:    integer("tokens").notNull().default(0),
+  embedding: vector("embedding", { dimensions: 1024 }),
+  createdAt: text("createdAt").notNull(),
 });
 
 export const companyFilesRelations = relations(companyFiles, ({ one }) => ({

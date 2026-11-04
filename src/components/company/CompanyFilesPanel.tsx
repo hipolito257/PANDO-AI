@@ -150,6 +150,8 @@ export function CompanyFilesPanel({ companyId, current, snapshots, founderNames 
       setFiles(prev => prev.map(f => (f.id === file.id ? { ...f, extractionStatus: "running" } : f)));
       const finished = await waitForJob(job.id, j => setProgress(prev => ({ ...prev, [file.id]: j.message ?? "" })));
       await load();
+      // Make the new text searchable (paced in the background; see /search).
+      startJob("index_documents", {}).catch(() => {});
       const data = finished.result as { compsReport?: { found: string[]; added: string[]; already: string[]; unresolved: string[] } | null };
       const r = data?.compsReport ?? null;
       if (r) {

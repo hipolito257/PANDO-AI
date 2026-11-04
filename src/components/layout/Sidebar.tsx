@@ -10,6 +10,7 @@ const NAV = [
   { href: "/",            label: "Dashboard"   },
   { href: "/radar",       label: "Radar"       },
   { href: "/deals",       label: "Deals"       },
+  { href: "/search",      label: "Search"      },
   { href: "/mandatos",    label: "Mandates"    },
   { href: "/comparables", label: "Comparables" },
   { href: "/exit",        label: "Exit"        },
@@ -24,6 +25,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   "/":            <IconDash />,
   "/radar":       <IconRadar />,
   "/deals":       <IconDeals />,
+  "/search":      <IconSearch />,
   "/mandatos":    <IconMandatos />,
   "/comparables": <IconComparables />,
   "/exit":        <IconExit />,
@@ -221,6 +223,15 @@ function IconConectores() {
     </svg>
   );
 }
+function IconSearch() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="6" cy="6" r="4.2" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M9.2 9.2L12.5 12.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IconDeals() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">

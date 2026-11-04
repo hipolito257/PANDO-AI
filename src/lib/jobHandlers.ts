@@ -1,13 +1,14 @@
 // The kinds of background job the app can start (POST /api/jobs { type, input }).
 // Each handler runs on the server after the request returns; see jobs.ts.
 import { put } from "@vercel/blob";
-import { and, eq } from "drizzle-orm";
-import { db, companies, companyFiles, userSettings } from "@/lib/db";
+import { and, eq, gt, inArray, ne } from "drizzle-orm";
+import { db, companies, companyFiles, jobs, userSettings } from "@/lib/db";
 import { decryptBuffer, encryptBuffer } from "@/lib/blobCrypto";
 import { extractCompanyData, EXTRACTABLE_FIELDS } from "@/lib/companyFileExtract";
 import { syncFileComps, syncCompanyDocumentComps } from "@/lib/companyDocComps";
 import { runDeckBuild, type DeckBuildInput } from "@/lib/deckBuild";
 import { JobCancelled, type JobContext } from "@/lib/jobs";
+import { chunkFile, embedPending, filesToChunk } from "@/lib/docIndex";
 
 const BLOB_STORE_ID = process.env.BLOBPUBLIC_STORE_ID ?? process.env.BLOB_STORE_ID ?? "";
 
@@ -47,6 +48,10 @@ export async function extractCompanyFile(input: ExtractInput, ctx: JobContext) {
       extractionCostUsd: result.usage?.costUsd ?? null, extractedAt: new Date().toISOString(),
     }).where(eq(companyFiles.id, fileId));
 
+    // Refresh its search passages (embedding happens in an index_documents job).
+    await ctx.progress("Preparing the document for search…", 85);
+    await chunkFile(fileId).catch(err => console.error("[extractCompanyFile] chunking failed", err));
+
     await ctx.progress("Adding comparables named in the document…", 90);
     let compsReport = null;
     try {
@@ -83,6 +88,41 @@ async function syncDocumentComps(input: CompsSyncInput, ctx: JobContext) {
     if (!r.pending) break;
   }
   return { companyId: input.companyId, documents, reports };
+}
+
+// ── Document search index ────────────────────────────────────────────────────
+export type IndexInput = { fileIds?: string[] };
+const INDEX_BUDGET_MS = 270_000; // the jobs route allows 300 s
+
+async function indexDocuments(input: IndexInput, ctx: JobContext) {
+  const started = Date.now();
+  const deadline = started + INDEX_BUDGET_MS;
+  // One indexer at a time: Voyage's free tier allows 3 requests a minute in total.
+  const other = await db.query.jobs.findFirst({
+    where: and(eq(jobs.type, "index_documents"), inArray(jobs.status, ["running"]), ne(jobs.id, ctx.jobId),
+      gt(jobs.heartbeatAt, new Date(Date.now() - 90_000).toISOString())),
+    columns: { id: true },
+  });
+  if (other) return { skipped: true, reason: "Another indexing job is already running" };
+
+  let chunked = 0;
+  const forced = input.fileIds?.length ? input.fileIds.map(id => ({ id })) : [];
+  const toChunk = [...forced, ...(await filesToChunk(60))];
+  for (let i = 0; i < toChunk.length; i++) {
+    if (await ctx.isCancelled()) throw new JobCancelled();
+    if (Date.now() > started + 90_000) break; // leave most of the time for embedding
+    await ctx.progress(`Reading documents (${i + 1}/${toChunk.length})…`, 5 + Math.round((i / toChunk.length) * 15));
+    chunked += (await chunkFile(toChunk[i].id)) > 0 ? 1 : 0;
+  }
+
+  const r = await embedPending({
+    deadline,
+    isCancelled: () => ctx.isCancelled(),
+    onProgress: async (done, pending) => ctx.progress(
+      `Indexed ${done} passage(s)${pending ? ` · ${pending} waiting (paced by the Voyage rate limit)` : ""}`,
+      20 + Math.round((done / Math.max(1, done + pending)) * 78)),
+  });
+  return { filesRead: chunked, embedded: r.embedded, pending: r.pending };
 }
 
 // ── Presentation build ───────────────────────────────────────────────────────
@@ -125,6 +165,11 @@ export const JOB_HANDLERS: Record<string, Handler> = {
     run: syncDocumentComps as Handler["run"],
     title: (async (i: CompsSyncInput) => `Comparables from documents: ${await companyName(i.companyId)}`) as Handler["title"],
     companyId: ((i: CompsSyncInput) => i.companyId) as Handler["companyId"],
+  },
+  index_documents: {
+    run: indexDocuments as Handler["run"],
+    title: (() => "Index documents for search") as Handler["title"],
+    companyId: (() => null) as Handler["companyId"],
   },
   deck_build: {
     run: buildDeck as Handler["run"],
