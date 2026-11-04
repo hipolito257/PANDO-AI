@@ -29,9 +29,12 @@ function createDb() {
     connectionString = raw.replace(/([?&])sslmode=[^&]*&?/, "$1").replace(/[?&]$/, "");
   }
 
+  // A local Postgres (development) has no TLS.
+  const local = /@(localhost|127\.0\.0\.1)[:/]/.test(raw);
+
   const pool = new Pool({
     connectionString,
-    ssl: { rejectUnauthorized: false },
+    ssl: local ? false : { rejectUnauthorized: false },
     max: 5,
     idleTimeoutMillis: 5_000,
     connectionTimeoutMillis: 8_000,
