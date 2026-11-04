@@ -9,6 +9,7 @@ import { signOut } from "next-auth/react";
 const NAV = [
   { href: "/",            label: "Dashboard"   },
   { href: "/radar",       label: "Radar"       },
+  { href: "/deals",       label: "Deals"       },
   { href: "/mandatos",    label: "Mandates"    },
   { href: "/comparables", label: "Comparables" },
   { href: "/exit",        label: "Exit"        },
@@ -22,6 +23,7 @@ const NAV = [
 const ICON_MAP: Record<string, React.ReactNode> = {
   "/":            <IconDash />,
   "/radar":       <IconRadar />,
+  "/deals":       <IconDeals />,
   "/mandatos":    <IconMandatos />,
   "/comparables": <IconComparables />,
   "/exit":        <IconExit />,
@@ -216,6 +218,15 @@ function IconConectores() {
       <circle cx="11" cy="11" r="2" stroke="currentColor" strokeWidth="1.2" />
       <line x1="5" y1="6" x2="9" y2="4" stroke="currentColor" strokeWidth="1" />
       <line x1="5" y1="8" x2="9" y2="10" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  );
+}
+function IconDeals() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y="2" width="3.4" height="10" rx="1" stroke="currentColor" strokeWidth="1.1" />
+      <rect x="5.3" y="2" width="3.4" height="7" rx="1" stroke="currentColor" strokeWidth="1.1" />
+      <rect x="9.6" y="2" width="3.4" height="4.5" rx="1" stroke="currentColor" strokeWidth="1.1" />
     </svg>
   );
 }

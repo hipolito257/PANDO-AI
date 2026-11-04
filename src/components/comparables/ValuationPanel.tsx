@@ -82,6 +82,68 @@ const num = (s: string): number | null => {
   return s.trim() === "" || !Number.isFinite(v) ? null : v;
 };
 
+// ── Computation ──────────────────────────────────────────────────────────────
+export function computeValuation(cfg: ValuationConfig, comps: ValComp[]) {
+  const metricById = (id: string) => cfg.metrics.find(m => m.id === id) ?? null;
+  const bridge = (ev: number | null) => (ev == null ? null : cfg.basis === "equity" ? ev - (cfg.debt ?? 0) + (cfg.cash ?? 0) : ev);
+  const withData = comps.filter(c => c.lastRefreshed);
+
+  const rows = cfg.methods.map(m => {
+    const metric = metricById(m.metricId);
+    let q1: number | null = null, med: number | null = null, q3: number | null = null, n = 0;
+    let used: string[] = [];
+    if (m.kind === "comps") {
+      const pool = withData.filter(c => !m.tickers || m.tickers.includes(c.ticker));
+      const vals = pool
+        .map(c => ({ t: c.ticker, v: c[m.multiple] }))
+        .filter((x): x is { t: string; v: number } => x.v != null && x.v > 0 && x.v <= MULTIPLES[m.multiple].max);
+      used = vals.map(x => x.t);
+      n = vals.length;
+      const arr = vals.map(x => x.v);
+      q1 = quantile(arr, 0.25); med = quantile(arr, 0.5); q3 = quantile(arr, 0.75);
+    } else {
+      q1 = m.manual.low; med = m.manual.mid; q3 = m.manual.high;
+    }
+    const mv = metric?.value ?? null;
+    const ev = (x: number | null) => (x != null && mv != null ? x * mv : null);
+    const lowEv = ev(q1), midEv = ev(med), highEv = ev(q3);
+    return { m, metric, n, used, q1, med, q3, lowEv, midEv, highEv, low: bridge(lowEv), mid: bridge(midEv), high: bridge(highEv) };
+  });
+
+  const oursMetric = metricById(cfg.ours.metricId)?.value ?? null;
+  const oursEv = cfg.ours.enabled
+    ? cfg.ours.mode === "value" ? cfg.ours.value
+      : cfg.ours.multiple != null && oursMetric != null ? cfg.ours.multiple * oursMetric : null
+    : null;
+  return {
+    rows,
+    oursEv,
+    ours: bridge(oursEv),
+    chartRows: rows.filter(r => r.m.enabled && r.low != null && r.high != null && r.mid != null),
+    unitLabel: `${cfg.currency} ${UNITS[cfg.unit]}`.trim(),
+    valueLabel: cfg.basis === "equity" ? "Equity value" : "Enterprise value",
+  };
+}
+
+/** Read-only football field (e.g. on a deal page); edited in Comparables › Valuation. */
+export function ValuationSummary({ config, comps }: { config: string | null; comps: ValComp[] }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  let cfg: ValuationConfig | null = null;
+  try { cfg = config ? JSON.parse(config) as ValuationConfig : null; } catch { cfg = null; }
+  if (!cfg) return null;
+  const v = computeValuation(cfg, comps);
+  if (!v.chartRows.length) return null;
+  return (
+    <div>
+      <p className="text-[11px] text-slate mb-2">{v.valueLabel}, {v.unitLabel}{v.ours != null && <> · {cfg.ours.label}: <strong className="text-carbon">{fmtVal(v.ours)}</strong></>}</p>
+      <FootballField svgRef={svgRef} rows={v.chartRows.map(r => ({
+        label: r.m.label, sub: `${r.metric?.label ?? ""}${r.m.kind === "comps" ? ` · ${r.n} comps` : ""}`,
+        low: r.low!, mid: r.mid!, high: r.high!, q1: r.q1, med: r.med, q3: r.q3,
+      }))} ours={v.ours} oursLabel={cfg.ours.label} />
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 export function ValuationPanel({ comps, company, compSetId, saved }: {
   comps: ValComp[]; company: ValCompany; compSetId: string | null; saved: string | null;
@@ -116,42 +178,8 @@ export function ValuationPanel({ comps, company, compSetId, saved }: {
   }, [cfg, compSetId]);
 
   const update = (patch: Partial<ValuationConfig>) => setCfg(c => ({ ...c, ...patch }));
-  const metricById = (id: string) => cfg.metrics.find(m => m.id === id) ?? null;
-  const bridge = (ev: number | null) => (ev == null ? null : cfg.basis === "equity" ? ev - (cfg.debt ?? 0) + (cfg.cash ?? 0) : ev);
   const withData = comps.filter(c => c.lastRefreshed);
-
-  // ── Computation ──
-  const rows = useMemo(() => cfg.methods.map(m => {
-    const metric = metricById(m.metricId);
-    let q1: number | null = null, med: number | null = null, q3: number | null = null, n = 0;
-    let used: string[] = [];
-    if (m.kind === "comps") {
-      const pool = withData.filter(c => !m.tickers || m.tickers.includes(c.ticker));
-      const vals = pool
-        .map(c => ({ t: c.ticker, v: c[m.multiple] }))
-        .filter((x): x is { t: string; v: number } => x.v != null && x.v > 0 && x.v <= MULTIPLES[m.multiple].max);
-      used = vals.map(x => x.t);
-      n = vals.length;
-      const arr = vals.map(x => x.v);
-      q1 = quantile(arr, 0.25); med = quantile(arr, 0.5); q3 = quantile(arr, 0.75);
-    } else {
-      q1 = m.manual.low; med = m.manual.mid; q3 = m.manual.high;
-    }
-    const mv = metric?.value ?? null;
-    const ev = (x: number | null) => (x != null && mv != null ? x * mv : null);
-    const lowEv = ev(q1), midEv = ev(med), highEv = ev(q3);
-    return { m, metric, n, used, q1, med, q3, lowEv, midEv, highEv, low: bridge(lowEv), mid: bridge(midEv), high: bridge(highEv) };
-  }), [cfg, withData]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const oursEv = cfg.ours.enabled
-    ? cfg.ours.mode === "value" ? cfg.ours.value
-      : cfg.ours.multiple != null && metricById(cfg.ours.metricId)?.value != null ? cfg.ours.multiple * metricById(cfg.ours.metricId)!.value! : null
-    : null;
-  const ours = bridge(oursEv);
-  const chartRows = rows.filter(r => r.m.enabled && r.low != null && r.high != null && r.mid != null);
-
-  const unitLabel = `${cfg.currency} ${UNITS[cfg.unit]}`.trim();
-  const valueLabel = cfg.basis === "equity" ? "Equity value" : "Enterprise value";
+  const { rows, oursEv, ours, chartRows, unitLabel, valueLabel } = useMemo(() => computeValuation(cfg, comps), [cfg, comps]);
 
   // ── Editing helpers ──
   const setMethod = (id: string, patch: Partial<Method>) => update({ methods: cfg.methods.map(m => (m.id === id ? { ...m, ...patch } : m)) });

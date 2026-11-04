@@ -479,3 +479,82 @@ export const jobs = pgTable("Job", {
   finishedAt:  text("finishedAt"),
   heartbeatAt: text("heartbeatAt"),
 });
+
+// ── Deals ─────────────────────────────────────────────────────────────────────
+// A deal is a project on one target company: its team (connected to Team
+// availability), stage, tasks and milestones. Documents, valuation and decks
+// come from the company.
+
+export const dealStages = pgTable("DealStage", {
+  key:      text("key").primaryKey(),             // e.g. "screening"
+  label:    text("label").notNull(),
+  position: integer("position").notNull(),
+  kind:     text("kind").notNull().default("open"), // open | won | lost
+});
+
+export const deals = pgTable("Deal", {
+  id:             text("id").primaryKey(),
+  companyId:      text("companyId").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  codeName:       text("codeName").notNull(),
+  type:           text("type").notNull().default("buy_side"), // buy_side | sell_side | minority | add_on
+  stage:          text("stage").notNull().default("sourcing"),
+  stageChangedAt: text("stageChangedAt"),
+  onHold:         boolean("onHold").notNull().default(false),
+  statusNote:     text("statusNote"),        // why it's on hold / dropped
+  leadUserId:     text("leadUserId").references(() => users.id, { onDelete: "set null" }),
+  dealSize:       doublePrecision("dealSize"),
+  currency:       text("currency").notNull().default("USD"),
+  description:    text("description"),
+  createdBy:      text("createdBy"),
+  createdAt:      text("createdAt").notNull(),
+  updatedAt:      text("updatedAt").notNull(),
+});
+
+export const dealMembers = pgTable("DealMember", {
+  id:         text("id").primaryKey(),
+  dealId:     text("dealId").notNull().references(() => deals.id, { onDelete: "cascade" }),
+  userId:     text("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role:       text("role").notNull().default("analyst"), // lead | partner | associate | analyst | advisor
+  allocation: integer("allocation").notNull().default(25), // % of the person's time
+  createdAt:  text("createdAt").notNull(),
+});
+
+export const dealTasks = pgTable("DealTask", {
+  id:          text("id").primaryKey(),
+  dealId:      text("dealId").notNull().references(() => deals.id, { onDelete: "cascade" }),
+  title:       text("title").notNull(),
+  assigneeId:  text("assigneeId").references(() => users.id, { onDelete: "set null" }),
+  dueDate:     text("dueDate"),               // YYYY-MM-DD
+  status:      text("status").notNull().default("todo"), // todo | doing | done
+  createdBy:   text("createdBy"),
+  createdAt:   text("createdAt").notNull(),
+  completedAt: text("completedAt"),
+});
+
+export const dealMilestones = pgTable("DealMilestone", {
+  id:        text("id").primaryKey(),
+  dealId:    text("dealId").notNull().references(() => deals.id, { onDelete: "cascade" }),
+  label:     text("label").notNull(),         // e.g. "LOI", "Final IC", "Signing"
+  date:      text("date"),                    // YYYY-MM-DD
+  done:      boolean("done").notNull().default(false),
+  createdAt: text("createdAt").notNull(),
+});
+
+export const dealsRelations = relations(deals, ({ one, many }) => ({
+  company:    one(companies, { fields: [deals.companyId], references: [companies.id] }),
+  lead:       one(users, { fields: [deals.leadUserId], references: [users.id] }),
+  members:    many(dealMembers),
+  tasks:      many(dealTasks),
+  milestones: many(dealMilestones),
+}));
+export const dealMembersRelations = relations(dealMembers, ({ one }) => ({
+  deal: one(deals, { fields: [dealMembers.dealId], references: [deals.id] }),
+  user: one(users, { fields: [dealMembers.userId], references: [users.id] }),
+}));
+export const dealTasksRelations = relations(dealTasks, ({ one }) => ({
+  deal:     one(deals, { fields: [dealTasks.dealId], references: [deals.id] }),
+  assignee: one(users, { fields: [dealTasks.assigneeId], references: [users.id] }),
+}));
+export const dealMilestonesRelations = relations(dealMilestones, ({ one }) => ({
+  deal: one(deals, { fields: [dealMilestones.dealId], references: [deals.id] }),
+}));

@@ -13,6 +13,8 @@ type Update = {
 type Member = {
   id: string; name: string; email: string; role: string; avatarUrl: string | null;
   current: Update | null;
+  deals?: { dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[];
+  allocation?: number;
 };
 
 const EMPTY_FORM = { level: "", comment: "", currentWork: "", availableFrom: "", interests: "" };
@@ -291,6 +293,25 @@ export default function EquipoPage() {
                     </div>
                     <LevelPill level={c?.level} />
                   </div>
+
+                  {(m.deals?.length ?? 0) > 0 && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between text-[10px] text-slate mb-1">
+                        <span>Active deals</span>
+                        <span className={(m.allocation ?? 0) > 100 ? "text-red-600 font-semibold" : "text-graphite font-medium"}>{m.allocation ?? 0}% allocated</span>
+                      </div>
+                      <div className="h-1 bg-fog rounded-full overflow-hidden mb-1.5">
+                        <div className={`h-1 rounded-full ${(m.allocation ?? 0) > 100 ? "bg-red-500" : "bg-forest"}`} style={{ width: `${Math.min(100, m.allocation ?? 0)}%` }} />
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {m.deals!.map(d => (
+                          <a key={d.dealId} href={`/deals/${d.dealId}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${d.onHold ? "border-amber-200 text-amber-700" : "border-chalk text-graphite hover:border-carbon"}`}>
+                            {d.codeName} · {d.allocation}%
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {c && (
                     <div className="mt-3 space-y-1.5 text-[12px]">

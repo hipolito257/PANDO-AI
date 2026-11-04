@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, users, availabilityUpdates, activityLog } from "@/lib/db";
+import { db, users, availabilityUpdates, activityLog, dealMembers } from "@/lib/db";
+import { listStages } from "@/lib/deals";
 import { auth } from "@/lib/auth";
 import { AVAILABILITY_VALUES, levelInfo } from "@/lib/availability";
 import { eq, desc } from "drizzle-orm";
@@ -38,8 +39,26 @@ export async function GET(req: NextRequest) {
     ]);
 
     const byUser = new Map(latest.map(u => [u.userId, u]));
+
+    // Staffing: the active deals each person is on, with their allocation
+    const [memberships, stages] = await Promise.all([
+      db.query.dealMembers.findMany({ with: { deal: { columns: { id: true, codeName: true, stage: true, onHold: true } } } }),
+      listStages(),
+    ]);
+    const openStages = new Set(stages.filter(s => s.kind === "open").map(s => s.key));
+    const dealsByUser = new Map<string, { dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[]>();
+    for (const m of memberships) {
+      if (!m.deal || !openStages.has(m.deal.stage)) continue;
+      const list = dealsByUser.get(m.userId) ?? [];
+      list.push({ dealId: m.deal.id, codeName: m.deal.codeName, role: m.role, allocation: m.allocation, onHold: m.deal.onHold });
+      dealsByUser.set(m.userId, list);
+    }
+
     const result = members
-      .map(m => ({ ...m, current: byUser.get(m.id) ?? null }))
+      .map(m => {
+        const ds = dealsByUser.get(m.id) ?? [];
+        return { ...m, current: byUser.get(m.id) ?? null, deals: ds, allocation: ds.filter(d => !d.onHold).reduce((n, d) => n + d.allocation, 0) };
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return NextResponse.json(result);

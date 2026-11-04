@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, jobs } from "@/lib/db";
 import { decryptBuffer } from "@/lib/blobCrypto";
@@ -11,8 +11,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const job = await db.query.jobs.findFirst({ where: and(eq(jobs.id, id), eq(jobs.userId, session.user.id)) });
-  if (!job || job.status !== "done" || !job.result) return NextResponse.json({ error: "Not available" }, { status: 404 });
+  const job = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
+  // Your own outputs, plus presentations made for a company (shared with the team on its deals).
+  const allowed = job && (job.userId === session.user.id || (job.type === "deck_build" && job.companyId));
+  if (!job || !allowed || job.status !== "done" || !job.result) return NextResponse.json({ error: "Not available" }, { status: 404 });
 
   const result = JSON.parse(job.result) as { blobUrl?: string; filename?: string; contentType?: string };
   if (!result.blobUrl) return NextResponse.json({ error: "This job has no file" }, { status: 404 });

@@ -19,6 +19,7 @@ import { WebsiteLink } from "@/components/ui/WebsiteLink";
 import { CompanyLogo } from "@/components/company/CompanyLogo";
 import { CompanyHeroBg } from "@/components/company/CompanyHeroBg";
 import { CompanyFilesPanel } from "@/components/company/CompanyFilesPanel";
+import { CompanyDealsCard } from "@/components/deals/CompanyDealsCard";
 import { EXTRACTABLE_FIELDS } from "@/lib/companyFileExtract";
 
 // Thin wrapper — keeps empresa page as a server component
@@ -135,6 +136,9 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
             </div>
           </Card>
         </div>
+
+        {/* Deals on this company */}
+        <CompanyDealsCard companyId={company.id} companyName={company.name} />
 
         {/* Files + AI extraction */}
         <Card>

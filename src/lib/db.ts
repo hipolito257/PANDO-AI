@@ -35,7 +35,7 @@ function createDb() {
   const pool = new Pool({
     connectionString,
     ssl: local ? false : { rejectUnauthorized: false },
-    max: 5,
+    max: Number(process.env.DB_POOL_MAX ?? 5),   // a local single-connection Postgres sets 1
     idleTimeoutMillis: 5_000,
     connectionTimeoutMillis: 8_000,
     statement_timeout: 10_000,   // server side: stops slow queries
