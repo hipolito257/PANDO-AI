@@ -61,12 +61,14 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
   const [aiFilling, setAiFilling] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiNote, setAiNote] = useState("");
+  // Fields the AI research filled and the user hasn't retyped since (saved as "AI web research" provenance).
+  const [aiKeys, setAiKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (open) {
       setActiveTab("basic");
       setError("");
-      setAiError(""); setAiNote("");
+      setAiError(""); setAiNote(""); setAiKeys(new Set());
       if (initial) {
         setForm({
           name:           initial.name          ?? "",
@@ -103,7 +105,10 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  const set = useCallback((k: keyof typeof EMPTY, v: unknown) => setForm(f => ({ ...f, [k]: v })), []);
+  const set = useCallback((k: keyof typeof EMPTY, v: unknown) => {
+    setForm(f => ({ ...f, [k]: v }));
+    setAiKeys(s => { if (!s.has(k)) return s; const n = new Set(s); n.delete(k); return n; });
+  }, []);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -112,7 +117,8 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
     setError("");
 
     const method = isEdit ? "PATCH" : "POST";
-    const body   = isEdit ? { id: initial!.id, ...form } : form;
+    const aiFilled = [...aiKeys];
+    const body   = isEdit ? { id: initial!.id, ...form, aiFilled } : { ...form, aiFilled };
 
     const res = await fetch("/api/companies", {
       method,
@@ -147,19 +153,21 @@ export function CompanyModal({ open, onClose, onSaved, initial }: Props) {
       if (!res.ok || !j.success) throw new Error(j.error ?? "Error researching company.");
 
       const { researchNotes, ...fields } = j.fields as Record<string, unknown> & { researchNotes?: string };
-      setForm(f => {
-        const next = { ...f } as Record<string, unknown>;
-        for (const key of Object.keys(fields)) {
-          if (!(key in EMPTY)) continue;
-          const current = (f as Record<string, unknown>)[key];
-          const isBlank = current === null || current === undefined || current === "";
-          const incoming = fields[key];
-          if (isBlank && incoming !== null && incoming !== undefined && incoming !== "") {
-            next[key] = incoming;
-          }
+      // Only blank fields are filled; computed from the current form so we know which keys the AI set.
+      const next = { ...form } as Record<string, unknown>;
+      const filled: string[] = [];
+      for (const key of Object.keys(fields)) {
+        if (!(key in EMPTY)) continue;
+        const current = next[key];
+        const isBlank = current === null || current === undefined || current === "";
+        const incoming = fields[key];
+        if (isBlank && incoming !== null && incoming !== undefined && incoming !== "") {
+          next[key] = incoming;
+          filled.push(key);
         }
-        return next as typeof f;
-      });
+      }
+      setForm(next as typeof form);
+      setAiKeys(s => new Set([...s, ...filled]));
       setAiNote(researchNotes || "AI filled in what it could find.");
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "AI research failed.");

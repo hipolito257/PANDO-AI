@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import * as schema from "@/lib/schema";
-import { or, eq } from "drizzle-orm";
+import { or, eq, and, desc, inArray } from "drizzle-orm";
 import { Topbar } from "@/components/layout/Topbar";
 import { Card, SectionHeader } from "@/components/ui/Card";
 import { Badge, SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
@@ -21,6 +21,8 @@ import { CompanyHeroBg } from "@/components/company/CompanyHeroBg";
 import { CompanyFilesPanel } from "@/components/company/CompanyFilesPanel";
 import { CompanyDealsCard } from "@/components/deals/CompanyDealsCard";
 import { EXTRACTABLE_FIELDS } from "@/lib/companyFileExtract";
+import { CompanyHistoryCard } from "@/components/company/CompanyHistoryCard";
+import { SourceTip, type FieldChangeRow } from "@/components/company/provenanceUi";
 
 // Thin wrapper — keeps empresa page as a server component
 function NotesSection({ companyId }: { companyId: string }) {
@@ -45,6 +47,15 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
   });
 
   if (!company) notFound();
+
+  // Latest recorded source of each headline number (for the hover cards).
+  const KPI_FIELDS = ["revenueUsd", "ebitdaUsd", "employees", "totalFunding"];
+  const kpiChanges = await db.select().from(schema.fieldChanges)
+    .where(and(eq(schema.fieldChanges.companyId, company.id), inArray(schema.fieldChanges.field, KPI_FIELDS)))
+    .orderBy(desc(schema.fieldChanges.createdAt))
+    .catch(() => [] as FieldChangeRow[]);
+  const latestSource = new Map<string, FieldChangeRow>();
+  for (const c of kpiChanges) if (!latestSource.has(c.field)) latestSource.set(c.field, c);
 
   const snapshots = (company.financialHistory ?? []).filter((s) => s.quarter === 0);
   const chartYears = snapshots.map((s) => s.year.toString());
@@ -98,16 +109,18 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
             </div>
             <div className="grid grid-cols-2 gap-3 text-center shrink-0 ml-8">
               {[
-                { label: "Revenue", value: fmtM(company.revenueUsd), sub: company.revenueGrowth != null ? `${fmtPct(company.revenueGrowth)} YoY` : null, positive: (company.revenueGrowth ?? 0) >= 0 },
-                { label: "EBITDA", value: fmtM(company.ebitdaUsd), sub: company.ebitdaMargin != null ? `${company.ebitdaMargin.toFixed(1)}% margin` : null, positive: (company.ebitdaMargin ?? 0) >= 0 },
-                { label: "Employees", value: company.employees?.toLocaleString("en-US") ?? "—", sub: company.employeeGrowth != null ? `${fmtPct(company.employeeGrowth)} YoY` : null, positive: (company.employeeGrowth ?? 0) >= 0 },
-                { label: "Total funding", value: fmtM(company.totalFunding), sub: company.fundingStage, positive: true },
-              ].map(({ label, value, sub, positive }) => (
-                <div key={label} className="bg-fog rounded-[8px] p-3">
-                  <div className="text-[18px] font-semibold text-carbon font-poly">{value}</div>
-                  <div className="text-[10px] text-slate">{label}</div>
-                  {sub && <div className={`text-[10px] font-medium ${positive ? "text-emerald-600" : "text-red-500"}`}>{sub}</div>}
-                </div>
+                { field: "revenueUsd", label: "Revenue", value: fmtM(company.revenueUsd), sub: company.revenueGrowth != null ? `${fmtPct(company.revenueGrowth)} YoY` : null, positive: (company.revenueGrowth ?? 0) >= 0 },
+                { field: "ebitdaUsd", label: "EBITDA", value: fmtM(company.ebitdaUsd), sub: company.ebitdaMargin != null ? `${company.ebitdaMargin.toFixed(1)}% margin` : null, positive: (company.ebitdaMargin ?? 0) >= 0 },
+                { field: "employees", label: "Employees", value: company.employees?.toLocaleString("en-US") ?? "—", sub: company.employeeGrowth != null ? `${fmtPct(company.employeeGrowth)} YoY` : null, positive: (company.employeeGrowth ?? 0) >= 0 },
+                { field: "totalFunding", label: "Total funding", value: fmtM(company.totalFunding), sub: company.fundingStage, positive: true },
+              ].map(({ field, label, value, sub, positive }) => (
+                <SourceTip key={label} change={latestSource.get(field)}>
+                  <div className="bg-fog rounded-[8px] p-3 cursor-help">
+                    <div className="text-[18px] font-semibold text-carbon font-poly">{value}</div>
+                    <div className="text-[10px] text-slate">{label}{latestSource.has(field) && <span className="ml-1 text-[8px] align-middle">ⓘ</span>}</div>
+                    {sub && <div className={`text-[10px] font-medium ${positive ? "text-emerald-600" : "text-red-500"}`}>{sub}</div>}
+                  </div>
+                </SourceTip>
               ))}
             </div>
           </div>
@@ -150,6 +163,9 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
             founderNames={company.founders.map((f) => f.name)}
           />
         </Card>
+
+        {/* Provenance */}
+        <CompanyHistoryCard companyId={company.id} />
 
         {/* Signals + Cap Table */}
         <div className="grid grid-cols-3 gap-4">

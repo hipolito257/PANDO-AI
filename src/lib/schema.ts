@@ -480,6 +480,27 @@ export const jobs = pgTable("Job", {
   heartbeatAt: text("heartbeatAt"),
 });
 
+// ── Provenance ────────────────────────────────────────────────────────────────
+// Append-only history of every change to a company data point: old and new
+// value, where it came from (document + slide/page, manual edit, AI web
+// research, radar) and who made it. Field keys are company columns
+// ("revenueUsd"), yearly financials ("fin:2024:revenueUsd") or "founder".
+
+export const fieldChanges = pgTable("FieldChange", {
+  id:          text("id").primaryKey(),
+  companyId:   text("companyId").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  field:       text("field").notNull(),
+  oldValue:    text("oldValue"),
+  newValue:    text("newValue"),
+  sourceType:  text("sourceType").notNull(),   // manual | document | ai_web | radar | import
+  sourceRef:   text("sourceRef"),              // e.g. CompanyFile id
+  sourceLabel: text("sourceLabel"),            // e.g. "deck.pdf · Slide 12"
+  note:        text("note"),
+  userId:      text("userId"),
+  userName:    text("userName"),
+  createdAt:   text("createdAt").notNull(),
+});
+
 // ── Deals ─────────────────────────────────────────────────────────────────────
 // A deal is a project on one target company: its team (connected to Team
 // availability), stage, tasks and milestones. Documents, valuation and decks

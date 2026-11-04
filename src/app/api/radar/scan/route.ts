@@ -1,3 +1,4 @@
+import { diffCompany, recordFieldChanges } from "@/lib/provenance";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { companies, signals, mandates } from "@/lib/schema";
@@ -247,7 +248,7 @@ RULES:
     const slug = comp.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     try {
       const newId = uid();
-      await db.insert(companies).values({
+      const row = {
         id: newId,
         name: comp.name,
         slug: `${slug}-${uid().slice(0, 4)}`,
@@ -263,7 +264,9 @@ RULES:
         updatedBy:  `PANDO Scan: ${filename}`,
         addedAt:    new Date().toISOString(),
         updatedAt:  new Date().toISOString(),
-      });
+      };
+      await db.insert(companies).values(row);
+      await recordFieldChanges(newId, { type: "radar", label: `Radar scan · ${filename}`, userId: session?.user?.id, userName: session?.user?.name }, diffCompany({}, row));
       existingNames.add(comp.name.toLowerCase());
       companyNameToId[comp.name.toLowerCase()] = newId;
       companiesAdded++;

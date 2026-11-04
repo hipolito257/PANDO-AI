@@ -5,6 +5,8 @@ import { EXTRACTABLE_FIELDS, NUMERIC_FIELDS } from "@/lib/companyFileExtract";
 import { SECTORS, COUNTRIES, STAGES, FUNDING_STAGES } from "@/lib/companyOptions";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { diffCompany, recordFieldChanges, type Change } from "@/lib/provenance";
+import type { ExtractionResult } from "@/lib/companyFileExtract";
 
 export const maxDuration = 60;
 
@@ -46,6 +48,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
+  // Where each value came from inside the document (slide, page, sheet), read
+  // from the stored extraction rather than trusting the client.
+  const file = body.fileId
+    ? await db.query.companyFiles.findFirst({ where: and(eq(companyFiles.id, body.fileId), eq(companyFiles.companyId, id)) })
+    : null;
+  let x: (ExtractionResult & { applied?: unknown }) | null = null;
+  try { x = file?.extraction ? JSON.parse(file.extraction) : null; } catch { x = null; }
+  const fileLabel = file?.filename ?? body.fileName ?? "Document";
+  const where = (src?: string) => (src?.trim() ? `${fileLabel} · ${src.trim()}` : fileLabel);
+  const fieldSrc = Object.fromEntries((x?.fields ?? []).map(f => [f.field, { label: where(f.source), note: f.originalText || f.note || undefined }]));
+  const yearSrc = new Map((x?.financials ?? []).map(f => [f.year, where(f.source)]));
+  const founderSrc = new Map((x?.founders ?? []).map(f => [f.name.trim().toLowerCase(), where(f.source)]));
+  const source = {
+    type: "document" as const, ref: file?.id ?? null, label: fileLabel,
+    userId: session.user.id, userName: session.user.name ?? session.user.email ?? "User",
+  };
+  const finChanges: Change[] = [];
+  const founderChanges: Change[] = [];
+
   try {
     if (Object.keys(update).length) {
       await db.update(companies)
@@ -67,6 +88,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const existing = await db.query.financialSnapshots.findFirst({
         where: and(eq(financialSnapshots.companyId, id), eq(financialSnapshots.year, year), eq(financialSnapshots.quarter, 0)),
       });
+      for (const [metric, v] of Object.entries(values)) {
+        if (v === null) continue;
+        finChanges.push({ field: `fin:${year}:${metric}`, oldValue: existing?.[metric as keyof typeof values] ?? null, newValue: v, label: yearSrc.get(year) });
+      }
       if (existing) {
         // Only overwrite what the document provided.
         const patch = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== null));
@@ -91,14 +116,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         });
         names.add(name.toLowerCase());
         foundersAdded++;
+        founderChanges.push({ field: "founder", oldValue: null, newValue: f.title?.trim() ? `${name} (${f.title.trim()})` : name, label: founderSrc.get(name.toLowerCase()) });
       }
     }
 
+    await recordFieldChanges(id, source, [...diffCompany(company as Record<string, unknown>, update, fieldSrc), ...finChanges, ...founderChanges]);
+
     // Remember what this document contributed, for the company's Documents section.
-    if (body.fileId) {
-      const file = await db.query.companyFiles.findFirst({ where: and(eq(companyFiles.id, body.fileId), eq(companyFiles.companyId, id)) });
-      if (file?.extraction) {
-        const x = JSON.parse(file.extraction);
+    if (file && x) {
+      {
         x.applied = {
           at: new Date().toISOString(),
           fields: Object.keys(update).length, years: snapshotsSaved, founders: foundersAdded,

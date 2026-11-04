@@ -1,3 +1,4 @@
+import { diffCompany, recordFieldChanges } from "@/lib/provenance";
 import { NextRequest, NextResponse } from "next/server";
 import { db, companies, signals, companyTags, mandateMatches, activityLog } from "@/lib/db";
 import { auth } from "@/lib/auth";
@@ -109,6 +110,10 @@ export async function POST(req: NextRequest) {
   await logActivity(userId, userName, "added_company", "company", id, name);
 
   const company = await db.query.companies.findFirst({ where: eq(companies.id, id) });
+  if (company) {
+    const aiFilled = new Set<string>(Array.isArray(body.aiFilled) ? body.aiFilled : []);
+    await recordEdit(id, {}, company as Record<string, unknown>, aiFilled, userId, userName);
+  }
   return NextResponse.json(company, { status: 201 });
 }
 
@@ -117,8 +122,9 @@ export async function PATCH(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { id, ...rest } = body;
+  const { id, aiFilled: aiRaw, ...rest } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const aiFilled = new Set<string>(Array.isArray(aiRaw) ? aiRaw.filter((k: unknown) => typeof k === "string") : []);
 
   const userId   = session.user.id;
   const userName = session.user.name ?? session.user.email ?? "User";
@@ -135,8 +141,10 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (Object.keys(update).length > 0) {
+    const before = await db.query.companies.findFirst({ where: eq(companies.id, id) });
     update.updatedBy = userName;
     await db.update(companies).set(update as any).where(eq(companies.id, id));
+    if (before) await recordEdit(id, before, update, aiFilled, userId, userName);
   }
 
   const company = await db.query.companies.findFirst({
@@ -147,4 +155,13 @@ export async function PATCH(req: NextRequest) {
   await logActivity(userId, userName, "edited_company", "company", id, company?.name ?? id);
 
   return NextResponse.json(company);
+}
+
+// Provenance for a modal save: values the user typed are "manual"; values the
+// "Complete with AI" research filled (and the user kept) are "ai_web".
+async function recordEdit(id: string, before: Record<string, unknown>, update: Record<string, unknown>, aiFilled: Set<string>, userId: string, userName: string) {
+  const changes = diffCompany(before, update);
+  const user = { userId, userName };
+  await recordFieldChanges(id, { type: "manual", ...user }, changes.filter(c => !aiFilled.has(c.field)));
+  await recordFieldChanges(id, { type: "ai_web", label: "AI web research", ...user }, changes.filter(c => aiFilled.has(c.field)));
 }

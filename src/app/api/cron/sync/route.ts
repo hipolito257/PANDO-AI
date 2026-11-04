@@ -1,3 +1,4 @@
+import { diffCompany, recordFieldChanges } from "@/lib/provenance";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { companies, newsItems, signals, cronLogs, firmSettings } from "@/lib/schema";
@@ -352,6 +353,10 @@ async function processCompany(
       if (stage) updates.fundingStage = stage;
       if (Object.keys(updates).length > 1) {
         await db.update(companies).set(updates as any).where(eq(companies.id, co.id));
+        const headline = allTitles.find(t => /ronda|levanta|millones/i.test(t));
+        await recordFieldChanges(co.id, { type: "radar", label: "Radar · news" }, diffCompany(co as Record<string, unknown>, updates, Object.fromEntries(
+          ["lastFundingAmt", "lastFundingDate", "totalFunding", "fundingStage"].map(f => [f, { note: headline ? `Headline: ${headline}` : undefined }]),
+        )));
       }
     }
 
@@ -612,7 +617,7 @@ export async function GET(req: NextRequest) {
         : comp.description;
 
       try {
-        await db.insert(companies).values({
+        const row = {
           id: uid(),
           name: comp.name,
           slug: slug + "-" + uid().slice(0, 4),
@@ -628,7 +633,9 @@ export async function GET(req: NextRequest) {
           updatedBy: "PANDO Auto-Discovery",
           addedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        });
+        };
+        await db.insert(companies).values(row);
+        await recordFieldChanges(row.id, { type: "radar", label: "Radar · auto-discovery" }, diffCompany({}, row));
         existingNames.add(comp.name.toLowerCase());
         existingSlugs.add(slug);
         discovered++;
