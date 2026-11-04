@@ -1,29 +1,48 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { attachDatabasePool } from "@vercel/functions";
 import * as schema from "./schema";
 
+// Why this setup: Vercel suspends a function instance between requests while
+// its pooled database sockets stay open; Supabase's pooler drops them in the
+// meantime, so the next query goes out on a dead socket and never returns,
+// leaving pages stuck on "Loading…". Three things prevent that:
+//  - attachDatabasePool keeps the instance alive until idle connections are
+//    closed, so they are released before it suspends;
+//  - query_timeout fails a query client-side when no answer arrives (a dead
+//    socket sends no error), and pool.query then discards that connection;
+//  - pg doesn't use named prepared statements, which Supabase's transaction
+//    pooler (port 6543) can't route reliably.
 function createDb() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error("DATABASE_URL is not set");
+  const raw = process.env.DATABASE_URL;
+  if (!raw) throw new Error("DATABASE_URL is not set");
 
-  const client = postgres(connectionString, {
-    max: 1,          // Serverless: max 1 connection per function instance
-    // DATABASE_URL is Supabase's transaction pooler (port 6543), which hands
-    // each query to whichever server connection is free. Prepared statements
-    // live on one server connection, so with them on, queries intermittently
-    // fail ("prepared statement ... does not exist") and pages load empty.
-    prepare: false,
-    idle_timeout: 20,
-    connect_timeout: 10,
-    ssl: "require",  // Supabase requires SSL
-    // With max:1, a slow/stuck query blocks every other query on this
-    // instance behind it with no upper bound — bound it so callers fail
-    // fast (and the frontend's error/finally paths kick in) instead of
-    // the request hanging indefinitely.
-    connection: { statement_timeout: 15000 },
+  // Supabase requires TLS; its certificate isn't in Node's trust store. An
+  // sslmode in the URL would make pg verify it, so TLS is configured here instead.
+  let connectionString: string;
+  try {
+    const url = new URL(raw);
+    url.searchParams.delete("sslmode");
+    connectionString = url.toString();
+  } catch {
+    // Unparseable as a URL (e.g. unescaped characters in the password): strip it textually.
+    connectionString = raw.replace(/([?&])sslmode=[^&]*&?/, "$1").replace(/[?&]$/, "");
+  }
+
+  const pool = new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+    max: 5,
+    idleTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 8_000,
+    statement_timeout: 10_000,   // server side: stops slow queries
+    query_timeout: 12_000,       // client side: gives up on a silent connection
+    keepAlive: true,
   });
+  pool.on("error", err => console.error("[db pool]", err.message));
+  attachDatabasePool(pool);
 
-  return drizzle(client, { schema });
+  return drizzle(pool, { schema });
 }
 
 // Type-safe singleton — preserves schema generics for db.query.*
