@@ -44,6 +44,16 @@ export default function DealsPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Changes read from the team's Google Sheet that are waiting for someone to approve them.
+  const [sheet, setSheet] = useState<{ connected: boolean; pending: number } | null>(null);
+  useEffect(() => {
+    fetch("/api/sheet-sync").then(r => (r.ok ? r.json() : null)).then(j => {
+      if (!j) return;
+      const pending = (j.pending?.changes ?? []).filter((c: { kind: string }) => c.kind === "update" || c.kind === "create").length;
+      setSheet({ connected: !!j.sync, pending });
+    }).catch(() => {});
+  }, []);
+
   const visible = useMemo(() => deals.filter(d =>
     (!mine || d.members.some(m => m.userId === myId) || d.leadUserId === myId) && (type === "all" || d.type === type),
   ), [deals, mine, type, myId]);
@@ -81,10 +91,20 @@ export default function DealsPage() {
             <option value="all">All types</option>
             {Object.entries(DEAL_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
+          <Link href="/deals/sync" className="ml-auto text-[12px] text-slate hover:text-carbon">
+            {sheet?.connected ? "Google Sheet sync" : "Sync from Google Sheet"}
+          </Link>
           {isAdmin && (
-            <button onClick={() => setEditStages(true)} className="ml-auto text-[12px] text-slate hover:text-carbon">Edit stages</button>
+            <button onClick={() => setEditStages(true)} className="text-[12px] text-slate hover:text-carbon">Edit stages</button>
           )}
         </div>
+
+        {!!sheet?.pending && (
+          <Link href="/deals/sync" className="flex items-center justify-between gap-3 bg-orange/10 border border-orange/30 rounded-[10px] px-4 py-2.5 hover:border-orange">
+            <span className="text-[13px] text-carbon"><b>{sheet.pending} change{sheet.pending === 1 ? "" : "s"}</b> from the Google Sheet waiting for review</span>
+            <span className="text-[12px] text-orange font-medium">Review →</span>
+          </Link>
+        )}
 
         {state === "loading" ? (
           <Card><p className="text-[13px] text-slate">Loading deals…</p></Card>

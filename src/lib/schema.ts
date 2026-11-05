@@ -545,6 +545,7 @@ export const deals = pgTable("Deal", {
   dealSize:       doublePrecision("dealSize"),
   currency:       text("currency").notNull().default("USD"),
   description:    text("description"),
+  sheetKey:       text("sheetKey"),          // row key in the synced Google Sheet
   createdBy:      text("createdBy"),
   createdAt:      text("createdAt").notNull(),
   updatedAt:      text("updatedAt").notNull(),
@@ -598,3 +599,44 @@ export const dealTasksRelations = relations(dealTasks, ({ one }) => ({
 export const dealMilestonesRelations = relations(dealMilestones, ({ one }) => ({
   deal: one(deals, { fields: [dealMilestones.dealId], references: [deals.id] }),
 }));
+
+// ── Google Sheet sync ─────────────────────────────────────────────────────────
+// The team's deal tracker in Google Drive is read on a schedule (or right after
+// an edit); each run proposes changes to the deals that someone approves.
+
+export const sheetSyncs = pgTable("SheetSync", {
+  id:         text("id").primaryKey(),
+  name:       text("name").notNull().default("Deal pipeline"),
+  sourceUrl:  text("sourceUrl").notNull(),
+  fileId:     text("fileId").notNull(),
+  fileKind:   text("fileKind").notNull().default("gsheet"), // gsheet | drive_file
+  sheetName:  text("sheetName"),
+  headerRow:  integer("headerRow").notNull().default(1),
+  columnMap:  text("columnMap").notNull().default("{}"),
+  stageMap:   text("stageMap").notNull().default("{}"),
+  sizeUnit:   doublePrecision("sizeUnit").notNull().default(1),
+  frequency:  text("frequency").notNull().default("weekly"), // manual | immediate | daily | weekly | monthly
+  hookToken:  text("hookToken").notNull(),
+  snapshot:   text("snapshot"),
+  lastRunAt:  text("lastRunAt"),
+  lastStatus: text("lastStatus"),
+  lastError:  text("lastError"),
+  createdBy:  text("createdBy"),
+  createdAt:  text("createdAt").notNull(),
+  updatedAt:  text("updatedAt").notNull(),
+});
+
+export const sheetSyncRuns = pgTable("SheetSyncRun", {
+  id:           text("id").primaryKey(),
+  syncId:       text("syncId").notNull().references(() => sheetSyncs.id, { onDelete: "cascade" }),
+  trigger:      text("trigger").notNull(),   // manual | cron | hook
+  status:       text("status").notNull(),    // pending_review | no_changes | applied | dismissed | superseded | error
+  rowCount:     integer("rowCount").notNull().default(0),
+  changes:      text("changes").notNull().default("[]"),
+  snapshot:     text("snapshot"),
+  error:        text("error"),
+  appliedCount: integer("appliedCount"),
+  resolvedBy:   text("resolvedBy"),
+  resolvedAt:   text("resolvedAt"),
+  createdAt:    text("createdAt").notNull(),
+});
