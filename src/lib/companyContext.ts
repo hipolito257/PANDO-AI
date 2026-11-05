@@ -6,6 +6,7 @@ import { db, companyFiles } from "@/lib/db";
 import { decryptBuffer } from "@/lib/blobCrypto";
 import { buildFileContent, type ExtractionResult } from "@/lib/companyFileExtract";
 import { desc, eq } from "drizzle-orm";
+import { companyValuationText } from "@/lib/valuationData";
 
 const DEFAULT_FILE_COUNT = 3;
 // Keeps attached company files well inside the 32 MB request cap, leaving room
@@ -60,8 +61,11 @@ export async function companyKnowledgeText(companyId: string | null, maxChars = 
     if (x.comparables?.length) lines.push(`Comparables named: ${x.comparables.map(c => `${c.name}${c.ticker ? ` (${c.ticker})` : ""}`).join(", ")}`);
     parts.push(lines.join("\n"));
   }
-  if (!parts.length) return "";
-  const text = `WHAT THE COMPANY'S DOCUMENTS SAY (extracted from ${parts.length} document(s) on its profile):\n\n${parts.join("\n\n")}`;
+  // The team's valuation (football field, comps, LBO) goes first: it's short and always relevant.
+  const valuation = await companyValuationText(companyId);
+  if (!parts.length) return valuation;
+  const docs = `WHAT THE COMPANY'S DOCUMENTS SAY (extracted from ${parts.length} document(s) on its profile):\n\n${parts.join("\n\n")}`;
+  const text = valuation ? `${valuation}\n\n${docs}` : docs;
   return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
 }
 

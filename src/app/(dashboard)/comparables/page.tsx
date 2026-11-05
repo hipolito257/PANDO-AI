@@ -258,6 +258,14 @@ function ComparablesPage() {
     setEditedCells({});
   };
 
+  // Deep link: /comparables?company=<id> (e.g. from the valuation workspace)
+  useEffect(() => {
+    if (selectedCompanyId || !companies.length) return;
+    const wanted = new URLSearchParams(window.location.search).get("company");
+    if (wanted && companies.some(c => c.id === wanted)) selectCompany(wanted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies]);
+
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) ?? null;
   const tickers: string[] = compSet ? JSON.parse(compSet.tickers) : [];
   const comps = compSet?.comps ?? [];
@@ -622,8 +630,13 @@ function ComparablesPage() {
                       historyData={historyData} loadingHist={loadingHist} />
                   )}
                   {activeTab === "valuacion" && mounted && (
+                    <>
+                    <a href={`/valuation/${selectedCompany.id}`} className="block text-[12px] bg-fog border border-chalk rounded-[8px] px-3 py-2 text-graphite hover:border-carbon">
+                      Open the <strong className="text-carbon">valuation workspace</strong> for {selectedCompany.name}: football field with LBO cases, IRR at our valuation and headline numbers →
+                    </a>
                     <ValuationPanel key={compSet?.id ?? selectedCompany.id} comps={comps} company={selectedCompany}
                       compSetId={compSet?.id ?? null} saved={compSet?.valuation ?? null} />
+                    </>
                   )}
                 </>
               )}

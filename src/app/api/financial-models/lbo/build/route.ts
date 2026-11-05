@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { buildLboWorkbook, LboAssumptions } from "@/lib/lboModelBuilder";
 import { dbErrorMessage } from "@/lib/utils";
+import { db, financialModels } from "@/lib/db";
+import { randomUUID } from "crypto";
 
 export const maxDuration = 60;
 
@@ -30,6 +32,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null) as {
       approvedPlan?: Partial<LboAssumptions>;
       companyName?: string;
+      companyId?: string;
     } | null;
 
     const plan = body?.approvedPlan;
@@ -74,8 +77,27 @@ export async function POST(req: NextRequest) {
     const safeCompanyName = companyName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, " ") || "Company";
     const filename = `${safeCompanyName} - LBO Model - ${new Date().toISOString().slice(0, 10)}.xlsx`;
 
+    // Keep the assumptions on the company so the valuation workspace can use them.
+    let modelId: string | null = null;
+    if (body?.companyId) {
+      try {
+        modelId = randomUUID();
+        const { sensitivityEntryMultiples: _e, sensitivityExitMultiples: _x, ...stored } = assumptions;
+        await db.insert(financialModels).values({
+          id: modelId, companyId: body.companyId, companyName, modelType: "lbo",
+          name: `LBO ${new Date().toISOString().slice(0, 10)} · ${entryMult}x entry`,
+          status: "built", assumptions: JSON.stringify(stored), contextFiles: "[]",
+          createdBy: session.user.id, updatedBy: session.user.id,
+        });
+      } catch (err) {
+        console.error("[lbo/build] could not save the model", err);
+        modelId = null;
+      }
+    }
+
     return NextResponse.json({
       success: true,
+      modelId,
       file: buffer.toString("base64"),
       filename,
     });

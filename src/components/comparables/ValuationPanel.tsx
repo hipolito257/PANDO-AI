@@ -6,69 +6,17 @@
 // a dashed line, in the format of PANDO's Excel football fields.
 import { useEffect, useMemo, useRef, useState } from "react";
 
-// ── Types ────────────────────────────────────────────────────────────────────
-export type ValComp = { ticker: string; name: string; evEbitda: number | null; evRevenue: number | null; lastRefreshed: string | null };
-export type ValCompany = { name: string; revenueUsd: number | null; ebitdaUsd: number | null };
+import {
+  computeValuation, defaultValuation, MULTIPLES, UNITS, uid, DEFAULT_LBO_IRRS,
+  type ValComp, type ValCompany, type ValuationConfig, type Method, type Multiple, type LboModelRef,
+} from "@/lib/valuation";
+export { computeValuation, defaultValuation };
+export type { ValComp, ValCompany, ValuationConfig, LboModelRef };
 
-type Multiple = "evEbitda" | "evRevenue";
-type Metric = { id: string; label: string; value: number | null };
-type Method = {
-  id: string; label: string; enabled: boolean;
-  kind: "comps" | "manual";
-  multiple: Multiple;
-  tickers: string[] | null;               // null = every comp with data
-  metricId: string;
-  manual: { low: number | null; mid: number | null; high: number | null };
-};
-export type ValuationConfig = {
-  version: 1;
-  currency: string; unit: "m" | "k" | "";
-  metrics: Metric[];
-  debt: number | null; cash: number | null;
-  basis: "ev" | "equity";
-  methods: Method[];
-  ours: { enabled: boolean; label: string; mode: "value" | "multiple"; value: number | null; multiple: number | null; metricId: string };
-};
-
-const MULTIPLES: Record<Multiple, { label: string; max: number }> = {
-  // Values outside (0, max] are not meaningful (negative EBITDA, distressed or hyper-growth outliers)
-  evEbitda:  { label: "EV / EBITDA", max: 60 },
-  evRevenue: { label: "EV / Revenue", max: 30 },
-};
 const CURRENCIES = ["USD", "MXN", "EUR", "COP", "BRL", "CLP", "PEN", "ARS", "GBP"];
-const UNITS: Record<ValuationConfig["unit"], string> = { m: "millions", k: "thousands", "": "units" };
 
 // PANDO football-field palette (from the Excel template)
 const C_LOW = "#42533E", C_MID = "#806E4B", C_HIGH = "#AFC1AB", C_LINE = "#404040", C_TEXT = "#0A231F", C_MUTED = "#6B7B6B";
-
-const uid = () => Math.random().toString(36).slice(2, 9);
-
-// Excel QUARTILE.INC (linear interpolation between order statistics)
-function quantile(arr: number[], p: number): number | null {
-  if (!arr.length) return null;
-  const s = [...arr].sort((a, b) => a - b);
-  const i = p * (s.length - 1);
-  const lo = Math.floor(i), hi = Math.ceil(i);
-  return s[lo] + (s[hi] - s[lo]) * (i - lo);
-}
-
-export function defaultValuation(company: ValCompany): ValuationConfig {
-  const rev = company.revenueUsd != null ? +(company.revenueUsd / 1e6).toFixed(1) : null;
-  const ebitda = company.ebitdaUsd != null ? +(company.ebitdaUsd / 1e6).toFixed(1) : null;
-  return {
-    version: 1, currency: "USD", unit: "m",
-    metrics: [
-      { id: "ebitda", label: "EBITDA LTM", value: ebitda },
-      { id: "revenue", label: "Revenue LTM", value: rev },
-    ],
-    debt: null, cash: null, basis: "ev",
-    methods: [
-      { id: uid(), label: "Trading comps (EV/EBITDA)", enabled: true, kind: "comps", multiple: "evEbitda", tickers: null, metricId: "ebitda", manual: { low: null, mid: null, high: null } },
-      { id: uid(), label: "Trading comps (EV/Revenue)", enabled: true, kind: "comps", multiple: "evRevenue", tickers: null, metricId: "revenue", manual: { low: null, mid: null, high: null } },
-    ],
-    ours: { enabled: false, label: "PANDO valuation", mode: "multiple", value: null, multiple: null, metricId: "ebitda" },
-  };
-}
 
 function fmtVal(v: number | null | undefined, digits = 0): string {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -82,56 +30,13 @@ const num = (s: string): number | null => {
   return s.trim() === "" || !Number.isFinite(v) ? null : v;
 };
 
-// ── Computation ──────────────────────────────────────────────────────────────
-export function computeValuation(cfg: ValuationConfig, comps: ValComp[]) {
-  const metricById = (id: string) => cfg.metrics.find(m => m.id === id) ?? null;
-  const bridge = (ev: number | null) => (ev == null ? null : cfg.basis === "equity" ? ev - (cfg.debt ?? 0) + (cfg.cash ?? 0) : ev);
-  const withData = comps.filter(c => c.lastRefreshed);
-
-  const rows = cfg.methods.map(m => {
-    const metric = metricById(m.metricId);
-    let q1: number | null = null, med: number | null = null, q3: number | null = null, n = 0;
-    let used: string[] = [];
-    if (m.kind === "comps") {
-      const pool = withData.filter(c => !m.tickers || m.tickers.includes(c.ticker));
-      const vals = pool
-        .map(c => ({ t: c.ticker, v: c[m.multiple] }))
-        .filter((x): x is { t: string; v: number } => x.v != null && x.v > 0 && x.v <= MULTIPLES[m.multiple].max);
-      used = vals.map(x => x.t);
-      n = vals.length;
-      const arr = vals.map(x => x.v);
-      q1 = quantile(arr, 0.25); med = quantile(arr, 0.5); q3 = quantile(arr, 0.75);
-    } else {
-      q1 = m.manual.low; med = m.manual.mid; q3 = m.manual.high;
-    }
-    const mv = metric?.value ?? null;
-    const ev = (x: number | null) => (x != null && mv != null ? x * mv : null);
-    const lowEv = ev(q1), midEv = ev(med), highEv = ev(q3);
-    return { m, metric, n, used, q1, med, q3, lowEv, midEv, highEv, low: bridge(lowEv), mid: bridge(midEv), high: bridge(highEv) };
-  });
-
-  const oursMetric = metricById(cfg.ours.metricId)?.value ?? null;
-  const oursEv = cfg.ours.enabled
-    ? cfg.ours.mode === "value" ? cfg.ours.value
-      : cfg.ours.multiple != null && oursMetric != null ? cfg.ours.multiple * oursMetric : null
-    : null;
-  return {
-    rows,
-    oursEv,
-    ours: bridge(oursEv),
-    chartRows: rows.filter(r => r.m.enabled && r.low != null && r.high != null && r.mid != null),
-    unitLabel: `${cfg.currency} ${UNITS[cfg.unit]}`.trim(),
-    valueLabel: cfg.basis === "equity" ? "Equity value" : "Enterprise value",
-  };
-}
-
 /** Read-only football field (e.g. on a deal page); edited in Comparables › Valuation. */
-export function ValuationSummary({ config, comps }: { config: string | null; comps: ValComp[] }) {
+export function ValuationSummary({ config, comps, lbos = [] }: { config: string | null; comps: ValComp[]; lbos?: LboModelRef[] }) {
   const svgRef = useRef<SVGSVGElement>(null);
   let cfg: ValuationConfig | null = null;
   try { cfg = config ? JSON.parse(config) as ValuationConfig : null; } catch { cfg = null; }
   if (!cfg) return null;
-  const v = computeValuation(cfg, comps);
+  const v = computeValuation(cfg, comps, lbos);
   if (!v.chartRows.length) return null;
   return (
     <div>
@@ -145,8 +50,9 @@ export function ValuationSummary({ config, comps }: { config: string | null; com
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
-export function ValuationPanel({ comps, company, compSetId, saved }: {
+export function ValuationPanel({ comps, company, compSetId, saved, lboModels = [], onChange }: {
   comps: ValComp[]; company: ValCompany; compSetId: string | null; saved: string | null;
+  lboModels?: LboModelRef[]; onChange?: (cfg: ValuationConfig) => void;
 }) {
   const [cfg, setCfg] = useState<ValuationConfig>(() => {
     try { if (saved) return JSON.parse(saved) as ValuationConfig; } catch { /* default */ }
@@ -177,17 +83,19 @@ export function ValuationPanel({ comps, company, compSetId, saved }: {
     return () => clearTimeout(t);
   }, [cfg, compSetId]);
 
+  useEffect(() => { onChange?.(cfg); }, [cfg, onChange]);
   const update = (patch: Partial<ValuationConfig>) => setCfg(c => ({ ...c, ...patch }));
   const withData = comps.filter(c => c.lastRefreshed);
-  const { rows, oursEv, ours, chartRows, unitLabel, valueLabel } = useMemo(() => computeValuation(cfg, comps), [cfg, comps]);
+  const { rows, oursEv, ours, chartRows, unitLabel, valueLabel } = useMemo(() => computeValuation(cfg, comps, lboModels), [cfg, comps, lboModels]);
 
   // ── Editing helpers ──
   const setMethod = (id: string, patch: Partial<Method>) => update({ methods: cfg.methods.map(m => (m.id === id ? { ...m, ...patch } : m)) });
   const addMethod = (kind: Method["kind"]) => update({
     methods: [...cfg.methods, {
       id: uid(), enabled: true, kind, multiple: "evEbitda", tickers: null, metricId: cfg.metrics[0]?.id ?? "",
-      label: kind === "manual" ? "Precedent transactions (EV/EBITDA)" : "Trading comps (EV/EBITDA)",
+      label: kind === "manual" ? "Precedent transactions (EV/EBITDA)" : kind === "lbo" ? "LBO (target IRR)" : "Trading comps (EV/EBITDA)",
       manual: { low: null, mid: null, high: null },
+      ...(kind === "lbo" ? { lbo: { modelId: lboModels[0]?.id ?? "", ...DEFAULT_LBO_IRRS } } : {}),
     }],
   });
   const moveMethod = (id: string, dir: -1 | 1) => {
@@ -354,6 +262,7 @@ export function ValuationPanel({ comps, company, compSetId, saved }: {
             <div className="flex gap-2">
               <button onClick={() => addMethod("comps")} className="text-[11px] font-medium border border-chalk rounded-[7px] px-2.5 py-1 hover:border-carbon">+ Comps multiple</button>
               <button onClick={() => addMethod("manual")} className="text-[11px] font-medium border border-chalk rounded-[7px] px-2.5 py-1 hover:border-carbon">+ Manual range</button>
+              {lboModels.length > 0 && <button onClick={() => addMethod("lbo")} className="text-[11px] font-medium border border-chalk rounded-[7px] px-2.5 py-1 hover:border-carbon">+ LBO</button>}
             </div>
           </div>
           {cfg.methods.map((m, i) => {
@@ -369,11 +278,37 @@ export function ValuationPanel({ comps, company, compSetId, saved }: {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
                   <label className="text-[10px] text-slate">Type
-                    <select value={m.kind} onChange={e => setMethod(m.id, { kind: e.target.value as Method["kind"] })} className={input}>
+                    <select value={m.kind} onChange={e => {
+                      const kind = e.target.value as Method["kind"];
+                      setMethod(m.id, { kind, ...(kind === "lbo" && !m.lbo ? { lbo: { modelId: lboModels[0]?.id ?? "", ...DEFAULT_LBO_IRRS } } : {}) });
+                    }} className={input}>
                       <option value="comps">Comps multiple</option>
                       <option value="manual">Manual range</option>
+                      {(lboModels.length > 0 || m.kind === "lbo") && <option value="lbo">LBO (target IRR)</option>}
                     </select>
                   </label>
+                  {m.kind === "lbo" ? (
+                    <>
+                      <label className="text-[10px] text-slate col-span-1">LBO model
+                        <select value={m.lbo?.modelId ?? ""} onChange={e => setMethod(m.id, { lbo: { ...DEFAULT_LBO_IRRS, ...m.lbo, modelId: e.target.value } })} className={input}>
+                          {!lboModels.some(x => x.id === m.lbo?.modelId) && <option value="">Select…</option>}
+                          {lboModels.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                        </select>
+                      </label>
+                      <div className="grid grid-cols-3 gap-1 col-span-2">
+                        {(["irrLow", "irrMid", "irrHigh"] as const).map(k => (
+                          <label key={k} className="text-[10px] text-slate">{k === "irrLow" ? "Low: IRR %" : k === "irrMid" ? "Mid: IRR %" : "High: IRR %"}
+                            <input defaultValue={Math.round(((m.lbo ?? DEFAULT_LBO_IRRS)[k]) * 100)}
+                              onBlur={e => { const v = num(e.target.value); if (v != null) setMethod(m.id, { lbo: { modelId: m.lbo?.modelId ?? "", ...DEFAULT_LBO_IRRS, ...m.lbo, [k]: v / 100 } }); }}
+                              className={numInput} />
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate col-span-2 md:col-span-4">
+                        The most we could pay and still earn each IRR, from the model&apos;s projections and debt.{r?.note ? ` ${r.note}.` : ""} Implied EV/EBITDA {fmtX(r?.q1)} · <strong>{fmtX(r?.med)}</strong> · {fmtX(r?.q3)}
+                      </p>
+                    </>
+                  ) : <>
                   <label className="text-[10px] text-slate">Multiple
                     <select value={m.multiple} onChange={e => setMethod(m.id, { multiple: e.target.value as Multiple })} className={input}>
                       {Object.entries(MULTIPLES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -398,6 +333,7 @@ export function ValuationPanel({ comps, company, compSetId, saved }: {
                       Q1 {fmtX(r?.q1)} · <strong>Med {fmtX(r?.med)}</strong> · Q3 {fmtX(r?.q3)}
                     </p>
                   )}
+                  </>}
                 </div>
                 {m.kind === "comps" && (
                   <div>

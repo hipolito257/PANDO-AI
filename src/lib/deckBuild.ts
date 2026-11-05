@@ -1,6 +1,7 @@
 // Builds a presentation from an approved plan by cloning the chosen template's
 // slides (see pptxTemplates.ts / pptxDeckFill.ts). Runs as a background job.
 import Anthropic from "@anthropic-ai/sdk";
+import { deckValuationData } from "@/lib/valuationData";
 import { db } from "@/lib/db";
 import { documentTemplates, companies, compSets, publicComps, userSettings, financialSnapshots } from "@/lib/schema";
 import { eq, inArray, desc } from "drizzle-orm";
@@ -84,6 +85,8 @@ Description: ${co.description ?? ""}`.trim();
 EV/Revenue median: ${median(evRev)?.toFixed(1) ?? "N/D"}x | EV/EBITDA median: ${median(evEbitda)?.toFixed(1) ?? "N/D"}x`;
         }
       }
+      const valuation = await deckValuationData(companyId);
+      if (valuation) peersData += `\n\nVALUATION (the team's football field, comps and LBO):\n${valuation}`;
     }
   }
 

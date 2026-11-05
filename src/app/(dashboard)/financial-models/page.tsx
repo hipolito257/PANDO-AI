@@ -260,6 +260,7 @@ export default function FinancialModelsPage() {
         body: JSON.stringify({
           approvedPlan: plan,
           companyName: selectedCompany?.name || companyNameFreeform || "Company",
+          companyId: companyId || undefined,
         }),
       });
       const j = await res.json().catch(() => ({})) as { file?: string; filename?: string; error?: string };

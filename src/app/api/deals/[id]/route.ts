@@ -5,6 +5,7 @@ import {
   db, deals, dealMembers, companyFiles, compSets, publicComps, jobs, activityLog, availabilityUpdates, users,
 } from "@/lib/db";
 import { DEAL_TYPES, listStages, logDeal, newId, nowIso } from "@/lib/deals";
+import { loadValuation } from "@/lib/valuationData";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -73,7 +74,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       stages,
       users: allUsers,
       files,
-      valuation: { compSetId: set?.id ?? null, config: set?.valuation ?? null, comps },
+      valuation: { compSetId: set?.id ?? null, config: set?.valuation ?? null, comps, lbos: (await loadValuation(deal.companyId).catch(() => null))?.lbos ?? [] },
       decks: deckJobs.map(j => {
         const r = j.result ? JSON.parse(j.result) as { filename?: string; slideCount?: number } : {};
         return { id: j.id, title: j.title, filename: r.filename ?? "presentation.pptx", slideCount: r.slideCount ?? null, createdAt: j.createdAt, by: names.get(j.userId) ?? "" };

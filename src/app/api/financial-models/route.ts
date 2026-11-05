@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { financialModels } from "@/lib/schema";
-import { desc } from "drizzle-orm";
+import { desc, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 // GET /api/financial-models — flat, shared library list (no company scoping)
@@ -10,7 +10,9 @@ export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Generated LBOs saved on a company ("built") live in its valuation workspace, not the library.
   const rows = await db.query.financialModels.findMany({
+    where: ne(financialModels.status, "built"),
     orderBy: [desc(financialModels.createdAt)],
   });
 

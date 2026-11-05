@@ -91,7 +91,12 @@ export function EmpresaActions({ company }: { company: CompanyData }) {
             </div>
           )}
         </div>
-        <Link href="/comparables">
+        <Link href={`/valuation/${company.id}`}>
+          <button className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors">
+            Valuation
+          </button>
+        </Link>
+        <Link href={`/comparables?company=${company.id}`}>
           <button className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors">
             View comps
           </button>

@@ -7,7 +7,7 @@ import { Card, SectionHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { fetchJson } from "@/lib/fetchJson";
 import { levelInfo } from "@/lib/availability";
-import { ValuationSummary, type ValComp } from "@/components/comparables/ValuationPanel";
+import { ValuationSummary, type ValComp, type LboModelRef } from "@/components/comparables/ValuationPanel";
 import { Avatar, CURRENCIES, DEAL_ROLE_LABEL, DEAL_TYPE_LABEL, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
 
 type Person = { id: string; name: string };
@@ -28,7 +28,7 @@ type DealData = {
   stages: Stage[];
   users: Person[];
   files: { id: string; filename: string; ext: string; sizeBytes: number; extractionStatus: string; uploadedByName: string | null; createdAt: string | null }[];
-  valuation: { compSetId: string | null; config: string | null; comps: ValComp[] };
+  valuation: { compSetId: string | null; config: string | null; comps: ValComp[]; lbos?: LboModelRef[] };
   decks: { id: string; title: string; filename: string; slideCount: number | null; createdAt: string; by: string }[];
   activity: { id: string; userName: string; action: string; entityName: string | null; detail: string | null; createdAt: string | null }[];
 };
@@ -225,10 +225,10 @@ export default function DealPage({ params }: { params: Promise<{ id: string }> }
 
             {/* ── Valuation ── */}
             <Card>
-              <SectionHeader title="Valuation" subtitle="Football field from Comparables"
-                action={<Link href="/comparables" className="text-[11px] font-medium text-forest hover:underline">Edit in Comparables</Link>} />
-              {valuation.config ? <ValuationSummary config={valuation.config} comps={valuation.comps} /> : null}
-              {!valuation.config && <p className="text-[12px] text-slate">No valuation yet. Set it up in Comparables › Valuation for {deal.company.name}.</p>}
+              <SectionHeader title="Valuation" subtitle="Football field: comps, LBO and our valuation"
+                action={<Link href={`/valuation/${deal.company.id}`} className="text-[11px] font-medium text-forest hover:underline">Open valuation workspace</Link>} />
+              {valuation.config ? <ValuationSummary config={valuation.config} comps={valuation.comps} lbos={valuation.lbos ?? []} /> : null}
+              {!valuation.config && <p className="text-[12px] text-slate">No valuation yet. Set it up in the valuation workspace for {deal.company.name}.</p>}
             </Card>
 
             {/* ── Decks & documents ── */}
