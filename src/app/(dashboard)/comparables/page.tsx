@@ -136,6 +136,10 @@ function ComparablesPage() {
   const [companiesState, setCompaniesState] = useState<"loading" | "ok" | "error">("loading");
 
   useEffect(() => { setMounted(true); }, []);
+  // On a phone the list overlays the page; keep it closed while a company is open.
+  useEffect(() => {
+    if (selectedCompanyId && window.innerWidth < 768) setListOpen(false);
+  }, [selectedCompanyId]);
 
   const loadCompanies = useCallback(async () => {
     setCompaniesState("loading");
@@ -253,6 +257,8 @@ function ComparablesPage() {
 
   const selectCompany = (id: string) => {
     setSelectedCompanyId(id);
+    // On a phone the list covers the page: get it out of the way once a company is picked.
+    if (typeof window !== "undefined" && window.innerWidth < 768) setListOpen(false);
     setActiveTab("datos");
     setEditedPrivate(new Set());
     setEditedCells({});
@@ -391,7 +397,7 @@ function ComparablesPage() {
       <div className="flex flex-1 min-h-0 relative">
         {/* Company list panel */}
         <aside
-          className="shrink-0 border-r border-chalk bg-paper overflow-hidden flex flex-col transition-[width] duration-300 ease-in-out"
+          className="shrink-0 border-r border-chalk bg-paper overflow-hidden flex flex-col transition-[width] duration-300 ease-in-out max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl"
           style={{ width: listOpen ? 220 : 0 }}
         >
         <div className="w-[220px] h-full flex flex-col overflow-hidden">
@@ -469,7 +475,7 @@ function ComparablesPage() {
         <button
           onClick={() => setListOpen(v => !v)}
           title={listOpen ? "Hide list" : "Show list"}
-          className="absolute top-4 z-20 w-5 h-8 bg-paper border border-chalk flex items-center justify-center text-slate hover:text-carbon hover:bg-fog transition-colors shadow-sm"
+          className="absolute top-4 z-20 max-md:z-40 w-5 h-8 bg-paper border border-chalk flex items-center justify-center text-slate hover:text-carbon hover:bg-fog transition-colors shadow-sm"
           style={{
             left: listOpen ? 212 : 0,
             borderRadius: "0 6px 6px 0",
@@ -1161,7 +1167,7 @@ function MetricsTable({
         <table className="w-full">
           <thead>
             <tr className="text-[9px] text-slate uppercase tracking-wide border-b border-chalk bg-fog/40">
-              <th className="px-3 py-2.5 text-left font-semibold sticky left-0 bg-fog/40">Company</th>
+              <th className="px-3 py-2.5 text-left font-semibold sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(10,35,31,0.18)] max-w-[150px] md:max-w-none bg-[#F8F9F7]">Company</th>
               {cols.map(c => (
                 <th key={c.key} className={`px-3 py-2.5 text-right font-semibold whitespace-nowrap ${isMultiple(c.key) ? "bg-carbon/5" : isR40(c.key) ? "bg-blue-50/60" : ""}`}>
                   {c.label}
@@ -1172,14 +1178,14 @@ function MetricsTable({
           <tbody className="divide-y divide-chalk">
             {/* Private company row */}
             <tr className="bg-orange/5 border-b-2 border-orange/20">
-              <td className="px-3 py-2.5 sticky left-0 bg-orange/5">
+              <td className="px-3 py-2.5 sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(10,35,31,0.18)] max-w-[150px] md:max-w-none bg-[#F2F6F5]">
                 <div className="flex items-center gap-2">
                   <CompanyLogo name={company.name} website={company.website} size="sm" />
-                  <div>
-                    <p className="text-[12px] font-semibold text-carbon">{company.name}</p>
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-semibold text-carbon truncate">{company.name}</p>
                     <div className="flex items-center gap-1.5">
-                      <p className="text-[9px] text-orange font-medium">TARGET PRIVADA</p>
-                      <WebsiteLink url={company.website} className="text-[9px]" />
+                      <p className="text-[9px] text-orange font-medium whitespace-nowrap">TARGET PRIVADA</p>
+                      <span className="hidden md:inline-flex"><WebsiteLink url={company.website} className="text-[9px]" /></span>
                     </div>
                   </div>
                 </div>
@@ -1215,12 +1221,12 @@ function MetricsTable({
             </tr>
             {comps.map(comp => (
               <tr key={comp.ticker} className="hover:bg-fog/40 transition-colors">
-                <td className="px-3 py-2.5 sticky left-0 bg-paper">
+                <td className="px-3 py-2.5 sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(10,35,31,0.18)] max-w-[150px] md:max-w-none bg-paper">
                   <div className="flex items-center gap-2">
                     <CompanyLogo name={comp.name} website={comp.website} size="sm" />
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <p className="text-[12px] font-medium text-carbon">{comp.name}</p>
+                        <p className="text-[12px] font-medium text-carbon truncate">{comp.name}</p>
                         {refreshErrors[comp.ticker] && (
                           <span className="text-[9px] text-red-500 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded font-medium" title={refreshErrors[comp.ticker]}>
                             {refreshErrors[comp.ticker] === "ticker no encontrado" ? "not found" :
@@ -1232,8 +1238,8 @@ function MetricsTable({
                       </div>
                       <div className="flex items-center gap-2">
                         <a href={`https://finance.yahoo.com/quote/${comp.ticker}`} target="_blank" rel="noopener noreferrer"
-                          className="text-[9px] font-mono text-slate hover:text-orange">{comp.ticker} · {comp.exchange ?? ""}</a>
-                        <WebsiteLink url={comp.website} className="text-[9px]" />
+                          className="text-[9px] font-mono text-slate hover:text-orange truncate">{comp.ticker}<span className="hidden md:inline"> · {comp.exchange ?? ""}</span></a>
+                        <span className="hidden md:inline-flex"><WebsiteLink url={comp.website} className="text-[9px]" /></span>
                       </div>
                     </div>
                   </div>
@@ -1272,7 +1278,7 @@ function MetricsTable({
           {hasData && (
             <tfoot>
               <tr className="border-t-2 border-carbon/20 bg-fog/60 text-[11px] font-semibold">
-                <td className="px-3 py-2.5 text-carbon sticky left-0 bg-fog/60">Set Median</td>
+                <td className="px-3 py-2.5 text-carbon sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(10,35,31,0.18)] max-w-[150px] md:max-w-none bg-[#F4F6F3]">Set Median</td>
                 {cols.map(c => (
                   <td key={c.key} className={`px-3 py-2.5 text-right ${isMultiple(c.key) ? "bg-carbon/3 text-carbon" : isR40(c.key) ? "bg-blue-50/60 text-blue-700" : "text-carbon"}`}>
                     {medianVal(c.key)}
