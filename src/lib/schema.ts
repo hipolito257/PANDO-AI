@@ -208,6 +208,8 @@ export const firmSettings = pgTable("FirmSettings", {
   irlTemplateUrl:         text("irlTemplateUrl"),
   irlTemplateName:        text("irlTemplateName"),
   cronEnabled:            boolean("cronEnabled").notNull().default(true),
+  vapidPublicKey:         text("vapidPublicKey"),   // Web Push keys, generated on first use (src/lib/push.ts)
+  vapidPrivateKey:        text("vapidPrivateKey"),  // encrypted with blobCrypto
   updatedAt:              text("updatedAt").default(sql`now()`),
   updatedBy:              text("updatedBy"),
 });

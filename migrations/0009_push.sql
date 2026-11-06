@@ -14,3 +14,7 @@ ALTER TABLE "PushSubscription" ENABLE ROW LEVEL SECURITY;
 
 -- Which kinds of notifications each person wants (JSON: { sheet, tasks, deals, radar }).
 ALTER TABLE "UserSettings" ADD COLUMN IF NOT EXISTS "pushPrefs" text;
+
+-- The platform's own Web Push keys, generated on first use (private key encrypted).
+ALTER TABLE "FirmSettings" ADD COLUMN IF NOT EXISTS "vapidPublicKey" text;
+ALTER TABLE "FirmSettings" ADD COLUMN IF NOT EXISTS "vapidPrivateKey" text;

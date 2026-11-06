@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { auth } from "@/lib/auth";
 import { db, pushSubscriptions, userSettings } from "@/lib/db";
-import { PUSH_KINDS, notify, parsePrefs, pushConfigured, savePrefs, vapidPublicKey, type PushKind } from "@/lib/push";
+import { PUSH_KINDS, notify, parsePrefs, savePrefs, vapidKeys, type PushKind } from "@/lib/push";
 
 // GET — the public key, this person's devices and which notifications they want
 export async function GET() {
@@ -14,7 +14,8 @@ export async function GET() {
       .from(pushSubscriptions).where(eq(pushSubscriptions.userId, session.user.id)),
     db.query.userSettings.findFirst({ where: eq(userSettings.userId, session.user.id), columns: { pushPrefs: true } }),
   ]);
-  return NextResponse.json({ configured: pushConfigured(), publicKey: vapidPublicKey(), devices: subs, prefs: parsePrefs(setting?.pushPrefs), kinds: PUSH_KINDS });
+  const keys = await vapidKeys();
+  return NextResponse.json({ configured: !!keys, publicKey: keys?.publicKey ?? null, devices: subs, prefs: parsePrefs(setting?.pushPrefs), kinds: PUSH_KINDS });
 }
 
 // POST { subscription, device } — turn notifications on for this device
