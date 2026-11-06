@@ -5,7 +5,6 @@ import { userSettings, companies, compSets, publicComps, signals, notes } from "
 import { eq, desc } from "drizzle-orm";
 import { companyKnowledgeText } from "@/lib/companyContext";
 import { searchChunks } from "@/lib/docIndex";
-import { embeddingsAvailable } from "@/lib/embeddings";
 
 function fmtB(n: unknown): string {
   if (n == null) return "N/D";
@@ -178,11 +177,10 @@ export async function POST(req: NextRequest) {
   });
 }
 
-// Passages from uploaded documents that match the question (semantic search).
+// Passages from uploaded documents that match the question (full-text search on its words).
 async function relevantPassages(question: string): Promise<string> {
-  if (!embeddingsAvailable()) return "";
   try {
-    const hits = (await searchChunks(question, { limit: 8 })).filter(h => h.score > 0.25);
+    const hits = (await searchChunks(question, { limit: 8 })).filter(h => h.score > 0.2);
     if (!hits.length) return "";
     return `
 

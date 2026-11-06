@@ -1,5 +1,5 @@
 "use client";
-// Semantic search across every company document, with an AI answer that cites its sources.
+// Search across every company document, with an AI answer that cites its sources.
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { startJob } from "@/lib/backgroundJobs";
 
 type Status = {
-  files: number; indexed: number; waiting: number; errors: number; pendingPassages: number; available: boolean;
+  files: number; indexed: number; waiting: number; errors: number;
   job: { id: string; message: string | null; progress: number } | null;
   companies: { id: string; name: string; files: number }[];
 };
@@ -55,8 +55,8 @@ function SearchInner() {
 
   // Documents waiting and nobody indexing them: start once per visit.
   useEffect(() => {
-    if (!status || autoStarted.current || !status.available) return;
-    if (!status.job && (status.waiting > 0 || status.pendingPassages > 0)) {
+    if (!status || autoStarted.current) return;
+    if (!status.job && status.waiting > 0) {
       autoStarted.current = true;
       startIndexing();
     }
@@ -145,7 +145,7 @@ function SearchInner() {
                         </p>
                         <Link href={`/empresa/${h.companyId}`} className="text-[11px] text-forest hover:underline">{h.companyName}</Link>
                       </div>
-                      <span className="text-[10px] text-slate shrink-0" title="Similarity">{Math.round(h.score * 100)}%</span>
+                      <span className="text-[10px] text-slate shrink-0" title="Relevance (vs. the best match)">{Math.round(h.score * 100)}%</span>
                     </div>
                     <p className="text-[12px] text-graphite leading-relaxed whitespace-pre-line line-clamp-6">{h.text}</p>
                   </Card>
@@ -161,14 +161,13 @@ function SearchInner() {
 
 function IndexBadge({ status, onIndex }: { status: Status | null; onIndex: () => void }) {
   if (!status) return null;
-  if (!status.available) return <span className="ml-auto text-[11px] text-red-600">Search isn&apos;t configured (VOYAGE_API_KEY missing)</span>;
   const label = `${status.indexed} of ${status.files} document${status.files === 1 ? "" : "s"} searchable`;
   return (
     <span className="ml-auto text-[11px] text-slate flex items-center gap-2">
       {label}
       {status.job ? (
         <span className="text-graphite">· {status.job.message ?? "Indexing…"}</span>
-      ) : status.waiting > 0 || status.pendingPassages > 0 ? (
+      ) : status.waiting > 0 ? (
         <button type="button" onClick={onIndex} className="font-medium text-forest hover:underline">Index now</button>
       ) : null}
       {status.errors > 0 && <span className="text-red-600">· {status.errors} couldn&apos;t be read</span>}

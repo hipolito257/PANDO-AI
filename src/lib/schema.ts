@@ -1,7 +1,9 @@
 import {
-  pgTable, text, doublePrecision, integer, boolean, timestamp, vector
+  pgTable, text, doublePrecision, integer, boolean, timestamp, customType
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
+
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -439,8 +441,7 @@ export const companyFiles = pgTable("CompanyFile", {
   createdAt:      text("createdAt").default(sql`now()`),
 });
 
-// Passages of company documents with their embeddings, for semantic search.
-// A chunk without an embedding is waiting to be indexed.
+// Passages of company documents, indexed by Postgres full-text search.
 export const docChunks = pgTable("DocChunk", {
   id:        text("id").primaryKey(),
   companyId: text("companyId").notNull().references(() => companies.id, { onDelete: "cascade" }),
@@ -449,7 +450,8 @@ export const docChunks = pgTable("DocChunk", {
   locator:   text("locator"),            // "Slide 12", "Page 3", "Sheet 'P&L'"
   text:      text("text").notNull(),
   tokens:    integer("tokens").notNull().default(0),
-  embedding: vector("embedding", { dimensions: 1024 }),
+  // Full-text index of the passage, computed by Postgres (see migration 0007).
+  tsv:       tsvector("tsv").generatedAlwaysAs(sql`to_tsvector('spanish'::regconfig, translate(lower("text"), 'áéíóúüñàèìòùâêîôûäëïöç', 'aeiouunaeiouaeiouaeioc')) || to_tsvector('english'::regconfig, translate(lower("text"), 'áéíóúüñàèìòùâêîôûäëïöç', 'aeiouunaeiouaeiouaeioc'))`),
   createdAt: text("createdAt").notNull(),
 });
 

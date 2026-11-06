@@ -3,13 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, userSettings } from "@/lib/db";
-import { searchChunks, type SearchHit } from "@/lib/docIndex";
-import { embeddingsAvailable } from "@/lib/embeddings";
+import { expandQuery, searchChunks, type SearchHit } from "@/lib/docIndex";
 
 export const maxDuration = 60;
 const ANSWER_MODEL = "claude-sonnet-5-5";
 
-// POST { query, companyId?, answer? } — semantic search over company documents,
+// POST { query, companyId?, answer? } — search over company documents,
 // optionally with an answer written by Claude that cites the passages [n].
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -17,19 +16,19 @@ export async function POST(req: NextRequest) {
   const { query, companyId, answer } = (await req.json().catch(() => ({}))) as { query?: string; companyId?: string; answer?: boolean };
   const q = query?.trim().slice(0, 1000);
   if (!q) return NextResponse.json({ error: "Write something to search for" }, { status: 400 });
-  if (!embeddingsAvailable()) return NextResponse.json({ error: "Search isn't configured: add VOYAGE_API_KEY in Vercel." }, { status: 503 });
+
+  const setting = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, session.user.id) });
+  const apiKey = setting?.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
 
   let hits: SearchHit[];
   try {
-    hits = await searchChunks(q, { companyId: companyId || null, limit: answer ? 12 : 20 });
+    const terms = await expandQuery(q, apiKey);
+    hits = await searchChunks(q, { companyId: companyId || null, limit: answer ? 12 : 20, terms });
   } catch (err) {
     console.error("[search]", err);
     return NextResponse.json({ error: err instanceof Error ? err.message : "Search failed" }, { status: 502 });
   }
   if (!answer || !hits.length) return NextResponse.json({ hits, answer: null });
-
-  const setting = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, session.user.id) });
-  const apiKey = setting?.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return NextResponse.json({ hits, answer: null, answerError: "Add your Anthropic API key in Settings to get answers." });
 
   const sources = hits.map((h, i) => `[${i + 1}] ${h.companyName} · ${h.filename} · ${h.locator ?? ""}\n${h.text}`).join("\n\n");
