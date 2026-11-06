@@ -1,7 +1,8 @@
 "use client";
-// Welcome screen: the PANDO mark builds itself on the brand green, then the
-// platform opens. Shown when the app is opened (once per browser session) and
-// whenever someone clicks the PANDO logo. Tap / click / any key skips it.
+// Welcome screen: the PANDO mark builds itself on the brand green and waits;
+// the platform opens when the person taps "Enter" (or anywhere / presses a
+// key). Shown when the app is opened (once per browser session) and whenever
+// someone clicks the PANDO logo.
 //
 // The animation reveals the real logo image through an SVG mask: thick strokes
 // are "drawn" along the frame, the divider and the roots, and each letter
@@ -10,7 +11,6 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const SPLASH_FLAG = "pando:splash"; // also read by the gate in (dashboard)/layout.tsx
-const TOTAL_MS = 3600;      // until the platform opens
 const EXIT_MS = 450;        // fade-out before navigating
 
 const LETTERS: [number, number][] = [[51, 92], [111, 167], [196, 241], [275, 321], [349, 409]];
@@ -48,11 +48,9 @@ function Splash() {
   useEffect(() => {
     try { sessionStorage.setItem(SPLASH_FLAG, "1"); } catch { /* private mode */ }
     router.prefetch(next);
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const t = setTimeout(enter, reduced ? 900 : TOTAL_MS);
-    const key = () => enter();
+    const key = (e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") enter(); };
     window.addEventListener("keydown", key);
-    return () => { clearTimeout(t); window.removeEventListener("keydown", key); };
+    return () => window.removeEventListener("keydown", key);
   }, [enter, next, router]);
 
   return (
@@ -88,7 +86,10 @@ function Splash() {
         <image href="/pando-logo.png" x="0" y="0" width="457" height="328" mask="url(#pando-reveal)" />
       </svg>
       <p className="splash-tag relative mt-8 text-[11px] md:text-[12px] tracking-[0.35em] uppercase text-[#D9DBD4]/70">Private Equity Intelligence</p>
-      <p className="splash-skip absolute bottom-[calc(28px+env(safe-area-inset-bottom))] text-[10px] tracking-[0.2em] uppercase text-white/35">Tap to enter</p>
+      <button onClick={e => { e.stopPropagation(); enter(); }}
+        className="splash-enter relative mt-10 px-9 py-3 rounded-full border border-[#D9DBD4]/50 text-[#E8EAE4] text-[12px] tracking-[0.3em] uppercase hover:bg-[#D9DBD4]/10 hover:border-[#D9DBD4] transition-colors">
+        Enter
+      </button>
 
       <style>{`
         .splash { background: radial-gradient(120% 90% at 50% 38%, #0B6157 0%, #004F46 45%, #003A33 100%); transition: opacity ${EXIT_MS}ms ease, transform ${EXIT_MS}ms ease; }
@@ -100,7 +101,7 @@ function Splash() {
         .settle { opacity: 0; animation: settle .35s ease 2.35s forwards; }
         .splash-logo { animation: breathe 3.6s ease-in-out forwards; filter: drop-shadow(0 0 0 rgba(217,219,212,0)); }
         .splash-tag { opacity: 0; transform: translateY(8px); animation: tag .7s ease 2.25s forwards; }
-        .splash-skip { opacity: 0; animation: tag .6s ease 1.2s forwards; }
+        .splash-enter { opacity: 0; transform: translateY(8px); animation: tag .7s ease 2.6s forwards; }
         @keyframes draw { to { stroke-dashoffset: 0; } }
         @keyframes letter { to { opacity: 1; transform: translateY(0); } }
         @keyframes settle { to { opacity: 1; } }
@@ -109,7 +110,7 @@ function Splash() {
         @keyframes breathe { 0%, 60% { transform: scale(.97); filter: drop-shadow(0 0 0 rgba(217,219,212,0)); }
           78% { transform: scale(1); filter: drop-shadow(0 0 18px rgba(217,219,212,.28)); } 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(217,219,212,.12)); } }
         @media (prefers-reduced-motion: reduce) {
-          .draw, .letter, .settle, .splash-tag, .splash-skip, .splash-glow, .splash-logo { animation-duration: .01s !important; animation-delay: 0s !important; }
+          .draw, .letter, .settle, .splash-tag, .splash-enter, .splash-glow, .splash-logo { animation-duration: .01s !important; animation-delay: 0s !important; }
         }
       `}</style>
     </main>
