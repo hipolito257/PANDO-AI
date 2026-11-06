@@ -82,9 +82,9 @@ function SidebarContent({ collapsed, onToggle, pathname, badges, mobile }: {
     <>
       {/* Logo + collapse toggle */}
       <div className="flex items-center h-[60px] px-2 border-b border-white/10 shrink-0 gap-2">
-        <div className={cn("flex-1 overflow-hidden transition-opacity duration-200", collapsed ? "opacity-0 w-0" : "opacity-100")}>
+        <Link href="/inicio" title="PANDO home" className={cn("flex-1 overflow-hidden transition-opacity duration-200", collapsed ? "opacity-0 w-0" : "opacity-100")}>
           <Logo size="sm" />
-        </div>
+        </Link>
         <button
           onClick={onToggle}
           title={mobile ? "Close menu" : collapsed ? "Expand menu" : "Collapse menu"}

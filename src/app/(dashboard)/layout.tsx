@@ -3,6 +3,8 @@ import { SessionProvider } from "next-auth/react";
 import { db } from "@/lib/db";
 import { DocJobsProvider } from "./DocJobsContext";
 
+const SPLASH_GATE = `try{if(!sessionStorage.getItem("pando:splash")){location.replace("/inicio?next="+encodeURIComponent(location.pathname+location.search))}}catch(e){}`;
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   let badges = { radar: 0, exit: 0 };
   try {
@@ -19,6 +21,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <SessionProvider>
+      {/* Opening the app (first page of a browser session) shows the welcome
+          screen at /inicio first; it runs before the page paints. */}
+      <script dangerouslySetInnerHTML={{ __html: SPLASH_GATE }} />
       <DocJobsProvider>
         <div className="flex h-[100dvh] overflow-hidden bg-mist">
           <Sidebar badges={badges} />
