@@ -13,7 +13,7 @@ type Update = {
 type Member = {
   id: string; name: string; email: string; role: string; avatarUrl: string | null;
   current: Update | null;
-  deals?: { dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[];
+  deals?: { memberId: string; dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[];
   allocation?: number;
 };
 
@@ -104,6 +104,22 @@ export default function EquipoPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  // % of someone's time on a deal, edited right here (same as on the deal's Team card).
+  const [allocMsg, setAllocMsg] = useState<string | null>(null);
+  async function saveAllocation(memberUserId: string, dealId: string, memberId: string, value: number) {
+    const allocation = Math.max(0, Math.min(100, Math.round(value)));
+    setMembers(ms => ms.map(m => {
+      if (m.id !== memberUserId) return m;
+      const deals = (m.deals ?? []).map(d => (d.memberId === memberId ? { ...d, allocation } : d));
+      return { ...m, deals, allocation: deals.filter(d => !d.onHold).reduce((n, d) => n + d.allocation, 0) };
+    }));
+    const res = await fetch(`/api/deals/${dealId}/members`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ memberId, allocation }),
+    }).catch(() => null);
+    setAllocMsg(res?.ok ? null : "Couldn't save the allocation. Try again.");
+    if (!res?.ok) load();
+  }
 
   const editingId = targetId ?? myId ?? null;
   const editing   = members.find(m => m.id === editingId) ?? null;
@@ -303,13 +319,32 @@ export default function EquipoPage() {
                       <div className="h-1 bg-fog rounded-full overflow-hidden mb-1.5">
                         <div className={`h-1 rounded-full ${(m.allocation ?? 0) > 100 ? "bg-red-500" : "bg-forest"}`} style={{ width: `${Math.min(100, m.allocation ?? 0)}%` }} />
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {m.deals!.map(d => (
-                          <a key={d.dealId} href={`/deals/${d.dealId}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${d.onHold ? "border-amber-200 text-amber-700" : "border-chalk text-graphite hover:border-carbon"}`}>
-                            {d.codeName} · {d.allocation}%
-                          </a>
-                        ))}
-                      </div>
+                      {isMe || isAdmin ? (
+                        <div className="space-y-1">
+                          {m.deals!.map(d => (
+                            <div key={d.memberId} className="flex items-center gap-2">
+                              <a href={`/deals/${d.dealId}`} className={`flex-1 min-w-0 truncate text-[11px] hover:underline ${d.onHold ? "text-amber-700" : "text-graphite"}`}>
+                                {d.codeName}{d.onHold ? " (on hold)" : ""}
+                              </a>
+                              <input type="number" min={0} max={100} step={5} defaultValue={d.allocation} key={`${d.memberId}-${d.allocation}`}
+                                aria-label={`% of ${m.name}'s time on ${d.codeName}`}
+                                onBlur={e => { const v = Number(e.target.value); if (Number.isFinite(v) && v !== d.allocation) saveAllocation(m.id, d.dealId, d.memberId, v); }}
+                                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                className="w-[56px] text-right text-[11px] bg-paper border border-chalk rounded-[6px] px-1.5 py-0.5 text-carbon focus:outline-none focus:border-carbon" />
+                              <span className="text-[10px] text-slate">%</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {m.deals!.map(d => (
+                            <a key={d.dealId} href={`/deals/${d.dealId}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${d.onHold ? "border-amber-200 text-amber-700" : "border-chalk text-graphite hover:border-carbon"}`}>
+                              {d.codeName} · {d.allocation}%
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {isMe && allocMsg && <p className="text-[10px] text-red-600 mt-1">{allocMsg}</p>}
                     </div>
                   )}
 

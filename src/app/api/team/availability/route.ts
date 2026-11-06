@@ -46,11 +46,11 @@ export async function GET(req: NextRequest) {
       listStages(),
     ]);
     const openStages = new Set(stages.filter(s => s.kind === "open").map(s => s.key));
-    const dealsByUser = new Map<string, { dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[]>();
+    const dealsByUser = new Map<string, { memberId: string; dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[]>();
     for (const m of memberships) {
       if (!m.deal || !openStages.has(m.deal.stage)) continue;
       const list = dealsByUser.get(m.userId) ?? [];
-      list.push({ dealId: m.deal.id, codeName: m.deal.codeName, role: m.role, allocation: m.allocation, onHold: m.deal.onHold });
+      list.push({ memberId: m.id, dealId: m.deal.id, codeName: m.deal.codeName, role: m.role, allocation: m.allocation, onHold: m.deal.onHold });
       dealsByUser.set(m.userId, list);
     }
 

@@ -87,11 +87,11 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         {/* Header */}
         <Card className="relative overflow-hidden">
           <CompanyHeroBg website={company.website} name={company.name} />
-          <div className="flex flex-col md:flex-row items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
+          <div className="relative z-20 flex flex-col md:flex-row items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2">
                 <CompanyLogo name={company.name} website={company.website} size="lg" />
-                <h2 className="text-[22px] font-semibold text-carbon tracking-tight font-poly">{company.name}</h2>
+                <h2 className="text-[20px] md:text-[22px] font-semibold text-carbon tracking-tight font-poly leading-tight">{company.name}</h2>
                 <StatusBadge status={company.status} />
                 <ScoreBadge score={company.score} />
                 <WebsiteLink url={company.website} />

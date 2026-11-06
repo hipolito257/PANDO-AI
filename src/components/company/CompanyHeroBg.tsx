@@ -29,7 +29,7 @@ export function CompanyHeroBg({
 
   return (
     <div
-      className="absolute right-0 inset-y-0 w-[320px] pointer-events-none select-none overflow-hidden"
+      className="hidden md:block absolute right-0 inset-y-0 w-[320px] pointer-events-none select-none overflow-hidden"
       aria-hidden="true"
     >
       {/* Left gradient fade so logo doesn't clash with text */}

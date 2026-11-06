@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 function extractDomain(website: string | null | undefined): string | null {
   if (!website) return null;
@@ -42,6 +42,19 @@ export function CompanyLogo({
     setFailed(false);
   }, [website]);
 
+  // An image that fails before React hydrates never fires onError (iOS then
+  // shows a "?"): check it once mounted and move on to the next source.
+  const imgRef = useRef<HTMLImageElement>(null);
+  const next = () => {
+    const d = extractDomain(website);
+    if (d && src?.includes("clearbit")) setSrc(`https://www.google.com/s2/favicons?domain=${d}&sz=128`);
+    else setFailed(true);
+  };
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth === 0) next();
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
   const { wrapper, text } = SIZES[size];
   const initials = name.trim().split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
@@ -52,14 +65,8 @@ export function CompanyLogo({
           src={src}
           alt={name}
           className="w-full h-full object-contain p-[1px]"
-          onError={() => {
-            const d = extractDomain(website);
-            if (d && src.includes("clearbit")) {
-              setSrc(`https://www.google.com/s2/favicons?domain=${d}&sz=64`);
-            } else {
-              setFailed(true);
-            }
-          }}
+          ref={imgRef}
+          onError={next}
         />
       </div>
     );
