@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, users, availabilityUpdates, activityLog, dealMembers } from "@/lib/db";
 import { listStages } from "@/lib/deals";
+import { isSheetAutoMembership } from "@/lib/teamAllocations";
 import { auth } from "@/lib/auth";
 import { AVAILABILITY_VALUES, levelInfo } from "@/lib/availability";
 import { eq, desc } from "drizzle-orm";
@@ -42,15 +43,18 @@ export async function GET(req: NextRequest) {
 
     // Staffing: the active deals each person is on, with their allocation
     const [memberships, stages] = await Promise.all([
-      db.query.dealMembers.findMany({ with: { deal: { columns: { id: true, codeName: true, stage: true, onHold: true } } } }),
+      db.query.dealMembers.findMany({ with: { deal: { columns: { id: true, codeName: true, stage: true, onHold: true, sheetKey: true, createdAt: true, createdBy: true } } } }),
       listStages(),
     ]);
     const openStages = new Set(stages.filter(s => s.kind === "open").map(s => s.key));
-    const dealsByUser = new Map<string, { memberId: string; dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[]>();
+    const dealsByUser = new Map<string, { memberId: string; dealId: string; codeName: string; role: string; allocation: number; onHold: boolean; fromSheet: boolean }[]>();
     for (const m of memberships) {
       if (!m.deal || !openStages.has(m.deal.stage)) continue;
       const list = dealsByUser.get(m.userId) ?? [];
-      list.push({ memberId: m.id, dealId: m.deal.id, codeName: m.deal.codeName, role: m.role, allocation: m.allocation, onHold: m.deal.onHold });
+      list.push({
+        memberId: m.id, dealId: m.deal.id, codeName: m.deal.codeName, role: m.role, allocation: m.allocation, onHold: m.deal.onHold,
+        fromSheet: isSheetAutoMembership(m, m.deal),
+      });
       dealsByUser.set(m.userId, list);
     }
 

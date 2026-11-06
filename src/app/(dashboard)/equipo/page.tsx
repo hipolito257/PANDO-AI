@@ -13,7 +13,7 @@ type Update = {
 type Member = {
   id: string; name: string; email: string; role: string; avatarUrl: string | null;
   current: Update | null;
-  deals?: { memberId: string; dealId: string; codeName: string; role: string; allocation: number; onHold: boolean }[];
+  deals?: { memberId: string; dealId: string; codeName: string; role: string; allocation: number; onHold: boolean; fromSheet?: boolean }[];
   allocation?: number;
 };
 
@@ -119,6 +119,31 @@ export default function EquipoPage() {
     }).catch(() => null);
     setAllocMsg(res?.ok ? null : "Couldn't save the allocation. Try again.");
     if (!res?.ok) load();
+  }
+
+  // ✕: this person isn't working on that deal (leaves its team).
+  async function leaveDeal(memberUserId: string, dealId: string, memberId: string, codeName: string, self: boolean) {
+    if (!confirm(self ? `Remove yourself from ${codeName}?` : `Remove this person from ${codeName}?`)) return;
+    setMembers(ms => ms.map(m => {
+      if (m.id !== memberUserId) return m;
+      const deals = (m.deals ?? []).filter(d => d.memberId !== memberId);
+      return { ...m, deals, allocation: deals.filter(d => !d.onHold).reduce((n, d) => n + d.allocation, 0) };
+    }));
+    const res = await fetch(`/api/deals/${dealId}/members`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ memberId }),
+    }).catch(() => null);
+    setAllocMsg(res?.ok ? null : "Couldn't remove it. Try again.");
+    if (!res?.ok) load();
+  }
+
+  // Takes someone off every deal the Google Sheet sync put them on by itself.
+  async function removeSheetDeals(memberUserId: string, count: number, self: boolean) {
+    if (!confirm(`Remove ${self ? "yourself" : "this person"} from the ${count} deal${count === 1 ? "" : "s"} the Google Sheet added automatically? Deals you joined yourself stay.`)) return;
+    const res = await fetch("/api/team/allocations", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove_sheet", userId: memberUserId }),
+    }).catch(() => null);
+    setAllocMsg(res?.ok ? null : "Couldn't remove them. Try again.");
+    load();
   }
 
   const editingId = targetId ?? myId ?? null;
@@ -332,8 +357,17 @@ export default function EquipoPage() {
                                 onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                                 className="w-[56px] text-right text-[11px] bg-paper border border-chalk rounded-[6px] px-1.5 py-0.5 text-carbon focus:outline-none focus:border-carbon" />
                               <span className="text-[10px] text-slate">%</span>
+                              <button onClick={() => leaveDeal(m.id, d.dealId, d.memberId, d.codeName, isMe)}
+                                title={isMe ? "I'm not working on this deal" : "Not working on this deal"} aria-label={`Remove from ${d.codeName}`}
+                                className="w-5 h-5 shrink-0 flex items-center justify-center rounded text-slate hover:text-red-600 hover:bg-red-50 text-[13px] leading-none">×</button>
                             </div>
                           ))}
+                          {m.deals!.some(d => d.fromSheet) && (
+                            <button onClick={() => removeSheetDeals(m.id, m.deals!.filter(d => d.fromSheet).length, isMe)}
+                              className="mt-1 text-[11px] text-red-600 hover:underline text-left">
+                              Remove the {m.deals!.filter(d => d.fromSheet).length} deals the Google Sheet added automatically
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-1">

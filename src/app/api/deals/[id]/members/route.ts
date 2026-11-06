@@ -50,10 +50,12 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const { memberId } = await req.json().catch(() => ({}));
   const m = await db.query.dealMembers.findFirst({
     where: and(eq(dealMembers.id, memberId ?? ""), eq(dealMembers.dealId, id)),
-    with: { user: { columns: { name: true } }, deal: { columns: { codeName: true } } },
+    with: { user: { columns: { name: true } }, deal: { columns: { codeName: true, leadUserId: true } } },
   });
   if (!m) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await db.delete(dealMembers).where(eq(dealMembers.id, m.id));
+  // Someone who leaves the team isn't the deal's lead anymore either.
+  if (m.deal.leadUserId === m.userId) await db.update(deals).set({ leadUserId: null, updatedAt: nowIso() }).where(eq(deals.id, id));
   await logDeal(session.user.id, session.user.name ?? "User", "deal_member_removed", id, m.deal.codeName, m.user.name);
   return NextResponse.json({ ok: true });
 }

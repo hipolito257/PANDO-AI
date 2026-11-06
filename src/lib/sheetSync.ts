@@ -624,7 +624,9 @@ export async function applyRun(runId: string, selectedIds: string[] | null, user
         [{ field: "name", oldValue: null, newValue: name }, { field: "sector", oldValue: null, newValue: x.sector }, { field: "country", oldValue: null, newValue: x.country }]);
     }
     const dealId = randomUUID();
-    const lead = x.leadUserId ?? user.id;
+    // The deal's lead comes only from the sheet; nobody is put on the team
+    // (or given an allocation) just because they approved the import.
+    const lead = x.leadUserId ?? null;
     await db.insert(deals).values({
       id: dealId, companyId, codeName: x.codeName.slice(0, 120), type: x.type ?? "buy_side",
       stage: stages.some(s => s.key === x.stage) ? x.stage : stages[0]?.key ?? "sourcing", stageChangedAt: now,
@@ -632,7 +634,6 @@ export async function applyRun(runId: string, selectedIds: string[] | null, user
       dealSize: x.dealSize, currency: x.currency ?? "USD", description: x.description?.slice(0, 4000) ?? null,
       sheetKey: c.key ?? null, createdBy: user.id, createdAt: now, updatedAt: now,
     });
-    await db.insert(dealMembers).values({ id: randomUUID(), dealId, userId: lead, role: "lead", allocation: 40, createdAt: now });
     await logDeal(user.id, user.name, "created_deal", dealId, x.codeName, `from ${label} (row ${c.row})`);
     applied++;
   }
@@ -656,10 +657,10 @@ async function resolveRun(run: typeof sheetSyncRuns.$inferSelect, status: "appli
   await db.update(sheetSyncs).set({ ...(run.snapshot ? { snapshot: run.snapshot } : {}), lastStatus: status }).where(eq(sheetSyncs.id, run.syncId));
 }
 
+// A lead from the sheet who is already on the deal's team gets the lead role;
+// nobody is added to a team (with an allocation) by the sync.
 async function ensureLead(dealId: string, userId: string) {
-  const existing = await db.query.dealMembers.findFirst({ where: and(eq(dealMembers.dealId, dealId), eq(dealMembers.userId, userId)) });
-  if (existing) await db.update(dealMembers).set({ role: "lead" }).where(eq(dealMembers.id, existing.id));
-  else await db.insert(dealMembers).values({ id: randomUUID(), dealId, userId, role: "lead", allocation: 40, createdAt: nowIso() });
+  await db.update(dealMembers).set({ role: "lead" }).where(and(eq(dealMembers.dealId, dealId), eq(dealMembers.userId, userId)));
 }
 
 const FIELD_TEXT: Record<DealField, string> = {
