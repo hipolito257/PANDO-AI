@@ -139,15 +139,21 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
 
   return (
     <>
-      <header data-no-print className="no-print h-[60px] px-6 flex items-center justify-between border-b border-chalk bg-forest sticky top-0 z-40">
-        {/* Title */}
-        <div>
-          <h1 className="text-[16px] font-semibold text-white tracking-tight">{title}</h1>
-          {subtitle && <p className="text-[11px] text-white/60 mt-0">{subtitle}</p>}
+      <header data-no-print className="no-print box-content h-[60px] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 border-b border-chalk bg-forest sticky top-0 z-40">
+        {/* Menu (phones) + title */}
+        <div className="flex items-center gap-1.5 min-w-0 md:flex-none flex-1">
+          <button onClick={() => window.dispatchEvent(new Event("pando:open-menu"))} aria-label="Open menu"
+            className="md:hidden -ml-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-[8px] text-white/80 hover:bg-white/10">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-[15px] md:text-[16px] font-semibold text-white tracking-tight truncate">{title}</h1>
+            {subtitle && <p className="text-[11px] text-white/60 mt-0 truncate">{subtitle}</p>}
+          </div>
         </div>
 
         {/* Ask PANDO bar */}
-        <div className="flex-1 max-w-[400px] mx-8">
+        <div className="hidden md:block flex-1 max-w-[400px] mx-8">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" width="13" height="13" viewBox="0 0 14 14" fill="none">
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" />
@@ -170,8 +176,8 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
-          {actions}
+        <div className="flex items-center gap-1 md:gap-2 shrink-0">
+          {actions && <div className="flex items-center gap-1 md:gap-2 max-w-[45vw] md:max-w-none overflow-x-auto">{actions}</div>}
 
           {/* Chat button */}
           <button onClick={() => openChat("")}
@@ -206,7 +212,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
 
             {/* Notifications dropdown */}
             {bellOpen && (
-              <div className="absolute right-0 top-10 w-[360px] bg-paper border border-chalk rounded-[12px] shadow-xl z-50 overflow-hidden">
+              <div className="fixed md:absolute left-2 right-2 md:left-auto md:right-0 top-[calc(64px+env(safe-area-inset-top))] md:top-10 md:w-[360px] bg-paper border border-chalk rounded-[12px] shadow-xl z-50 overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-chalk">
                   <p className="text-[13px] font-semibold text-carbon">Recent signals</p>

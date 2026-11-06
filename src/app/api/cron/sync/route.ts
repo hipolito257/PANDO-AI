@@ -1,4 +1,5 @@
 import { diffCompany, recordFieldChanges } from "@/lib/provenance";
+import { notify } from "@/lib/push";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { companies, newsItems, signals, cronLogs, firmSettings } from "@/lib/schema";
@@ -659,6 +660,14 @@ export async function GET(req: NextRequest) {
     })
     .where(eq(cronLogs.id, cronLogId))
     .catch(() => {});
+
+  if (totalSignals > 0) {
+    await notify("all", "radar", {
+      title: `Radar: ${totalSignals} new signal${totalSignals === 1 ? "" : "s"}`,
+      body: totalExits ? `Including ${totalExits} possible exit${totalExits === 1 ? "" : "s"}. Open the radar to review.` : "Funding rounds, news and other activity on tracked companies.",
+      url: "/radar", tag: "radar",
+    });
+  }
 
   return NextResponse.json({
     ok: true,

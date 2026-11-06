@@ -1,4 +1,5 @@
 import { diffCompany, recordFieldChanges } from "@/lib/provenance";
+import { notify } from "@/lib/push";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { companies, signals, mandates } from "@/lib/schema";
@@ -292,6 +293,13 @@ RULES:
       });
       signalsAdded++;
     } catch { /* skip */ }
+  }
+
+  if (signalsAdded > 0) {
+    await notify("all", "radar", {
+      title: `Radar: ${signalsAdded} new signal${signalsAdded === 1 ? "" : "s"}`,
+      body: `Found in "${filename}".`, url: "/radar", tag: "radar",
+    }, [session?.user?.id]);
   }
 
   return NextResponse.json({

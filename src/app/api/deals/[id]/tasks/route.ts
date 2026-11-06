@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { notify } from "@/lib/push";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, deals, dealTasks } from "@/lib/db";
@@ -22,6 +23,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     dueDate: dueDate || null, status: "todo", createdBy: session.user.id, createdAt: nowIso(),
   });
   await db.update(deals).set({ updatedAt: nowIso() }).where(eq(deals.id, id));
+  if (assigneeId && assigneeId !== session.user.id) {
+    await notify([assigneeId], "tasks", {
+      title: `New task · ${deal.codeName}`, body: `${String(title).trim().slice(0, 140)}${dueDate ? ` (due ${dueDate})` : ""} — from ${session.user.name ?? "a teammate"}`,
+      url: `/deals/${id}`, tag: `task-${id}`,
+    });
+  }
   return NextResponse.json({ ok: true }, { status: 201 });
 }
 
@@ -43,6 +50,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     set.completedAt = b.status === "done" ? nowIso() : null;
   }
   await db.update(dealTasks).set(set).where(eq(dealTasks.id, task.id));
+  if (set.assigneeId && set.assigneeId !== task.assigneeId && set.assigneeId !== session.user.id) {
+    await notify([set.assigneeId], "tasks", {
+      title: `Task assigned to you · ${task.deal.codeName}`, body: `${set.title ?? task.title} — from ${session.user.name ?? "a teammate"}`,
+      url: `/deals/${id}`, tag: `task-${id}`,
+    });
+  }
   if (set.status === "done" && task.status !== "done") {
     await logDeal(session.user.id, session.user.name ?? "User", "deal_task_done", id, task.deal.codeName, task.title);
   }

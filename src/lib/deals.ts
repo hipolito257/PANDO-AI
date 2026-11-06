@@ -1,6 +1,7 @@
 // Shared constants and server helpers for deals.
-import { db, activityLog, dealStages } from "@/lib/db";
-import { asc } from "drizzle-orm";
+import { db, activityLog, dealStages, dealMembers } from "@/lib/db";
+import { asc, eq } from "drizzle-orm";
+import { notify } from "@/lib/push";
 import { randomUUID } from "crypto";
 
 export const DEAL_TYPES = [
@@ -28,6 +29,12 @@ export async function listStages(): Promise<DealStageRow[]> {
 
 export const nowIso = () => new Date().toISOString();
 export const newId = () => randomUUID();
+
+/** Pushes a notification to the deal's team (minus whoever made the change). */
+export async function notifyDealTeam(dealId: string, actorId: string | null, msg: { title: string; body: string }) {
+  const members = await db.select({ userId: dealMembers.userId }).from(dealMembers).where(eq(dealMembers.dealId, dealId));
+  await notify(members.map(m => m.userId), "deals", { ...msg, url: `/deals/${dealId}`, tag: `deal-${dealId}` }, [actorId]);
+}
 
 export async function logDeal(userId: string, userName: string, action: string, dealId: string, dealName: string, detail?: string) {
   try {

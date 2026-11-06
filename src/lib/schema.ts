@@ -25,6 +25,7 @@ export const userSettings = pgTable("UserSettings", {
   id:              text("id").primaryKey(),
   userId:          text("userId").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
   anthropicApiKey: text("anthropicApiKey"),
+  pushPrefs:       text("pushPrefs"),       // JSON { sheet, tasks, deals, radar } (src/lib/push.ts)
   createdAt:       text("createdAt").default(sql`now()`),
   updatedAt:       text("updatedAt").default(sql`now()`),
 });
@@ -642,4 +643,16 @@ export const sheetSyncRuns = pgTable("SheetSyncRun", {
   resolvedBy:   text("resolvedBy"),
   resolvedAt:   text("resolvedAt"),
   createdAt:    text("createdAt").notNull(),
+});
+
+// ── Push notifications ────────────────────────────────────────────────────────
+export const pushSubscriptions = pgTable("PushSubscription", {
+  id:         text("id").primaryKey(),
+  userId:     text("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  endpoint:   text("endpoint").notNull().unique(),
+  p256dh:     text("p256dh").notNull(),
+  auth:       text("auth").notNull(),
+  device:     text("device"),
+  createdAt:  text("createdAt").notNull(),
+  lastUsedAt: text("lastUsedAt"),
 });

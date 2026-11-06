@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { PushSettings } from "@/components/settings/PushSettings";
 
 type Member = { id: string; name: string; email: string; role: string; createdAt: string | null };
 type PendingUser = { id: string; name: string; email: string; createdAt: string | null };
@@ -589,7 +590,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-mist p-8">
+    <div className="min-h-screen bg-mist p-4 md:p-8">
       <div>
 
         {/* Header */}
@@ -597,6 +598,9 @@ export default function SettingsPage() {
           <h1 className="text-[28px] font-semibold text-carbon mb-2">Settings</h1>
           <p className="text-[13px] text-slate">Manage your Anthropic API key to use AI features</p>
         </div>
+
+        {/* Push notifications */}
+        <PushSettings />
 
         {/* Account section */}
         <div className="bg-white border border-chalk rounded-[12px] p-6 space-y-4 mb-8">

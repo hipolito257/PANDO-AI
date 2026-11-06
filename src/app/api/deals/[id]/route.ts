@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import {
   db, deals, dealMembers, companyFiles, compSets, publicComps, jobs, activityLog, availabilityUpdates, users,
 } from "@/lib/db";
-import { DEAL_TYPES, listStages, logDeal, newId, nowIso } from "@/lib/deals";
+import { DEAL_TYPES, listStages, logDeal, newId, nowIso, notifyDealTeam } from "@/lib/deals";
 import { loadValuation } from "@/lib/valuationData";
 
 type Params = { params: Promise<{ id: string }> };
@@ -125,7 +125,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const who = session.user.name ?? "User";
-  if (stageLabel) await logDeal(session.user.id, who, "deal_stage_changed", id, set.codeName ?? deal.codeName, `moved the deal to ${stageLabel}`);
+  if (stageLabel) {
+    await logDeal(session.user.id, who, "deal_stage_changed", id, set.codeName ?? deal.codeName, `moved the deal to ${stageLabel}`);
+    await notifyDealTeam(id, session.user.id, { title: `${set.codeName ?? deal.codeName} → ${stageLabel}`, body: `${who} moved the deal to ${stageLabel}.` });
+  }
   if (typeof b.onHold === "boolean" && b.onHold !== deal.onHold) {
     await logDeal(session.user.id, who, b.onHold ? "deal_on_hold" : "deal_resumed", id, set.codeName ?? deal.codeName, set.statusNote ?? undefined);
   }

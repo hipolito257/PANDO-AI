@@ -6,9 +6,10 @@
 // platform isn't pushed back to the sheet's older value every week.
 // Nothing is written to the deals until someone approves the changes.
 import { createSign, randomUUID } from "crypto";
+import { notify } from "@/lib/push";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, deals, dealMembers, companies, users, sheetSyncs, sheetSyncRuns } from "@/lib/db";
-import { listStages, logDeal, nowIso, type DealStageRow } from "@/lib/deals";
+import { listStages, logDeal, notifyDealTeam, nowIso, type DealStageRow } from "@/lib/deals";
 import { recordFieldChanges } from "@/lib/provenance";
 import { slugify } from "@/lib/utils";
 
@@ -525,6 +526,12 @@ export async function runSync(syncId: string, trigger: RunTrigger, tabs?: SheetT
     if (!actionable) await db.update(sheetSyncs).set({ snapshot: JSON.stringify(snapshot) }).where(eq(sheetSyncs.id, syncId));
     await db.update(sheetSyncs).set({ lastStatus: status, lastError: null }).where(eq(sheetSyncs.id, syncId));
     await pruneRuns(syncId);
+    if (actionable) {
+      await notify("all", "sheet", {
+        title: `Google Sheet: ${actionable} change${actionable === 1 ? "" : "s"} to review`,
+        body: "The deal tracker changed. Review and approve the changes.", url: "/deals/sync", tag: "sheet-sync",
+      });
+    }
     return { id, status, changes: actionable, rowCount };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -595,6 +602,10 @@ export async function applyRun(runId: string, selectedIds: string[] | null, user
     await db.update(deals).set(set).where(eq(deals.id, dealId));
     if (set.leadUserId) await ensureLead(dealId, set.leadUserId);
     await logDeal(user.id, user.name, set.stage ? "deal_stage_changed" : "edited_deal", dealId, deal.codeName, `from ${label}: ${notes.join("; ")}`);
+    if (set.stage) {
+      const st = stages.find(s => s.key === set.stage)?.label ?? set.stage;
+      await notifyDealTeam(dealId, user.id, { title: `${deal.codeName} → ${st}`, body: `Updated from the Google Sheet (approved by ${user.name}).` });
+    }
   }
 
   // New deals (and their companies when the platform doesn't have them yet).

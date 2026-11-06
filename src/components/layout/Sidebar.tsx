@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
 import { signOut } from "next-auth/react";
@@ -41,28 +41,59 @@ type Badges = { radar?: number; exit?: number };
 export function Sidebar({ badges = {} }: { badges?: Badges }) {
   const pathname  = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // On phones the menu is a drawer opened from the top bar's ☰ button.
+  useEffect(() => {
+    const open = () => setMobileOpen(true);
+    window.addEventListener("pando:open-menu", open);
+    return () => window.removeEventListener("pando:open-menu", open);
+  }, []);
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   return (
-    <aside
-      data-sidebar
-      className={cn(
-        "no-print flex flex-col shrink-0 bg-forest h-screen sticky top-0",
-        "transition-[width] duration-300 ease-in-out overflow-hidden",
-        collapsed ? "w-[56px]" : "w-[180px]",
+    <>
+      <aside
+        data-sidebar
+        className={cn(
+          "no-print hidden md:flex flex-col shrink-0 bg-forest h-[100dvh] sticky top-0",
+          "transition-[width] duration-300 ease-in-out overflow-hidden",
+          collapsed ? "w-[56px]" : "w-[180px]",
+        )}
+      >
+        <SidebarContent collapsed={collapsed} onToggle={() => setCollapsed(v => !v)} pathname={pathname} badges={badges} />
+      </aside>
+      {mobileOpen && (
+        <div className="no-print md:hidden fixed inset-0 z-[60] flex">
+          <aside className="flex flex-col bg-forest w-[260px] max-w-[80vw] h-full shadow-2xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+            <SidebarContent collapsed={false} onToggle={() => setMobileOpen(false)} pathname={pathname} badges={badges} mobile />
+          </aside>
+          <button aria-label="Close menu" className="flex-1 bg-black/40" onClick={() => setMobileOpen(false)} />
+        </div>
       )}
-    >
+    </>
+  );
+}
+
+function SidebarContent({ collapsed, onToggle, pathname, badges, mobile }: {
+  collapsed: boolean; onToggle: () => void; pathname: string; badges: Badges; mobile?: boolean;
+}) {
+  return (
+    <>
       {/* Logo + collapse toggle */}
       <div className="flex items-center h-[60px] px-2 border-b border-white/10 shrink-0 gap-2">
         <div className={cn("flex-1 overflow-hidden transition-opacity duration-200", collapsed ? "opacity-0 w-0" : "opacity-100")}>
           <Logo size="sm" />
         </div>
         <button
-          onClick={() => setCollapsed(v => !v)}
-          title={collapsed ? "Expand menu" : "Collapse menu"}
+          onClick={onToggle}
+          title={mobile ? "Close menu" : collapsed ? "Expand menu" : "Collapse menu"}
           className="w-8 h-8 flex items-center justify-center rounded-[7px] hover:bg-white/10 text-white/60 hover:text-white transition-colors shrink-0"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            {collapsed ? (
+            {mobile ? (
+              <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            ) : collapsed ? (
               <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             ) : (
               <path d="M9 3L5 7l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -84,7 +115,7 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
               title={collapsed ? item.label : undefined}
               className={cn(
                 "flex items-center rounded-[8px] text-[13px] font-medium transition-colors",
-                collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
+                collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 py-3 text-[15px]" : "gap-3 px-3 py-2",
                 active ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
               )}
             >
@@ -113,7 +144,7 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
           title={collapsed ? "Settings" : undefined}
           className={cn(
             "flex items-center rounded-[8px] text-[13px] font-medium transition-colors w-full",
-            collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
+            collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 py-3 text-[15px]" : "gap-3 px-3 py-2",
             pathname === "/settings" ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
           )}
         >
@@ -125,14 +156,14 @@ export function Sidebar({ badges = {} }: { badges?: Badges }) {
           title={collapsed ? "Sign out" : undefined}
           className={cn(
             "flex items-center rounded-[8px] text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors w-full",
-            collapsed ? "justify-center py-2.5 px-1" : "gap-3 px-3 py-2",
+            collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 py-3 text-[15px]" : "gap-3 px-3 py-2",
           )}
         >
           <IconLogout />
           {!collapsed && <span>Sign out</span>}
         </button>
       </div>
-    </aside>
+    </>
   );
 }
 

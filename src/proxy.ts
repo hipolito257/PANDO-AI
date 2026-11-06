@@ -7,7 +7,8 @@ export default NextAuth(authConfig).auth;
 // Only /api/cron stays exempt: Vercel's scheduler cannot carry a session, so
 // that route authenticates itself with CRON_SECRET instead. api/seed was
 // exempted too and had no check of its own, leaving it open to the internet;
-// api/pptx_build no longer exists.
+// api/pptx_build no longer exists. The service worker and app manifest must
+// load before sign-in so the app can be installed and receive notifications.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$|api/cron).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$|sw\\.js$|manifest\\.webmanifest$|api/cron).*)"],
 };

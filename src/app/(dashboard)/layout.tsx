@@ -20,9 +20,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <SessionProvider>
       <DocJobsProvider>
-        <div className="flex h-screen overflow-hidden bg-mist">
+        <div className="flex h-[100dvh] overflow-hidden bg-mist">
           <Sidebar badges={badges} />
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 min-w-0 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
             {children}
           </main>
         </div>

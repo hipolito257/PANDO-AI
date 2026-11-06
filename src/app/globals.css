@@ -76,3 +76,18 @@ h1, h2, h3, h4, h5 {
   /* Ensure colors print */
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
+
+/* ── Phones ──────────────────────────────────────────────────────────────────
+   Pages are laid out for desktop with p-6 / p-8 gutters; on a phone those eat
+   a quarter of the screen, so they shrink. Inputs use 16px text so iOS doesn't
+   zoom in when one is focused. Wide tables and boards scroll sideways inside
+   their card instead of stretching the page (where the page wraps them). */
+@media (max-width: 767px) {
+  main .p-8 { padding: 14px; }
+  main .p-6 { padding: 12px; }
+  main .px-6 { padding-left: 12px; padding-right: 12px; }
+  main .p-5 { padding: 14px; }
+  input, select, textarea { font-size: 16px !important; }
+  main .overflow-x-auto, main [class*="overflow-x-auto"] { -webkit-overflow-scrolling: touch; }
+  html, body { overscroll-behavior-y: none; }
+}
