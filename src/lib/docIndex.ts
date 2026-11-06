@@ -13,7 +13,7 @@ import { db, companyFiles, docChunks, companies, jobs } from "@/lib/db";
 import { decryptBuffer } from "@/lib/blobCrypto";
 import { pptxSlideTexts, xlsxSheetTexts, type ExtractionResult } from "@/lib/companyFileExtract";
 import { docxPartNames, extractDocxTexts } from "@/lib/documentTranslate";
-import { embed, embeddingsAvailable, estimateTokens, MAX_BATCH_TOKENS, msUntilNextSlot } from "@/lib/embeddings";
+import { embed, EmbedRateLimited, embeddingsAvailable, estimateTokens, MAX_BATCH_TOKENS, msUntilNextSlot } from "@/lib/embeddings";
 
 type Section = { locator: string; text: string };
 
@@ -130,8 +130,9 @@ export async function embedPending(opts: {
   deadline: number;
   onProgress?: (done: number, pending: number) => Promise<void>;
   isCancelled?: () => Promise<boolean>;
-}): Promise<{ embedded: number; pending: number }> {
+}): Promise<{ embedded: number; pending: number; rateLimited?: boolean }> {
   let embedded = 0;
+  let rateLimited = false;
   const filesTouched = new Set<string>();
   for (;;) {
     if (opts.isCancelled && (await opts.isCancelled())) break;
@@ -158,7 +159,15 @@ export async function embedPending(opts: {
     }
     // The document and company names give each passage context for retrieval.
     const inputs = batch.map(c => `${c.company} — ${c.filename} (${c.locator ?? ""})\n${c.text}`);
-    const vectors = await embed(inputs, "document");
+    let vectors: number[][];
+    try {
+      vectors = await embed(inputs, "document");
+    } catch (err) {
+      // Free-tier rate limit (chat and search queries share it): keep what's done,
+      // leave the rest waiting for the next run instead of failing the job.
+      if (err instanceof EmbedRateLimited) { rateLimited = true; break; }
+      throw err;
+    }
     for (let i = 0; i < batch.length; i++) {
       await db.execute(sql`UPDATE "DocChunk" SET "embedding" = ${vecLiteral(vectors[i])}::vector WHERE "id" = ${batch[i].id}`);
       filesTouched.add(batch[i].fileId);
@@ -168,7 +177,7 @@ export async function embedPending(opts: {
     await markIndexedFiles([...filesTouched]);
     if (opts.onProgress) await opts.onProgress(embedded, await pendingCount());
   }
-  return { embedded, pending: await pendingCount() };
+  return { embedded, pending: await pendingCount(), ...(rateLimited ? { rateLimited } : {}) };
 }
 
 async function markIndexedFiles(fileIds: string[]) {

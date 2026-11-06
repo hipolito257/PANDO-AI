@@ -122,7 +122,7 @@ async function indexDocuments(input: IndexInput, ctx: JobContext) {
       `Indexed ${done} passage(s)${pending ? ` · ${pending} waiting (paced by the Voyage rate limit)` : ""}`,
       20 + Math.round((done / Math.max(1, done + pending)) * 78)),
   });
-  return { filesRead: chunked, embedded: r.embedded, pending: r.pending };
+  return { filesRead: chunked, embedded: r.embedded, pending: r.pending, ...(r.rateLimited ? { note: "Paused by the Voyage rate limit; the rest is indexed on the next run" } : {}) };
 }
 
 // ── Presentation build ───────────────────────────────────────────────────────

@@ -36,6 +36,9 @@ async function waitForSlot(tokens: number) {
 /** Milliseconds until the next request may be sent (0 = now). */
 export const msUntilNextSlot = () => Math.max(0, nextSlot - Date.now());
 
+/** Voyage kept answering "too many requests": the caller should stop and try again later. */
+export class EmbedRateLimited extends Error {}
+
 export async function embed(texts: string[], inputType: "document" | "query"): Promise<number[][]> {
   if (!texts.length) return [];
   const key = process.env.VOYAGE_API_KEY;
@@ -64,6 +67,7 @@ export async function embed(texts: string[], inputType: "document" | "query"): P
       if (inputType === "query") await new Promise(r => setTimeout(r, Math.min(wait, 15_000)));
       continue;
     }
+    if (res.status === 429) throw new EmbedRateLimited(`Voyage rate limit reached: ${body.slice(0, 200)}`);
     throw new Error(`Voyage embeddings failed (${res.status}): ${body.slice(0, 200)}`);
   }
 }
