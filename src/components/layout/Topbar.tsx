@@ -139,7 +139,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
 
   return (
     <>
-      <header data-no-print className="no-print box-content h-[60px] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 border-b border-chalk bg-forest sticky top-0 z-40">
+      <header data-no-print className="no-print box-content min-h-[60px] md:h-[60px] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex flex-wrap md:flex-nowrap items-center justify-between gap-x-2 border-b border-chalk bg-forest sticky top-0 z-40">
         {/* Menu (phones) + title */}
         <div className="flex items-center gap-1.5 min-w-0 md:flex-none flex-1">
           <button onClick={() => window.dispatchEvent(new Event("pando:open-menu"))} aria-label="Open menu"
@@ -175,9 +175,15 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1 md:gap-2 shrink-0">
-          {actions && <div className="flex items-center gap-1 md:gap-2 max-w-[45vw] md:max-w-none overflow-x-auto">{actions}</div>}
+        {/* Page actions: their own scrollable row under the title on phones */}
+        {actions && (
+          <div className="order-last md:order-none basis-full md:basis-auto flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 md:ml-auto md:mr-2 [&>*]:shrink-0">
+            {actions}
+          </div>
+        )}
+
+        {/* Chat, jobs, notifications, account */}
+        <div className="flex items-center gap-1 md:gap-2 shrink-0 h-[60px]">
 
           {/* Chat button */}
           <button onClick={() => openChat("")}

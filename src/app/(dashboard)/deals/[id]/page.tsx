@@ -176,9 +176,9 @@ export default function DealPage({ params }: { params: Promise<{ id: string }> }
                 {[...openTasks, ...doneTasks].map(t => {
                   const late = t.status !== "done" && t.dueDate && t.dueDate < today;
                   return (
-                    <div key={t.id} className="flex items-center gap-2 py-2">
+                    <div key={t.id} className="flex flex-wrap items-center gap-2 py-2">
                       <input type="checkbox" checked={t.status === "done"} onChange={() => call("/tasks", "PATCH", { taskId: t.id, status: t.status === "done" ? "todo" : "done" })} />
-                      <span className={`flex-1 text-[13px] ${t.status === "done" ? "line-through text-slate" : "text-carbon"}`}>{t.title}</span>
+                      <span className={`flex-1 min-w-[60%] md:min-w-0 text-[13px] ${t.status === "done" ? "line-through text-slate" : "text-carbon"}`}>{t.title}</span>
                       {t.status !== "done" && (
                         <select value={t.status} onChange={e => call("/tasks", "PATCH", { taskId: t.id, status: e.target.value })} className={`${input} text-[11px]`}>
                           <option value="todo">To do</option><option value="doing">In progress</option><option value="done">Done</option>
@@ -212,10 +212,10 @@ export default function DealPage({ params }: { params: Promise<{ id: string }> }
               {milestones.length === 0 ? <p className="text-[12px] text-slate">No milestones yet.</p> : (
                 <ol className="relative border-l border-chalk ml-2 space-y-3">
                   {milestones.map(m => (
-                    <li key={m.id} className="ml-4 flex items-center gap-2">
+                    <li key={m.id} className="ml-4 flex flex-wrap items-center gap-2">
                       <span className={`absolute -left-[5px] w-2.5 h-2.5 rounded-full ${m.done ? "bg-forest" : m.date && m.date < today ? "bg-red-400" : "bg-chalk"}`} />
                       <input type="checkbox" checked={m.done} onChange={() => call("/milestones", "PATCH", { milestoneId: m.id, done: !m.done })} />
-                      <span className={`flex-1 text-[13px] ${m.done ? "text-slate line-through" : "text-carbon"}`}>{m.label}</span>
+                      <span className={`flex-1 min-w-[50%] md:min-w-0 text-[13px] ${m.done ? "text-slate line-through" : "text-carbon"}`}>{m.label}</span>
                       <input type="date" defaultValue={m.date ?? ""} onBlur={e => e.target.value !== (m.date ?? "") && call("/milestones", "PATCH", { milestoneId: m.id, date: e.target.value || null })} className={`${input} text-[11px]`} />
                       <button onClick={() => call("/milestones", "DELETE", { milestoneId: m.id })} className="text-slate hover:text-red-600 px-1" title="Delete">×</button>
                     </li>

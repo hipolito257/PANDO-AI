@@ -68,7 +68,7 @@ export function SourceTip({ change, children }: { change?: FieldChangeRow | null
   return (
     <div className="relative group">
       {children}
-      <div className="pointer-events-none absolute z-30 left-1/2 -translate-x-1/2 top-full mt-1.5 w-[240px] rounded-[8px] bg-carbon text-white text-left p-2.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="pointer-events-none absolute z-30 left-1/2 -translate-x-1/2 top-full mt-1.5 w-[240px] max-w-[80vw] rounded-[8px] bg-carbon text-white text-left p-2.5 shadow-lg hidden group-hover:block">
         {change ? (
           <>
             <p className="text-[9px] uppercase tracking-wide text-white/60">Source</p>

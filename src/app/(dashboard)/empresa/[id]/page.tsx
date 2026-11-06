@@ -87,7 +87,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         {/* Header */}
         <Card className="relative overflow-hidden">
           <CompanyHeroBg website={company.website} name={company.name} />
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col md:flex-row items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
                 <CompanyLogo name={company.name} website={company.website} size="lg" />
@@ -107,7 +107,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
                 {[...new Set(company.tags.map(t => t.tag))].map((tag) => <Badge key={tag} variant="default">{tag}</Badge>)}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 text-center shrink-0 ml-8">
+            <div className="grid grid-cols-2 gap-3 text-center shrink-0 w-full md:w-auto md:ml-8">
               {[
                 { field: "revenueUsd", label: "Revenue", value: fmtM(company.revenueUsd), sub: company.revenueGrowth != null ? `${fmtPct(company.revenueGrowth)} YoY` : null, positive: (company.revenueGrowth ?? 0) >= 0 },
                 { field: "ebitdaUsd", label: "EBITDA", value: fmtM(company.ebitdaUsd), sub: company.ebitdaMargin != null ? `${company.ebitdaMargin.toFixed(1)}% margin` : null, positive: (company.ebitdaMargin ?? 0) >= 0 },
@@ -127,7 +127,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         </Card>
 
         {/* Charts */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="col-span-2">
             <SectionHeader title="Financial History" subtitle="Revenue vs. EBITDA in $M USD" className="mb-3" />
             {chartYears.length > 1 ? (
@@ -169,7 +169,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         <CompanyHistoryCard companyId={company.id} />
 
         {/* Signals + Cap Table */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="col-span-2">
             <SectionHeader title="Signals" subtitle={`${company.signals.length} signals detected`} className="mb-2" />
             {company.signals.length === 0 ? (
@@ -223,7 +223,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         </div>
 
         {/* Founders + News */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {company.founders.length > 0 && (
             <Card>
               <SectionHeader title="Founding team" className="mb-3" />
@@ -282,7 +282,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
         {company.mandateMatches.length > 0 && (
           <Card>
             <SectionHeader title="Mandate matches" subtitle="Alignment with defined investment criteria" className="mb-3" />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Deduplicate by mandateId — seed may have created duplicates */}
               {[...new Map(company.mandateMatches.map(mm => [mm.mandateId, mm])).values()].map((mm) => (
                 <div key={mm.id} className="bg-fog rounded-[8px] p-3 border border-chalk">

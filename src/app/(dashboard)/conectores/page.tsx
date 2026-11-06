@@ -100,12 +100,12 @@ export default function ConectoresPage() {
         </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-4 text-[11px]">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
           <span className="text-slate font-medium uppercase tracking-wide">Cost:</span>
           {Object.entries(COST).map(([k, v]) => (
             <span key={k} className={`px-2.5 py-0.5 rounded-full font-medium ${v.pill}`}>{v.label}</span>
           ))}
-          <span className="ml-4 text-slate font-medium uppercase tracking-wide">Status:</span>
+          <span className="md:ml-4 text-slate font-medium uppercase tracking-wide">Status:</span>
           <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />Active in PANDO</span>
           <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-chalk" />Inactive</span>
         </div>

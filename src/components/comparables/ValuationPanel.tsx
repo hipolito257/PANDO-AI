@@ -440,7 +440,9 @@ function FootballField({ rows, ours, oursLabel, svgRef }: {
   const font = "Work Sans, Inter, system-ui, sans-serif";
 
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" xmlns="http://www.w3.org/2000/svg" fontFamily={font}>
+    // On a phone the chart keeps a readable size and scrolls sideways.
+    <div className="overflow-x-auto -mx-1 px-1">
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[620px] h-auto" xmlns="http://www.w3.org/2000/svg" fontFamily={font}>
       <rect x="0" y="0" width={W} height={H} fill="#ffffff" />
       {/* gridlines + axis */}
       {ticks.map(t => (
@@ -482,5 +484,6 @@ function FootballField({ rows, ours, oursLabel, svgRef }: {
       })}
 
     </svg>
+    </div>
   );
 }

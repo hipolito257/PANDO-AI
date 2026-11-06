@@ -100,7 +100,7 @@ export function JobsTray() {
         </button>
 
         {open && (
-          <div className="absolute right-0 top-10 w-[360px] bg-paper border border-chalk rounded-[12px] shadow-xl z-50 overflow-hidden">
+          <div className="fixed md:absolute left-2 right-2 md:left-auto md:right-0 top-[calc(64px+env(safe-area-inset-top))] md:top-10 md:w-[360px] bg-paper border border-chalk rounded-[12px] shadow-xl z-50 overflow-hidden">
             <div className="px-4 py-3 border-b border-chalk">
               <p className="text-[13px] font-semibold text-carbon">Background tasks</p>
               <p className="text-[10px] text-slate">They keep running if you leave the page or close the tab.</p>

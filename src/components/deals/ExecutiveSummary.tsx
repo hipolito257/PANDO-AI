@@ -96,6 +96,8 @@ function SummaryView({ s }: { s: DealSummary }) {
 
       <section>
         <SectionTitle aside={<span className="text-[12px] text-graphite">{fin.unit && `(${fin.unit})`}{fin.scenario && ` | ${fin.scenario}`}</span>}>Financial Overview</SectionTitle>
+        {/* On a phone the chart and its KPI rows keep a readable size and scroll sideways together. */}
+        <div className="overflow-x-auto"><div className="min-w-[560px]">
         <div className="relative">
           {fin.cagr.some(c => c.label || c.value) && (
             <table className="absolute left-0 top-0 text-[11px] border border-carbon bg-paper z-10">
@@ -113,6 +115,7 @@ function SummaryView({ s }: { s: DealSummary }) {
             </div>
           </div>
         ))}
+        </div></div>
         {fin.footnote && <p className="text-[10px] text-slate mt-2">{fin.footnote}</p>}
       </section>
 

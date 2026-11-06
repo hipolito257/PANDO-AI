@@ -88,6 +88,13 @@ h1, h2, h3, h4, h5 {
   main .px-6 { padding-left: 12px; padding-right: 12px; }
   main .p-5 { padding: 14px; }
   input, select, textarea { font-size: 16px !important; }
+  /* Inputs in flex rows otherwise refuse to shrink below their default width. */
+  main input:not([type="checkbox"]):not([type="radio"]), main select, main textarea { min-width: 0; max-width: 100%; }
   main .overflow-x-auto, main [class*="overflow-x-auto"] { -webkit-overflow-scrolling: touch; }
   html, body { overscroll-behavior-y: none; }
+  /* Desktop grids without a breakpoint: 4-5 columns become 2, 3 become 1
+     (their wide "col-span" cards then take the full row). */
+  main .grid-cols-4, main .grid-cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  main .grid-cols-3 { grid-template-columns: minmax(0, 1fr); }
+  main .grid-cols-3 > [class*="col-span-"], main .grid-cols-4 > [class*="col-span-"], main .grid-cols-5 > [class*="col-span-"] { grid-column: 1 / -1; }
 }

@@ -116,7 +116,7 @@ export function ChatPanel({ open, initialQuery, onClose }: ChatPanelProps) {
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 h-full w-[480px] z-50 flex flex-col bg-paper border-l border-chalk shadow-2xl">
+      <div className="fixed right-0 top-0 h-full w-full md:w-[480px] z-50 flex flex-col bg-paper border-l border-chalk shadow-2xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-chalk shrink-0">
