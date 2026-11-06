@@ -7,6 +7,7 @@ import { Card, SectionHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { fetchJson } from "@/lib/fetchJson";
 import { levelInfo } from "@/lib/availability";
+import { ExecutiveSummary } from "@/components/deals/ExecutiveSummary";
 import { ValuationSummary, type ValComp, type LboModelRef } from "@/components/comparables/ValuationPanel";
 import { Avatar, CURRENCIES, DEAL_ROLE_LABEL, DEAL_TYPE_LABEL, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
 
@@ -38,7 +39,7 @@ const ACTION_LABEL: Record<string, string> = {
   deal_resumed: "resumed the deal", deal_member_added: "added to the team:", deal_member_removed: "removed from the team:",
   deal_task_done: "completed a task:", deal_milestone_done: "reached a milestone:",
   uploaded_company_file: "uploaded a document:", applied_file_extraction: "applied document data:",
-  edited_company: "edited the company", updated_availability: "updated availability",
+  edited_company: "edited the company", edited_deal: "", updated_availability: "updated availability",
 };
 
 function ago(iso: string | null) {
@@ -223,13 +224,8 @@ export default function DealPage({ params }: { params: Promise<{ id: string }> }
               )}
             </Card>
 
-            {/* ── Valuation ── */}
-            <Card>
-              <SectionHeader title="Valuation" subtitle="Football field: comps, LBO and our valuation"
-                action={<Link href={`/valuation/${deal.company.id}`} className="text-[11px] font-medium text-forest hover:underline">Open valuation workspace</Link>} />
-              {valuation.config ? <ValuationSummary config={valuation.config} comps={valuation.comps} lbos={valuation.lbos ?? []} /> : null}
-              {!valuation.config && <p className="text-[12px] text-slate">No valuation yet. Set it up in the valuation workspace for {deal.company.name}.</p>}
-            </Card>
+            {/* ── Executive summary ── */}
+            <ExecutiveSummary dealId={deal.id} />
 
             {/* ── Decks & documents ── */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -265,6 +261,14 @@ export default function DealPage({ params }: { params: Promise<{ id: string }> }
                 )}
               </Card>
             </div>
+
+            {/* ── Valuation ── */}
+            <Card>
+              <SectionHeader title="Valuation" subtitle="Football field: comps, LBO and our valuation"
+                action={<Link href={`/valuation/${deal.company.id}`} className="text-[11px] font-medium text-forest hover:underline">Open valuation workspace</Link>} />
+              {valuation.config ? <ValuationSummary config={valuation.config} comps={valuation.comps} lbos={valuation.lbos ?? []} /> : null}
+              {!valuation.config && <p className="text-[12px] text-slate">No valuation yet. Set it up in the valuation workspace for {deal.company.name}.</p>}
+            </Card>
           </div>
 
           <div className="space-y-4">

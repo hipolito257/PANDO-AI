@@ -548,6 +548,7 @@ export const deals = pgTable("Deal", {
   currency:       text("currency").notNull().default("USD"),
   description:    text("description"),
   sheetKey:       text("sheetKey"),          // row key in the synced Google Sheet
+  summary:        text("summary"),           // executive summary JSON (src/lib/dealSummary.ts)
   createdBy:      text("createdBy"),
   createdAt:      text("createdAt").notNull(),
   updatedAt:      text("updatedAt").notNull(),
