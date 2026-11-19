@@ -147,7 +147,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
           </button>
           <div className="min-w-0">
-            <h1 className="text-[15px] md:text-[16px] font-semibold text-white tracking-tight truncate">{title}</h1>
+            <h1 className="font-display text-[15px] md:text-[17px] font-normal uppercase tracking-[.14em] text-white truncate pt-[3px]">{title}</h1>
             {subtitle && <p className="text-[11px] text-white/60 mt-0 truncate">{subtitle}</p>}
           </div>
         </div>

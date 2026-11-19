@@ -17,17 +17,18 @@ export function Button({
   disabled,
   ...props
 }: ButtonProps) {
-  const base = "inline-flex items-center gap-2 font-medium rounded-btn transition-opacity cursor-pointer border select-none";
+  // Website buttons: square, thin border, small-caps Josefin with wide tracking.
+  const base = "inline-flex items-center justify-center gap-2 font-display uppercase tracking-[.16em] rounded-btn transition-colors duration-300 cursor-pointer border select-none whitespace-nowrap";
   const variants = {
-    fill:    "bg-carbon text-white border-carbon hover:opacity-85",
-    outline: "bg-transparent text-carbon border-carbon hover:bg-fog",
+    fill:    "bg-olive text-white border-olive hover:bg-pistacho hover:text-olive hover:border-pistacho",
+    outline: "bg-transparent text-olive border-olive/70 hover:bg-olive hover:text-white",
     ghost:   "bg-transparent text-graphite border-transparent hover:bg-fog hover:text-carbon",
-    orange:  "bg-orange text-white border-orange hover:opacity-85",
+    orange:  "bg-olive text-white border-olive hover:bg-pistacho hover:text-olive hover:border-pistacho",
   };
   const sizes = {
-    sm: "text-[12px] px-3 py-1.5",
-    md: "text-[13px] px-4 py-2",
-    lg: "text-[14px] px-5 py-2.5",
+    sm: "text-[10.5px] px-3.5 pt-[7px] pb-[5px]",
+    md: "text-[11.5px] px-5 pt-[9px] pb-[7px]",
+    lg: "text-[12.5px] px-6 pt-[11px] pb-[9px]",
   };
 
   return (

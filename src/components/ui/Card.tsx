@@ -27,11 +27,11 @@ interface KpiCardProps {
 
 export function KpiCard({ label, value, delta, sub, icon, accent }: KpiCardProps) {
   return (
-    <Card className={cn("relative overflow-hidden", accent && "border-t-2 border-orange")}>
+    <Card className={cn("relative overflow-hidden", accent && "border-t-2 border-pistacho")}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[11px] text-slate uppercase tracking-wide font-medium mb-1">{label}</p>
-          <p className="text-[26px] font-semibold text-carbon tracking-tight font-poly leading-none">{value}</p>
+          <p className="eyebrow !text-[10px] !tracking-[.22em] mb-2">{label}</p>
+          <p className="text-[30px] font-light text-carbon font-poly leading-none">{value}</p>
           {delta != null && (
             <p className={cn("text-[11px] mt-1 font-medium", delta >= 0 ? "text-emerald-600" : "text-red-500")}>
               {delta >= 0 ? "+" : ""}{delta}% vs. mes anterior
@@ -56,7 +56,7 @@ export function SectionHeader({ title, subtitle, action, className }: SectionHea
   return (
     <div className={cn("flex items-center justify-between mb-4", className)}>
       <div>
-        <h2 className="text-[14px] font-semibold text-carbon tracking-tight">{title}</h2>
+        <h2 className="font-display text-[13px] font-semibold uppercase tracking-[.16em] text-carbon">{title}</h2>
         {subtitle && <p className="text-[11px] text-slate mt-0.5">{subtitle}</p>}
       </div>
       {action}

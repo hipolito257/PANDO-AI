@@ -8,34 +8,42 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Palette and type of the Pando website (pando-web): deep olive, pistachio
+      // accent, sage secondary text, warm paper background, square corners and
+      // hairline borders instead of shadows.
       colors: {
-        orange:   "#004F46",  // PANDO dark forest green — replaces orange as primary accent
-        carbon:   "#0A231F",  // PANDO near-black (NKB)
-        graphite: "#42533E",  // PANDO dark olive green
-        slate:    "#6B7B6B",  // muted green-gray for secondary text
-        fog:      "#EEF1EC",  // very light gray-green background
-        mist:     "#E5EAE5",  // light gray-green page background
-        chalk:    "#D9DBD4",  // PANDO GRG — borders and dividers
-        paper:    "#FFFFFF",
+        orange:   "#0F2D2B",  // primary accent (historic name) = Pando olive
+        carbon:   "#0A231F",  // near-black text
+        graphite: "#3E4F47",  // body text
+        slate:    "#6F7E68",  // secondary text (sage, darkened for legibility)
+        fog:      "#EFEFE8",  // subtle fills
+        mist:     "#F5F5F0",  // page background (website "paper")
+        chalk:    "#D9DBD4",  // borders and dividers (website "grey")
+        paper:    "#FFFFFF",  // cards
         // semantic aliases
-        brand:    "#004F46",  // PANDO dark forest green
+        brand:    "#0F2D2B",
         ink:      "#0A231F",
-        forest:   "#004F46",  // explicit alias
-        green:    "#437742",  // PANDO medium green (MDG)
+        forest:   "#0F2D2B",
+        olive:    "#0F2D2B",
+        pistacho: "#DCE9C2",  // website accent
+        sage:     "#8A9982",
+        green:    "#437742",
       },
       fontFamily: {
-        poly:  ["'Space Grotesk'", "ui-sans-serif", "system-ui", "sans-serif"],
-        inter: ["'Inter'", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans:    ["'Work Sans'", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["'Josefin Sans'", "ui-sans-serif", "system-ui", "sans-serif"],
+        poly:    ["'Josefin Sans'", "ui-sans-serif", "system-ui", "sans-serif"],  // headings / big numbers
+        inter:   ["'Work Sans'", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       borderRadius: {
-        card: "8px",
-        btn:  "20px",
-        nav:  "200px",
-        tag:  "20px",
+        card: "2px",
+        btn:  "0px",
+        nav:  "0px",
+        tag:  "2px",
       },
       boxShadow: {
-        card:  "0 1px 3px rgba(10,35,31,.04), 0 4px 12px rgba(10,35,31,.03)",
-        float: "0 4px 20px rgba(10,35,31,.08), 0 1px 4px rgba(10,35,31,.05)",
+        card:  "0 0 0 1px rgba(15,45,43,.08)",
+        float: "0 0 0 1px rgba(15,45,43,.08), 0 12px 32px rgba(15,45,43,.10)",
       },
       letterSpacing: {
         tight: "-0.02em",

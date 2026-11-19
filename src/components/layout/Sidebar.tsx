@@ -114,9 +114,9 @@ function SidebarContent({ collapsed, onToggle, pathname, badges, mobile }: {
               href={item.href}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center rounded-[8px] text-[13px] font-medium transition-colors",
-                collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 py-3 text-[15px]" : "gap-3 px-3 py-2",
-                active ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
+                "flex items-center border-l-2 font-display text-[11px] uppercase tracking-[.16em] transition-colors",
+                collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 pt-[13px] pb-[11px] !text-[13px]" : "gap-3 px-3 pt-[9px] pb-[7px]",
+                active ? "border-pistacho bg-white/[0.06] text-pistacho" : "border-transparent text-white/60 hover:bg-white/[0.04] hover:text-white",
               )}
             >
               <span className="w-4 h-4 flex-none flex items-center justify-center opacity-90">
@@ -126,7 +126,7 @@ function SidebarContent({ collapsed, onToggle, pathname, badges, mobile }: {
                 <>
                   <span className="flex-1 whitespace-nowrap">{item.label}</span>
                   {count > 0 && !active && (
-                    <span className="bg-white text-forest text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                    <span className="bg-pistacho text-olive text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center font-sans tracking-normal">
                       {count > 99 ? "99+" : count}
                     </span>
                   )}
@@ -143,9 +143,9 @@ function SidebarContent({ collapsed, onToggle, pathname, badges, mobile }: {
           href="/settings"
           title={collapsed ? "Settings" : undefined}
           className={cn(
-            "flex items-center rounded-[8px] text-[13px] font-medium transition-colors w-full",
-            collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 py-3 text-[15px]" : "gap-3 px-3 py-2",
-            pathname === "/settings" ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white",
+            "flex items-center border-l-2 font-display text-[11px] uppercase tracking-[.16em] transition-colors w-full",
+            collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 pt-[13px] pb-[11px] !text-[13px]" : "gap-3 px-3 pt-[9px] pb-[7px]",
+            pathname === "/settings" ? "border-pistacho bg-white/[0.06] text-pistacho" : "border-transparent text-white/60 hover:bg-white/[0.04] hover:text-white",
           )}
         >
           <span className="w-4 h-4 flex-none flex items-center justify-center opacity-90"><IconGear /></span>
@@ -155,8 +155,8 @@ function SidebarContent({ collapsed, onToggle, pathname, badges, mobile }: {
           onClick={() => signOut({ callbackUrl: "/login" })}
           title={collapsed ? "Sign out" : undefined}
           className={cn(
-            "flex items-center rounded-[8px] text-[13px] text-white/60 hover:text-white hover:bg-white/10 transition-colors w-full",
-            collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 py-3 text-[15px]" : "gap-3 px-3 py-2",
+            "flex items-center border-l-2 border-transparent font-display text-[11px] uppercase tracking-[.16em] text-white/60 hover:text-white hover:bg-white/[0.04] transition-colors w-full",
+            collapsed ? "justify-center py-2.5 px-1" : mobile ? "gap-3 px-3 pt-[13px] pb-[11px] !text-[13px]" : "gap-3 px-3 pt-[9px] pb-[7px]",
           )}
         >
           <IconLogout />

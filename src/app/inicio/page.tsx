@@ -85,14 +85,14 @@ function Splash() {
         </defs>
         <image href="/pando-logo.png" x="0" y="0" width="457" height="328" mask="url(#pando-reveal)" />
       </svg>
-      <p className="splash-tag relative mt-8 text-[11px] md:text-[12px] tracking-[0.35em] uppercase text-[#D9DBD4]/70">Private Equity Intelligence</p>
+      <p className="splash-tag relative mt-8 font-display text-[11px] md:text-[12px] tracking-[0.45em] uppercase text-[#D9DBD4]/70">Private Equity Intelligence</p>
       <button onClick={e => { e.stopPropagation(); enter(); }}
-        className="splash-enter relative mt-10 px-9 py-3 rounded-full border border-[#D9DBD4]/50 text-[#E8EAE4] text-[12px] tracking-[0.3em] uppercase hover:bg-[#D9DBD4]/10 hover:border-[#D9DBD4] transition-colors">
+        className="splash-enter relative mt-10 px-9 pt-[13px] pb-[11px] border border-[#D9DBD4]/50 font-display text-[#E8EAE4] text-[12px] tracking-[0.3em] uppercase hover:bg-pistacho hover:text-olive hover:border-pistacho transition-colors duration-300">
         Enter
       </button>
 
       <style>{`
-        .splash { background: radial-gradient(120% 90% at 50% 38%, #0B6157 0%, #004F46 45%, #003A33 100%); transition: opacity ${EXIT_MS}ms ease, transform ${EXIT_MS}ms ease; }
+        .splash { background: radial-gradient(120% 90% at 50% 38%, #1A4541 0%, #0F2D2B 50%, #0A231F 100%); transition: opacity ${EXIT_MS}ms ease, transform ${EXIT_MS}ms ease; }
         .splash-leave { opacity: 0; transform: scale(1.015); }
         .splash-glow { position: absolute; width: 70vmax; height: 70vmax; border-radius: 9999px; top: 50%; left: 50%; transform: translate(-50%, -55%) scale(.6);
           background: radial-gradient(circle, rgba(217,219,212,.13) 0%, rgba(217,219,212,0) 60%); opacity: 0; animation: glow 2.4s ease-out 1.6s forwards; }
@@ -119,7 +119,7 @@ function Splash() {
 
 export default function InicioPage() {
   return (
-    <Suspense fallback={<main className="fixed inset-0 bg-[#004F46]" />}>
+    <Suspense fallback={<main className="fixed inset-0 bg-[#0F2D2B]" />}>
       <Splash />
     </Suspense>
   );

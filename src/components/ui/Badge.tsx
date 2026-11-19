@@ -11,7 +11,7 @@ interface BadgeProps {
 export function Badge({ children, variant = "default", size = "sm", className }: BadgeProps) {
   const variantStyles = {
     default: "bg-fog text-graphite border-chalk",
-    orange:  "bg-[#fff4f0] text-orange border-[#ffd5c4]",
+    orange:  "bg-pistacho/50 text-olive border-pistacho",
     green:   "bg-[#f0fdf4] text-emerald-700 border-emerald-200",
     red:     "bg-[#fef2f2] text-red-600 border-red-200",
     yellow:  "bg-[#fffbeb] text-amber-700 border-amber-200",
@@ -22,7 +22,7 @@ export function Badge({ children, variant = "default", size = "sm", className }:
 
   return (
     <span className={cn(
-      "inline-flex items-center gap-1 font-medium border rounded-[20px] whitespace-nowrap",
+      "inline-flex items-center gap-1 font-medium border rounded-[2px] whitespace-nowrap",
       variantStyles[variant],
       sizeStyles[size],
       className
