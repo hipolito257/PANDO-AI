@@ -2,6 +2,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { SessionProvider } from "next-auth/react";
 import { db } from "@/lib/db";
 import { DocJobsProvider } from "./DocJobsContext";
+import { Reveal } from "@/components/layout/Reveal";
 
 const SPLASH_GATE = `try{if(!sessionStorage.getItem("pando:splash")){location.replace("/inicio?next="+encodeURIComponent(location.pathname+location.search))}}catch(e){}`;
 
@@ -30,6 +31,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <main className="flex-1 min-w-0 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
             {children}
           </main>
+          <Reveal />
         </div>
       </DocJobsProvider>
     </SessionProvider>

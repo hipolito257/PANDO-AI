@@ -56,7 +56,7 @@ export function EmpresaActions({ company }: { company: CompanyData }) {
       <div className="flex items-center gap-2">
         <button
           onClick={() => setEditOpen(true)}
-          className="px-3 py-1.5 text-[12px] font-medium bg-carbon text-white rounded-[8px] hover:opacity-85 transition-opacity flex items-center gap-1.5"
+          className="px-3.5 pt-[7px] pb-[5px] font-display text-[10.5px] uppercase tracking-[.16em] bg-pistacho text-olive border border-pistacho hover:bg-white hover:border-white transition-colors duration-300 flex items-center gap-1.5"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -67,7 +67,7 @@ export function EmpresaActions({ company }: { company: CompanyData }) {
         <div ref={genRef} className="relative">
           <button
             onClick={() => setGenOpen(v => !v)}
-            className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors flex items-center gap-1.5"
+            className="px-3.5 pt-[7px] pb-[5px] font-display text-[10.5px] uppercase tracking-[.16em] border border-white/45 text-white hover:bg-pistacho hover:text-olive hover:border-pistacho transition-colors duration-300 flex items-center gap-1.5"
           >
             Generate
             <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -92,12 +92,12 @@ export function EmpresaActions({ company }: { company: CompanyData }) {
           )}
         </div>
         <Link href={`/valuation/${company.id}`}>
-          <button className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors">
+          <button className="px-3.5 pt-[7px] pb-[5px] font-display text-[10.5px] uppercase tracking-[.16em] border border-white/45 text-white hover:bg-pistacho hover:text-olive hover:border-pistacho transition-colors duration-300">
             Valuation
           </button>
         </Link>
         <Link href={`/comparables?company=${company.id}`}>
-          <button className="px-3 py-1.5 text-[12px] font-medium bg-fog border border-chalk rounded-[8px] text-graphite hover:bg-chalk transition-colors">
+          <button className="px-3.5 pt-[7px] pb-[5px] font-display text-[10.5px] uppercase tracking-[.16em] border border-white/45 text-white hover:bg-pistacho hover:text-olive hover:border-pistacho transition-colors duration-300">
             View comps
           </button>
         </Link>

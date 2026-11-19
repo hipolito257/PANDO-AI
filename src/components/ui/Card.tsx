@@ -54,8 +54,8 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, subtitle, action, className }: SectionHeaderProps) {
   return (
-    <div className={cn("flex items-center justify-between mb-4", className)}>
-      <div>
+    <div className={cn("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-4", className)}>
+      <div className="min-w-0">
         <h2 className="font-display text-[13px] font-semibold uppercase tracking-[.16em] text-carbon">{title}</h2>
         {subtitle && <p className="text-[11px] text-slate mt-0.5">{subtitle}</p>}
       </div>
