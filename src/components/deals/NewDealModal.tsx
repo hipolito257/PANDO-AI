@@ -7,8 +7,8 @@ import { CURRENCIES, DEAL_TYPE_LABEL, type Stage } from "./dealUi";
 
 type Option = { id: string; name: string };
 
-export function NewDealModal({ onClose, companyId, companyName }: {
-  onClose: () => void; companyId?: string; companyName?: string;
+export function NewDealModal({ onClose, companyId, companyName, phase = "sourcing" }: {
+  onClose: () => void; companyId?: string; companyName?: string; phase?: string;
 }) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -28,7 +28,7 @@ export function NewDealModal({ onClose, companyId, companyName }: {
         setCompanies(Array.isArray(d) ? [...d].sort((a, b) => a.name.localeCompare(b.name)) : [])).catch(() => {});
     }
     fetch("/api/users").then(r => (r.ok ? r.json() : { users: [] })).then((d: { users: Option[] }) => setPeople(d.users ?? [])).catch(() => {});
-    fetch("/api/deal-stages").then(r => (r.ok ? r.json() : [])).then((d: Stage[]) => {
+    fetch(`/api/deal-stages?phase=${phase}`).then(r => (r.ok ? r.json() : [])).then((d: Stage[]) => {
       setStages(d);
       setForm(f => ({ ...f, stage: f.stage || d[0]?.key || "" }));
     }).catch(() => {});
@@ -45,7 +45,7 @@ export function NewDealModal({ onClose, companyId, companyName }: {
       const size = Number(form.dealSize.replace(/[,\s]/g, ""));
       const res = await fetch("/api/deals", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, dealSize: form.dealSize.trim() && Number.isFinite(size) ? size : null }),
+        body: JSON.stringify({ ...form, phase, dealSize: form.dealSize.trim() && Number.isFinite(size) ? size : null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Could not create the deal");

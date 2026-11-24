@@ -375,7 +375,7 @@ export async function computeChanges(sync: SyncConfig, given?: SheetTab[]) {
   if (col("company") < 0 || col("stage") < 0) throw new Error("The Company and Stage columns aren't mapped (or were renamed in the sheet)");
 
   const [stages, people, allDeals, allCompanies] = await Promise.all([
-    listStages(),
+    listStages("sourcing"),
     db.select({ id: users.id, name: users.name, email: users.email }).from(users),
     db.query.deals.findMany({ with: { company: { columns: { id: true, name: true } }, lead: { columns: { id: true, name: true } } } }),
     db.select({ id: companies.id, name: companies.name }).from(companies),
@@ -466,6 +466,8 @@ export async function computeChanges(sync: SyncConfig, given?: SheetTab[]) {
     const before = snap[key] ?? {};
     for (const f of DEAL_FIELDS) {
       if (!(f in want)) continue;
+      // The sheet tracks the sourcing pipeline: a deal already in Portfolio or Exit keeps its stage.
+      if (f === "stage" && deal.phase && deal.phase !== "sourcing") continue;
       const to = want[f] ?? null;
       if (f in before && (before[f] ?? null) === to) continue; // unchanged in the sheet since the last review
       const from = current[f];
@@ -568,7 +570,7 @@ export async function applyRun(runId: string, selectedIds: string[] | null, user
   if (run.status !== "pending_review") throw new Error("These changes were already reviewed or replaced by a newer reading");
   const all = parseJson<ProposedChange[]>(run.changes, []);
   const chosen = all.filter(c => (c.kind === "update" || c.kind === "create") && (!selectedIds || selectedIds.includes(c.id)));
-  const stages = await listStages();
+  const stages = await listStages("sourcing");
   const now = nowIso();
   const label = "Google Sheet";
   let applied = 0;

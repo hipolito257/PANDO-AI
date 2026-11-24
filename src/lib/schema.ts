@@ -210,6 +210,9 @@ export const firmSettings = pgTable("FirmSettings", {
   cronEnabled:            boolean("cronEnabled").notNull().default(true),
   vapidPublicKey:         text("vapidPublicKey"),   // Web Push keys, generated on first use (src/lib/push.ts)
   vapidPrivateKey:        text("vapidPrivateKey"),  // encrypted with blobCrypto
+  fundTarget:             doublePrecision("fundTarget"),   // fundraising target (Fundraising section)
+  fundCurrency:           text("fundCurrency"),
+  fundName:               text("fundName"),
   updatedAt:              text("updatedAt").default(sql`now()`),
   updatedBy:              text("updatedBy"),
 });
@@ -535,6 +538,7 @@ export const dealStages = pgTable("DealStage", {
   label:    text("label").notNull(),
   position: integer("position").notNull(),
   kind:     text("kind").notNull().default("open"), // open | won | lost
+  phase:    text("phase").notNull().default("sourcing"), // sourcing | portfolio | exit
 });
 
 export const deals = pgTable("Deal", {
@@ -544,6 +548,8 @@ export const deals = pgTable("Deal", {
   type:           text("type").notNull().default("buy_side"), // buy_side | sell_side | minority | add_on
   stage:          text("stage").notNull().default("sourcing"),
   stageChangedAt: text("stageChangedAt"),
+  phase:          text("phase").notNull().default("sourcing"), // sourcing | portfolio | exit (src/lib/phases.ts)
+  phaseChangedAt: text("phaseChangedAt"),
   onHold:         boolean("onHold").notNull().default(false),
   statusNote:     text("statusNote"),        // why it's on hold / dropped
   leadUserId:     text("leadUserId").references(() => users.id, { onDelete: "set null" }),
@@ -657,4 +663,29 @@ export const pushSubscriptions = pgTable("PushSubscription", {
   device:     text("device"),
   createdAt:  text("createdAt").notNull(),
   lastUsedAt: text("lastUsedAt"),
+});
+
+// ── Fundraising ───────────────────────────────────────────────────────────────
+// The investors (LPs) Pando is raising from: family offices, AFOREs, etc.
+export const investors = pgTable("Investor", {
+  id:              text("id").primaryKey(),
+  name:            text("name").notNull(),
+  type:            text("type").notNull().default("family_office"),  // src/lib/fundraising.ts
+  country:         text("country"),
+  city:            text("city"),
+  website:         text("website"),
+  contactName:     text("contactName"),
+  contactRole:     text("contactRole"),
+  stage:           text("stage").notNull().default("identified"),
+  targetAmount:    doublePrecision("targetAmount"),
+  committedAmount: doublePrecision("committedAmount"),
+  currency:        text("currency").notNull().default("USD"),
+  ownerId:         text("ownerId").references(() => users.id, { onDelete: "set null" }),
+  nextStep:        text("nextStep"),
+  nextStepDate:    text("nextStepDate"),
+  notes:           text("notes"),
+  stageChangedAt:  text("stageChangedAt"),
+  createdBy:       text("createdBy"),
+  createdAt:       text("createdAt").notNull(),
+  updatedAt:       text("updatedAt").notNull(),
 });

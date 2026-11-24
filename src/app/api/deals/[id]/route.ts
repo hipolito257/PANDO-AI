@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import {
-  db, deals, dealMembers, companyFiles, compSets, publicComps, jobs, activityLog, availabilityUpdates, users,
+  db, deals, dealMembers, companyFiles, compSets, publicComps, jobs, activityLog, availabilityUpdates, users, companies,
 } from "@/lib/db";
-import { DEAL_TYPES, listStages, logDeal, newId, nowIso, notifyDealTeam } from "@/lib/deals";
+import { DEAL_TYPES, entryStage, listStages, logDeal, newId, nowIso, notifyDealTeam } from "@/lib/deals";
+import { isPhase, phaseInfo } from "@/lib/phases";
 import { loadValuation } from "@/lib/valuationData";
 
 type Params = { params: Promise<{ id: string }> };
@@ -30,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const memberIds = deal.members.map(m => m.userId);
 
     const [stages, files, set, deckJobs, activity, availability, allUsers] = await Promise.all([
-      listStages(),
+      listStages(deal.phase),
       db.query.companyFiles.findMany({
         where: eq(companyFiles.companyId, companyId), orderBy: [desc(companyFiles.createdAt)],
         columns: { id: true, filename: true, ext: true, sizeBytes: true, extractionStatus: true, uploadedByName: true, createdAt: true },
@@ -107,15 +108,30 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (b.leadUserId !== undefined) set.leadUserId = b.leadUserId || null;
 
   let stageLabel: string | null = null;
-  if (typeof b.stage === "string" && b.stage !== deal.stage) {
+  let phaseLabel: string | null = null;
+  // Moving to another section (Deal Sourcing ⇄ Portfolio ⇄ Exit): lands on that section's first stage.
+  if (isPhase(b.phase) && b.phase !== deal.phase) {
+    const stage = await entryStage(b.phase);
+    if (!stage) return NextResponse.json({ error: "That section has no stages" }, { status: 400 });
+    set.phase = b.phase; set.phaseChangedAt = nowIso();
+    set.stage = stage.key; set.stageChangedAt = nowIso();
+    phaseLabel = phaseInfo(b.phase).label;
+  } else if (typeof b.stage === "string" && b.stage !== deal.stage) {
     const stage = (await listStages()).find(s => s.key === b.stage);
     if (!stage) return NextResponse.json({ error: "Unknown stage" }, { status: 400 });
     set.stage = stage.key;
     set.stageChangedAt = nowIso();
     stageLabel = stage.label;
+    if (stage.phase !== deal.phase && isPhase(stage.phase)) {   // a stage of another section moves the deal there
+      set.phase = stage.phase; set.phaseChangedAt = nowIso(); phaseLabel = phaseInfo(stage.phase).label;
+    }
   }
 
   await db.update(deals).set(set).where(eq(deals.id, id));
+  if (set.phase) {
+    // The company's status follows the deal: pipeline while sourcing, portfolio once invested.
+    await db.update(companies).set({ status: phaseInfo(set.phase).companyStatus, updatedAt: nowIso() }).where(eq(companies.id, deal.companyId));
+  }
 
   // A new lead joins the team as lead.
   if (set.leadUserId) {
@@ -125,7 +141,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const who = session.user.name ?? "User";
-  if (stageLabel) {
+  if (phaseLabel) {
+    await logDeal(session.user.id, who, "deal_phase_changed", id, set.codeName ?? deal.codeName, `moved the deal to ${phaseLabel}`);
+    await notifyDealTeam(id, session.user.id, { title: `${set.codeName ?? deal.codeName} → ${phaseLabel}`, body: `${who} moved the deal to ${phaseLabel}.` });
+  } else if (stageLabel) {
     await logDeal(session.user.id, who, "deal_stage_changed", id, set.codeName ?? deal.codeName, `moved the deal to ${stageLabel}`);
     await notifyDealTeam(id, session.user.id, { title: `${set.codeName ?? deal.codeName} → ${stageLabel}`, body: `${who} moved the deal to ${stageLabel}.` });
   }

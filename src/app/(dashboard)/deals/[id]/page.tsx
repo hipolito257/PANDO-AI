@@ -9,6 +9,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import { levelInfo } from "@/lib/availability";
 import { ExecutiveSummary } from "@/components/deals/ExecutiveSummary";
 import { ValuationSummary, type ValComp, type LboModelRef } from "@/components/comparables/ValuationPanel";
+import { PHASES, moveDealToPhase, phaseInfo, type Phase } from "@/lib/phases";
 import { Avatar, CURRENCIES, DEAL_ROLE_LABEL, DEAL_TYPE_LABEL, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
 
 type Person = { id: string; name: string };
@@ -22,6 +23,7 @@ type Milestone = { id: string; label: string; date: string | null; done: boolean
 type DealData = {
   deal: {
     id: string; codeName: string; type: string; stage: string; stageChangedAt: string | null; onHold: boolean; statusNote: string | null;
+    phase: string;
     leadUserId: string | null; dealSize: number | null; currency: string; description: string | null; createdAt: string;
     company: { id: string; name: string; slug: string; sector: string | null; country: string; description: string | null };
     members: Member[]; tasks: Task[]; milestones: Milestone[];
@@ -60,6 +62,22 @@ export default function DealPage({ params }: { params: Promise<{ id: string }> }
     catch { setState("error"); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  // Tell the menu which section this deal is in, so it opens there.
+  const dealPhase = data?.deal.phase;
+  useEffect(() => {
+    if (!dealPhase) return;
+    (window as unknown as { __pandoSection?: { path: string; phase: string } }).__pandoSection = { path: window.location.pathname, phase: dealPhase };
+    window.dispatchEvent(new CustomEvent("pando:active-section", { detail: { phase: dealPhase } }));
+  }, [dealPhase]);
+  const [moving, setMoving] = useState<string | null>(null);
+  async function changeSection(target: Phase) {
+    if (!data || target === data.deal.phase) return;
+    setMoving(target); setErr(null);
+    const r = await moveDealToPhase(id, target);
+    setMoving(null);
+    if (!r.ok) setErr(r.error ?? "Couldn't move the deal");
+    await load();
+  }
 
   async function call(path: string, method: string, body: unknown) {
     setErr(null);
@@ -89,10 +107,26 @@ export default function DealPage({ params }: { params: Promise<{ id: string }> }
   return (
     <div>
       <Topbar title={deal.codeName} subtitle={`${deal.company.name} · ${DEAL_TYPE_LABEL[deal.type] ?? deal.type}`}
-        actions={<Link href="/deals"><Button variant="outline" size="sm">All deals</Button></Link>} />
+        actions={<Link href={phaseInfo(deal.phase).href}><Button variant="outline" size="sm">{phaseInfo(deal.phase).short} board</Button></Link>} />
 
       <div className="p-6 space-y-4">
         {err && <Card><p className="text-[12px] text-red-600">{err}</p></Card>}
+
+        {/* ── Section: where this deal lives (Deal Sourcing / Portfolio / Exit) ── */}
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="eyebrow">Section</span>
+          <div className="flex border border-olive/25 bg-paper" role="radiogroup" aria-label="Section">
+            {PHASES.map(p => {
+              const on = deal.phase === p.key;
+              return (
+                <button key={p.key} role="radio" aria-checked={on} disabled={!!moving} onClick={() => changeSection(p.key)}
+                  className={`font-display text-[10.5px] uppercase tracking-[.16em] px-3.5 pt-[8px] pb-[6px] transition-colors duration-300 ${on ? "bg-olive text-white" : moving === p.key ? "bg-pistacho text-olive" : "text-olive/70 hover:bg-pistacho/50 hover:text-olive"}`}>
+                  {moving === p.key ? "Moving…" : p.short}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* ── Header ── */}
         <Card>

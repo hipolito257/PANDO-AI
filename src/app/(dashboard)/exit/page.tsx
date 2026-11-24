@@ -74,7 +74,7 @@ export default async function ExitPage() {
     <div>
       <MarkReadOnMount types={["exit_signal"]} />
       <Topbar
-        title="Exits"
+        title="Market exits"
         subtitle={`${totalExits} confirmed exit${totalExits !== 1 ? "s" : ""} · ${exitAlerts.length} signal${exitAlerts.length !== 1 ? "s" : ""} pending confirmation`}
       />
       <div className="p-6 space-y-5">

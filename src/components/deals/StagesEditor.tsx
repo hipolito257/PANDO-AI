@@ -10,7 +10,7 @@ const KINDS = [
   { value: "lost", label: "Dropped / lost" },
 ];
 
-export function StagesEditor({ stages, onClose, onSaved }: { stages: Stage[]; onClose: () => void; onSaved: (s: Stage[]) => void }) {
+export function StagesEditor({ stages, phase = "sourcing", onClose, onSaved }: { stages: Stage[]; phase?: string; onClose: () => void; onSaved: (s: Stage[]) => void }) {
   const [rows, setRows] = useState(stages.map(s => ({ key: s.key, label: s.label, kind: s.kind })));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -25,7 +25,7 @@ export function StagesEditor({ stages, onClose, onSaved }: { stages: Stage[]; on
 
   async function save() {
     setSaving(true); setErr(null);
-    const res = await fetch("/api/deal-stages", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rows) });
+    const res = await fetch(`/api/deal-stages?phase=${phase}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rows) });
     const data = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) { setErr(data.error ?? "Couldn't save the stages"); return; }

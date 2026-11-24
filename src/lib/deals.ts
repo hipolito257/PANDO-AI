@@ -21,10 +21,18 @@ export const DEAL_ROLES = [
 
 export const TASK_STATUSES = ["todo", "doing", "done"] as const;
 
-export type DealStageRow = { key: string; label: string; position: number; kind: string };
+export type DealStageRow = { key: string; label: string; position: number; kind: string; phase: string };
 
-export async function listStages(): Promise<DealStageRow[]> {
-  return db.select().from(dealStages).orderBy(asc(dealStages.position));
+/** Stages in order; pass a phase (sourcing | portfolio | exit) for just that section's board. */
+export async function listStages(phase?: string): Promise<DealStageRow[]> {
+  const q = db.select().from(dealStages);
+  return (phase ? q.where(eq(dealStages.phase, phase)) : q).orderBy(asc(dealStages.position));
+}
+
+/** First open stage of a phase: where a deal lands when it moves into that section. */
+export async function entryStage(phase: string): Promise<DealStageRow | null> {
+  const stages = await listStages(phase);
+  return stages.find(s => s.kind === "open") ?? stages[0] ?? null;
 }
 
 export const nowIso = () => new Date().toISOString();

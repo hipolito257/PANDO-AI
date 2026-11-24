@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const headers = headersOf(tab, headerRow);
     const given = (b.columnMap ?? null) as ColumnMap | null;
     const columnMap: ColumnMap = given && Object.values(given).some(h => h && headers.includes(h)) ? given : guessColumnMap(headers);
-    const stages = await listStages();
+    const stages = await listStages("sourcing");
     return NextResponse.json({
       kind: ref.kind,
       tabs: tabs.map(t => t.name),

@@ -25,7 +25,7 @@ export async function GET() {
     },
     runs: runs.map(r => ({ ...r, changes: undefined, snapshot: undefined, changeCount: (JSON.parse(r.changes || "[]") as { kind: string }[]).filter(c => c.kind === "update" || c.kind === "create").length })),
     pending: pending && { ...pending, snapshot: undefined, changes: JSON.parse(pending.changes || "[]") },
-    stages: await listStages(),
+    stages: await listStages("sourcing"),
     fields: SYNC_FIELDS,
     serviceAccount: serviceAccountEmail(),
   });
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   const columnMap: ColumnMap = {};
   for (const f of SYNC_FIELDS) if (typeof b.columnMap?.[f.key] === "string" && b.columnMap[f.key]) columnMap[f.key] = b.columnMap[f.key];
   if (!columnMap.company || !columnMap.stage) return NextResponse.json({ error: "Map at least the Company and Stage columns" }, { status: 400 });
-  const stageKeys = new Set((await listStages()).map(s => s.key));
+  const stageKeys = new Set((await listStages("sourcing")).map(s => s.key));
   const stageMap: StageMap = {};
   for (const [k, v] of Object.entries((b.stageMap ?? {}) as Record<string, unknown>)) {
     if (typeof v === "string" && (stageKeys.has(v) || v === "__hold" || v === "__ignore")) stageMap[norm(k)] = v;
