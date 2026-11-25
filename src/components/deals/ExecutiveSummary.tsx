@@ -5,7 +5,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { autoCagr, type Bullet, type DealSummary, type FinYear } from "@/lib/dealSummary";
+import { autoCagr, type Bullet, type DealSummary, type FinYear, type TxRow } from "@/lib/dealSummary";
 
 const C = { actual: "#0A231F", projected: "#42533E", line: "#9A8A5E", text: "#0A231F", muted: "#6B7B6B", grid: "#D9DBD4" };
 const input = "text-[12px] bg-paper border border-chalk rounded-[6px] px-2 py-1 text-carbon focus:outline-none focus:border-carbon";
@@ -76,7 +76,7 @@ function FinancialChart({ fin }: { fin: DealSummary["financial"] }) {
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
-function SummaryView({ s }: { s: DealSummary }) {
+function SummaryView({ s, onSaveTx }: { s: DealSummary; onSaveTx: (rows: TxRow[]) => Promise<boolean> }) {
   const fin = s.financial;
   return (
     <div className="space-y-6">
@@ -119,24 +119,54 @@ function SummaryView({ s }: { s: DealSummary }) {
         {fin.footnote && <p className="text-[10px] text-slate mt-2">{fin.footnote}</p>}
       </section>
 
-      <section>
-        <SectionTitle>Transaction Overview</SectionTitle>
-        {s.transaction.length === 0 ? <p className="text-[12px] text-slate">Nothing yet.</p> : (
-          <table className="w-full text-[13px] border-collapse">
-            <tbody>
-              {s.transaction.map((r, i) => (
-                <tr key={i} className={`border border-chalk ${r.highlight ? "bg-[#DCE5D9]" : i % 2 ? "bg-fog/60" : ""}`}>
-                  <td className="px-3 py-2 font-semibold text-carbon w-[18%] align-middle">{r.label}{r.label && !r.label.endsWith(":") ? ":" : ""}</td>
-                  <td className="px-3 py-2 text-carbon w-[32%] border-l border-chalk whitespace-pre-line">{r.value || <span className="text-slate">—</span>}</td>
-                  <td className="px-3 py-2 text-graphite border-l border-chalk whitespace-pre-line">{r.note}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <TransactionTable rows={s.transaction} onSave={onSaveTx} />
       {s.footnotes && <p className="text-[10px] text-slate whitespace-pre-line">{s.footnotes}</p>}
     </div>
+  );
+}
+
+// Transaction overview, editable in place: click a cell, type, click out to save.
+function TransactionTable({ rows, onSave }: { rows: TxRow[]; onSave: (rows: TxRow[]) => Promise<boolean> }) {
+  const [local, setLocal] = useState(rows);
+  useEffect(() => setLocal(rows), [rows]);
+  const [saving, setSaving] = useState(false);
+  async function commit(next: TxRow[]) {
+    setLocal(next);
+    if (JSON.stringify(next) === JSON.stringify(rows)) return;
+    setSaving(true); await onSave(next); setSaving(false);
+  }
+  const set = (i: number, patch: Partial<TxRow>) => setLocal(l => l.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const cell = "w-full bg-transparent resize-none focus:outline-none focus:bg-paper focus:ring-1 focus:ring-olive/40 px-1 -mx-1 py-0.5 placeholder:text-slate/70";
+  const grow = (el: HTMLTextAreaElement) => { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; };
+  return (
+    <section>
+      <SectionTitle aside={<span className="text-[10px] text-slate">{saving ? "Saving…" : "Click any cell to edit"}</span>}>Transaction Overview</SectionTitle>
+      <table className="w-full text-[13px] border-collapse">
+        <tbody>
+          {local.map((r, i) => (
+            <tr key={i} className={`group border border-chalk ${r.highlight ? "bg-[#DCE5D9]" : i % 2 ? "bg-fog/60" : ""}`}>
+              <td className="px-3 py-1.5 w-[22%] align-top">
+                <input value={r.label} onChange={e => set(i, { label: e.target.value })} onBlur={() => commit(local)} placeholder="Label"
+                  className={`${cell} font-semibold text-carbon`} aria-label="Label" />
+              </td>
+              <td className="px-3 py-1.5 w-[32%] border-l border-chalk align-top">
+                <textarea rows={1} value={r.value} ref={el => { if (el) grow(el); }} onChange={e => { set(i, { value: e.target.value }); grow(e.target); }} onBlur={() => commit(local)}
+                  placeholder="—" className={`${cell} text-carbon`} aria-label={`${r.label} value`} />
+              </td>
+              <td className="px-3 py-1.5 border-l border-chalk align-top">
+                <div className="flex gap-1">
+                  <textarea rows={1} value={r.note} ref={el => { if (el) grow(el); }} onChange={e => { set(i, { note: e.target.value }); grow(e.target); }} onBlur={() => commit(local)}
+                    placeholder="Note" className={`${cell} text-graphite`} aria-label={`${r.label} note`} />
+                  <button onClick={() => commit(local.filter((_, j) => j !== i))} title="Remove row"
+                    className="text-slate hover:text-red-600 text-[13px] opacity-60 sm:opacity-0 group-hover:opacity-100 focus:opacity-100">×</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button onClick={() => setLocal(l => [...l, { label: "", value: "", note: "" }])} className="mt-2 text-[12px] font-medium text-forest hover:underline">+ Add row</button>
+    </section>
   );
 }
 
@@ -301,6 +331,17 @@ export function ExecutiveSummary({ dealId }: { dealId: string }) {
     setSummary(j.summary); setSaved(true); setDraft(null);
   }
 
+  // Saves just the transaction rows, keeping the rest of the summary as it is.
+  async function saveTx(rows: TxRow[]) {
+    if (!summary) return false;
+    setError(null);
+    const res = await fetch(`/api/deals/${dealId}/summary`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ summary: { ...summary, transaction: rows } }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { setError(j.error ?? "Couldn't save"); return false; }
+    setSummary(j.summary); setSaved(true);
+    return true;
+  }
+
   async function aiDraft() {
     if ((draft || saved) && !confirm("Replace what's written with a new draft from the company's documents? You can still review it before saving.")) return;
     setBusy("ai"); setError(null);
@@ -341,11 +382,14 @@ export function ExecutiveSummary({ dealId }: { dealId: string }) {
       {!summary ? <p className="text-[12px] text-slate">Loading…</p>
         : draft ? <SummaryEditor key={editorKey} s={draft} onChange={setDraft} />
         : isEmpty(summary) ? (
-          <div className="text-center py-6">
-            <p className="text-[13px] text-carbon">No executive summary yet</p>
-            <p className="text-[12px] text-slate mt-1">Write the company, financial and transaction overview, or let Claude draft it from the documents.</p>
+          <div className="space-y-6">
+            <div className="text-center py-4">
+              <p className="text-[13px] text-carbon">No executive summary yet</p>
+              <p className="text-[12px] text-slate mt-1">Write the company, financial and transaction overview, or let Claude draft it from the documents.</p>
+            </div>
+            <TransactionTable rows={summary.transaction} onSave={saveTx} />
           </div>
-        ) : <SummaryView s={summary} />}
+        ) : <SummaryView s={summary} onSaveTx={saveTx} />}
     </Card>
   );
 }

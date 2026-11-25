@@ -44,6 +44,7 @@ export const companies = pgTable("Company", {
   website:         text("website"),
   linkedinUrl:     text("linkedinUrl"),
   description:     text("description"),
+  capTable:        text("capTable"),             // cap table JSON (src/lib/capTable.ts)
   revenueUsd:      doublePrecision("revenueUsd"),
   revenueGrowth:   doublePrecision("revenueGrowth"),
   ebitdaUsd:       doublePrecision("ebitdaUsd"),

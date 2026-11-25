@@ -1,13 +1,14 @@
 // One company, cut into the blocks the deal page shows as tabs (and the company page stacks).
 // Server-only: loads everything in one go and returns ready-to-render pieces.
 import type { ReactNode } from "react";
+import { CapTableCard } from "@/components/company/CapTableCard";
+import { emptyCapTable, parseCapTable } from "@/lib/capTable";
 import { db } from "@/lib/db";
 import * as schema from "@/lib/schema";
 import { or, eq, and, desc, inArray } from "drizzle-orm";
 import { Card, SectionHeader } from "@/components/ui/Card";
 import { Badge, SignalBadge, StatusBadge, ScoreBadge } from "@/components/ui/Badge";
 import { VBars } from "@/components/charts/VBars";
-import { Donut } from "@/components/charts/Donut";
 import { RadarChart } from "@/components/charts/RadarChart";
 import { Spark } from "@/components/charts/Spark";
 import { fmtM, fmtDate, fmtPct } from "@/lib/utils";
@@ -66,14 +67,7 @@ export async function loadCompanyView(id: string, opts: { showDeals?: boolean } 
   const chartRevenues = snapshots.map((s) => (s.revenueUsd ?? 0) / 1_000_000);
   const chartEbitda = snapshots.map((s) => (s.ebitdaUsd ?? 0) / 1_000_000);
 
-  // Not connected to real data yet: shown with an "Example data" tag.
-  const capTable = [
-    { label: "Founders",      value: 38, color: "#0F2D2B" },
-    { label: "Series B",      value: 22, color: "#8A9982" },
-    { label: "Series A",      value: 18, color: "#B9C8A0" },
-    { label: "Seed / Angels", value: 14, color: "#DCE9C2" },
-    { label: "ESOP",          value: 8,  color: "#D9DBD4" },
-  ];
+  // Evaluation scores are not connected to real data yet: shown with an "Example data" tag.
   const radarAxes = ["Market", "Product", "Team", "Finance", "Strategy", "Risk"];
   const radarVals = [85, 78, 90, 72, 80, 65];
 
@@ -149,21 +143,7 @@ export async function loadCompanyView(id: string, opts: { showDeals?: boolean } 
           {opts.showDeals !== false && <CompanyDealsCard companyId={company.id} companyName={company.name} />}
         </div>
         <div className="space-y-4">
-            <Card>
-              <SectionHeader title="Cap table" subtitle={<>Estimated distribution<Example /></>} className="mb-3" />
-              <div className="flex items-center gap-4">
-                <Donut segments={capTable} size={90} thickness={16} centerLabel="100%" centerSub="equity" />
-                <div className="space-y-1.5 text-[10px] flex-1">
-                  {capTable.map((s) => (
-                    <div key={s.label} className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full flex-none" style={{ background: s.color }} />
-                      <span className="text-graphite flex-1">{s.label}</span>
-                      <span className="font-semibold text-carbon">{s.value}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
+            <CapTableCard companyId={company.id} initial={parseCapTable(company.capTable) ?? emptyCapTable()} />
             {company.website && (
               <Card padding="sm">
                 <SectionHeader title="Links" className="mb-2" />

@@ -4,7 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, deals, companies, financialSnapshots, userSettings } from "@/lib/db";
 import { logDeal, nowIso } from "@/lib/deals";
-import { companyKnowledgeText } from "@/lib/companyContext";
+import { companyFileBlocks } from "@/lib/companyContext";
 import { DRAFT_SYSTEM, autoCagr, emptySummary, normalizeSummary, parseSummary, type DealSummary } from "@/lib/dealSummary";
 
 export const maxDuration = 120;
@@ -69,14 +69,16 @@ export async function POST(_req: NextRequest, { params }: Params) {
   if (!apiKey) return NextResponse.json({ error: "Add your Anthropic API key in Settings to draft with AI." }, { status: 400 });
 
   const c = deal.company;
-  const knowledge = await companyKnowledgeText(c.id, 30000);
+  // The documents themselves (CIM, teaser, model…), not just their summaries, so
+  // transaction terms, KPIs and figures come straight from the source.
+  const files = await companyFileBlocks(c.id, null);
   const base = await prefill(c.id);
   const context = [
     `Company: ${c.name} · ${c.sector ?? ""} · ${c.country}`,
     c.description && `Description: ${c.description}`,
     `Deal: ${deal.codeName} (${deal.type})${deal.dealSize ? `, size ${deal.dealSize} ${deal.currency}` : ""}${deal.description ? `. ${deal.description}` : ""}`,
     base.financial.years.length && `Financials on the platform (USD $m): ${JSON.stringify(base.financial.years)}`,
-    knowledge || "No documents have been analysed for this company yet.",
+    files.blocks.length ? `The company's documents follow${files.names.length ? `: ${files.names.join(", ")}` : ""}. Use them as the main source.` : "No documents have been uploaded for this company yet.",
   ].filter(Boolean).join("\n\n");
 
   try {
@@ -85,7 +87,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       model: "claude-sonnet-5-5",
       max_tokens: 4000,
       system: DRAFT_SYSTEM,
-      messages: [{ role: "user", content: context }],
+      messages: [{ role: "user", content: [{ type: "text", text: context }, ...files.blocks, { type: "text", text: "Write the executive summary JSON now." }] }],
     });
     const text = msg.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("");
     const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
