@@ -151,7 +151,7 @@ export function DealView({ id, company }: { id: string; company: CompanySlots })
   return (
     <div>
       <Topbar title={deal.codeName} subtitle={`${deal.company.name} · ${DEAL_TYPE_LABEL[deal.type] ?? deal.type}`}
-        actions={<Link href={phaseInfo(deal.phase).href}><Button variant="outline" size="sm">{phaseInfo(deal.phase).short} board</Button></Link>} />
+        actions={company?.actions ?? <Link href={phaseInfo(deal.phase).href}><Button variant="outline" size="sm">{phaseInfo(deal.phase).short} board</Button></Link>} />
 
       <div className="p-6 space-y-4">
         {err && <Card><p className="text-[12px] text-red-600">{err}</p></Card>}
@@ -182,7 +182,7 @@ export function DealView({ id, company }: { id: string; company: CompanySlots })
                 <StagePill stage={stage} onHold={deal.onHold} />
               </div>
               <p className="text-[12px] text-graphite">
-                <Link href={`/empresa/${deal.company.slug}`} className="font-medium hover:underline">{deal.company.name}</Link>
+                <button onClick={() => openTab("company")} className="font-medium hover:underline">{deal.company.name}</button>
                 {deal.company.sector && ` · ${deal.company.sector}`} · {deal.company.country}
                 {deal.stageChangedAt && <span className="text-slate"> · in {stage?.label ?? deal.stage} since {fmtDay(deal.stageChangedAt)}</span>}
               </p>
@@ -251,13 +251,7 @@ export function DealView({ id, company }: { id: string; company: CompanySlots })
 
         {tab !== "deal" && !company && <Card><p className="text-[13px] text-slate">Couldn&apos;t load the company.</p></Card>}
         {tab === "company" && company && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Link href={`/empresa/${deal.company.slug}`} className="text-[11px] text-slate hover:text-carbon">Open the full company page →</Link>
-              {company.actions}
-            </div>
-            {company.overview}
-          </div>
+          <div className="space-y-3">{company.overview}</div>
         )}
         {tab === "financials" && company && (
           <div className="space-y-4">

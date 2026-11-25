@@ -1,4 +1,5 @@
 "use client";
+import { DealCompanyOptions, useDealOptions } from "@/components/deals/DealPicker";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { TrendingUp, Upload, X, Loader2, Download, Trash2, Eye } from "lucide-react";
 import { useDocJobs } from "../DocJobsContext";
@@ -114,6 +115,7 @@ export default function FinancialModelsPage() {
   const { jobs, runJob } = useDocJobs();
 
   const [companies, setCompanies] = useState<Company[]>([]);
+  const { deals: dealOptions } = useDealOptions();
   const [companyId, setCompanyId] = useState("");
   const [companyFileIds, setCompanyFileIds] = useState<string[] | null>(null);
 
@@ -352,14 +354,14 @@ export default function FinancialModelsPage() {
 
           {/* Company / target */}
           <div className="bg-white border border-chalk rounded-[12px] p-6 mb-6">
-            <h2 className="text-[14px] font-semibold text-carbon mb-3">Target Company</h2>
+            <h2 className="text-[14px] font-semibold text-carbon mb-3">Deal</h2>
             <select
               value={companyId}
               onChange={e => { setCompanyId(e.target.value); setPlan(null); setLastDownload(null); }}
               className="w-full px-3 py-2.5 text-[13px] bg-fog border border-chalk rounded-[8px] text-carbon focus:outline-none focus:border-orange mb-2"
             >
-              <option value="">— No specific company (early screening) —</option>
-              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="">— No specific deal (early screening) —</option>
+              <DealCompanyOptions deals={dealOptions} />
             </select>
             <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
             {!companyId && (

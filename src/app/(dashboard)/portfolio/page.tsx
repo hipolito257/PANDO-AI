@@ -97,7 +97,7 @@ export default function PortfolioPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="eyebrow !text-[10px]">{d.codeName}</p>
-                        <Link href={c ? `/empresa/${c.slug}` : `/deals/${d.id}`} className="block mt-1.5 font-display text-[20px] text-carbon leading-tight hover:underline truncate">{c?.name ?? d.codeName}</Link>
+                        <Link href={`/deals/${d.id}`} className="block mt-1.5 font-display text-[20px] text-carbon leading-tight hover:underline truncate">{c?.name ?? d.codeName}</Link>
                         <p className="text-[11px] text-slate mt-0.5">{[c?.sector, c?.country].filter(Boolean).join(" · ")}</p>
                       </div>
                       <StagePill stage={stageByKey.get(d.stage)} onHold={d.onHold} />

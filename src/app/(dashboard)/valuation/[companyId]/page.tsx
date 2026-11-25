@@ -80,7 +80,7 @@ export default function ValuationWorkspace() {
       <Topbar title={`Valuation · ${company.name}`} subtitle="Comps, football field and LBO in one place. Decks, documents and the chat use what you set here."
         actions={<div className="flex gap-2">
           <Link href={`/comparables?company=${company.id}`} className="text-[12px] font-medium border border-chalk bg-paper rounded-[8px] px-3 py-1.5 hover:border-carbon">Comparables</Link>
-          <Link href={`/empresa/${company.id}`} className="text-[12px] font-medium border border-chalk bg-paper rounded-[8px] px-3 py-1.5 hover:border-carbon">Company</Link>
+          <Link href={`/empresa/${company.id}`} className="text-[12px] font-medium border border-chalk bg-paper rounded-[8px] px-3 py-1.5 hover:border-carbon">Back to deal</Link>
         </div>} />
       <div className="p-6 space-y-4">
         {/* ── Headline numbers ── */}

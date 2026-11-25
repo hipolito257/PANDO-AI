@@ -1,4 +1,6 @@
 "use client";
+import { useDealOptions, type DealOption } from "@/components/deals/DealPicker";
+import { PHASES } from "@/lib/phases";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { startJob, waitForJob } from "@/lib/backgroundJobs";
 import { ValuationPanel } from "@/components/comparables/ValuationPanel";
@@ -117,6 +119,7 @@ function ComparablesPage() {
   const [companySearch, setCompanySearch] = useState("");
 
   const [companies,   setCompanies]   = useState<Company[]>([]);
+  const { deals: dealOptions } = useDealOptions();
   const [compSet,     setCompSet]     = useState<CompSet | null>(null);
   const [loadingSet,  setLoadingSet]  = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
@@ -144,7 +147,7 @@ function ComparablesPage() {
   const loadCompanies = useCallback(async () => {
     setCompaniesState("loading");
     try {
-      const d = await fetchJson<Company[]>("/api/companies?limit=200");
+      const d = await fetchJson<Company[]>("/api/companies?limit=500");
       // Exclude exits (public/acquired/closed) and inactive — keep monitoring + pipeline
       setCompanies(Array.isArray(d) ? d.filter(c => !["public", "acquired", "closed", "inactive"].includes(c.status)) : []);
       setCompaniesState("ok");
@@ -409,7 +412,7 @@ function ComparablesPage() {
               </svg>
               <input
                 type="text"
-                placeholder="Search company..."
+                placeholder="Search deal or company..."
                 value={companySearch}
                 onChange={e => setCompanySearch(e.target.value)}
                 className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-fog border border-chalk rounded-[7px] text-carbon placeholder:text-slate focus:outline-none focus:border-carbon"
@@ -420,26 +423,24 @@ function ComparablesPage() {
           <div className="flex-1 overflow-y-auto py-1">
             {(() => {
               const q = companySearch.toLowerCase();
-              const filtered = companies.filter(c => c.name.toLowerCase().includes(q) || (c.sector ?? "").toLowerCase().includes(q));
-              const radar    = filtered.filter(c => c.status === "monitoring");
-              const pipeline = filtered.filter(c => c.status === "pipeline");
-
-              const renderGroup = (label: string, dot: string, items: Company[]) => items.length === 0 ? null : (
+              // One entry per deal (its company is what the comps are for), grouped by section.
+              const filtered = dealOptions.filter(d => `${d.codeName} ${d.company.name} ${d.company.sector ?? ""}`.toLowerCase().includes(q));
+              const renderGroup = (label: string, dot: string, items: DealOption[]) => items.length === 0 ? null : (
                 <div key={label}>
                   <div className="flex items-center gap-1.5 px-3 py-1.5">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
                     <span className="text-[9px] font-semibold text-slate uppercase tracking-wider">{label} ({items.length})</span>
                   </div>
                   <div className="space-y-0.5 px-2 mb-1">
-                    {items.map(c => (
-                      <button key={c.id} onClick={() => selectCompany(c.id)}
+                    {items.map(d => (
+                      <button key={d.id} onClick={() => selectCompany(d.companyId)}
                         className={`w-full text-left px-2.5 py-2 rounded-[8px] transition-all
-                          ${selectedCompanyId === c.id ? "bg-carbon text-white" : "hover:bg-fog text-carbon"}`}>
+                          ${selectedCompanyId === d.companyId ? "bg-carbon text-white" : "hover:bg-fog text-carbon"}`}>
                         <div className="flex items-center gap-2">
-                          <CompanyLogo name={c.name} website={c.website} size="sm" />
+                          <CompanyLogo name={d.company.name} website={d.company.website} size="sm" />
                           <div className="min-w-0">
-                            <p className={`text-[12px] font-medium truncate ${selectedCompanyId === c.id ? "text-white" : "text-carbon"}`}>{c.name}</p>
-                            <p className={`text-[10px] truncate ${selectedCompanyId === c.id ? "text-white/50" : "text-slate"}`}>{c.sector ?? c.country}</p>
+                            <p className={`text-[12px] font-medium truncate ${selectedCompanyId === d.companyId ? "text-white" : "text-carbon"}`}>{d.codeName}</p>
+                            <p className={`text-[10px] truncate ${selectedCompanyId === d.companyId ? "text-white/50" : "text-slate"}`}>{d.company.name}{d.company.sector ? ` · ${d.company.sector}` : ""}</p>
                           </div>
                         </div>
                       </button>
@@ -450,8 +451,8 @@ function ComparablesPage() {
 
               return (
                 <>
-                  {renderGroup("Radar", "bg-orange", radar)}
-                  {renderGroup("Pipeline", "bg-blue-500", pipeline)}
+                  {PHASES.map(p => renderGroup(p.label, p.key === "sourcing" ? "bg-olive" : p.key === "portfolio" ? "bg-sage" : "bg-pistacho",
+                    filtered.filter(d => d.phase === p.key && filtered.findIndex(x => x.companyId === d.companyId) === filtered.indexOf(d))))}
                   {companiesState === "loading" && (
                     <p className="text-[11px] text-slate text-center py-6 px-3">Loading companies…</p>
                   )}
@@ -462,7 +463,7 @@ function ComparablesPage() {
                     </div>
                   )}
                   {companiesState === "ok" && filtered.length === 0 && (
-                    <p className="text-[11px] text-slate text-center py-6 px-3">No results for "{companySearch}"</p>
+                    <p className="text-[11px] text-slate text-center py-6 px-3">{companySearch ? `No deals match "${companySearch}"` : "No deals yet. Create one in the pipeline."}</p>
                   )}
                 </>
               );
@@ -497,8 +498,8 @@ function ComparablesPage() {
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <IconBarChart size={44} className="text-chalk mx-auto mb-3" />
-                <p className="text-[15px] font-semibold text-carbon">Select a company from the radar</p>
-                <p className="text-[12px] text-slate mt-1">Choose a company to view its public comparables analysis</p>
+                <p className="text-[15px] font-semibold text-carbon">Pick a deal</p>
+                <p className="text-[12px] text-slate mt-1">Choose a deal to see the public comparables of its company</p>
               </div>
             </div>
           ) : (

@@ -1,4 +1,5 @@
 "use client";
+import { DealCompanyOptions, useDealOptions } from "@/components/deals/DealPicker";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { startJob, waitForJob, cancelJob } from "@/lib/backgroundJobs";
 import {
@@ -142,6 +143,7 @@ export default function DocumentosPage() {
   const { jobs, runJob, clearJob } = useDocJobs();
   const [templates, setTemplates]     = useState<DocTemplate[]>([]);
   const [companies, setCompanies]     = useState<Company[]>([]);
+  const { deals: dealOptions } = useDealOptions();
   // Persisted to sessionStorage (not plain useState) so navigating to another
   // page (e.g. Settings) and back doesn't lose an in-progress draft, form
   // inputs, or already-uploaded context files.
@@ -1341,10 +1343,8 @@ export default function DocumentosPage() {
               </div>
               <select value={companyId} onChange={e => setCompanyId(e.target.value)}
                 className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
-                <option value="">— No specific company —</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
-                ))}
+                <option value="">— No specific deal —</option>
+                <DealCompanyOptions deals={dealOptions} />
               </select>
               <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
               {companyId && (
@@ -1822,10 +1822,8 @@ export default function DocumentosPage() {
               </div>
               <select value={companyId} onChange={e => setCompanyId(e.target.value)}
                 className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
-                <option value="">— No specific company —</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
-                ))}
+                <option value="">— No specific deal —</option>
+                <DealCompanyOptions deals={dealOptions} />
               </select>
               <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
             </div>
@@ -2106,10 +2104,8 @@ export default function DocumentosPage() {
               </div>
               <select value={companyId} onChange={e => setCompanyId(e.target.value)}
                 className="w-full border border-chalk rounded-[8px] px-3 py-2.5 text-[13px] text-carbon bg-white focus:outline-none focus:border-carbon">
-                <option value="">— No specific company —</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}{c.sector ? ` · ${c.sector}` : ""}{c.stage ? ` · ${c.stage}` : ""}</option>
-                ))}
+                <option value="">— No specific deal —</option>
+                <DealCompanyOptions deals={dealOptions} />
               </select>
               <CompanyFilesPicker companyId={companyId} value={companyFileIds} onChange={setCompanyFileIds} />
             </div>
