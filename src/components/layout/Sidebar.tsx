@@ -44,7 +44,6 @@ const SECTIONS: Section[] = [
   ] },
   { key: "exit", label: "Exit", icon: <IconExit />, phase: "exit", items: [
     { href: "/exits", label: "Exit pipeline" },
-    { href: "/exit", label: "Market exits", badge: "exit" },
   ] },
 ];
 
