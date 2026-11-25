@@ -191,10 +191,10 @@ function FinancialInline({ fin, onSave, onExtract, extracting }: {
             <tr className="border-b border-chalk">
               <th className="text-left font-medium text-slate px-2 py-1 whitespace-nowrap sticky left-0 bg-paper">{f.unit || "Year"}</th>
               {f.years.map((y, i) => (
-                <th key={i} className={`px-1 py-1 group ${y.projected ? "bg-fog/70" : ""}`}>
+                <th key={i} className={`px-1 py-1 group !font-sans !normal-case !tracking-normal ${y.projected ? "bg-fog/70" : ""}`}>
                   <div className="flex items-center justify-end gap-0.5">
                     <input value={y.label} onChange={e => setYear(i, { label: e.target.value })} onBlur={blur} aria-label="Year"
-                      className={`${cell} font-semibold text-carbon`} />
+                      className={`${cell} !font-sans !text-[12px] !normal-case !tracking-normal font-semibold text-carbon min-w-[64px]`} />
                     <button onClick={() => removeYear(i)} title="Remove year" className="text-slate hover:text-red-600 opacity-50 sm:opacity-0 group-hover:opacity-100">×</button>
                   </div>
                   <label className="flex items-center justify-end gap-1 text-[9px] font-normal text-slate pr-1">
@@ -443,12 +443,13 @@ export function ExecutiveSummary({ dealId }: { dealId: string }) {
   const [editorKey, setEditorKey] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fromDocs, setFromDocs] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/deals/${dealId}/summary`);
     if (!res.ok) { setError("Couldn't load the executive summary"); return; }
     const j = await res.json();
-    setSummary(j.summary); setSaved(j.saved);
+    setSummary(j.summary); setSaved(j.saved); setFromDocs(!!j.fromDocs);
   }, [dealId]);
   useEffect(() => { load(); }, [load]);
 
@@ -527,6 +528,7 @@ export function ExecutiveSummary({ dealId }: { dealId: string }) {
       {!summary ? <p className="text-[12px] text-slate">Loading…</p>
         : draft ? <SummaryEditor key={editorKey} s={draft} onChange={setDraft} />
         : <>
+            {fromDocs && <p className="text-[11px] text-forest bg-pistacho/30 px-3 py-2 mb-4">The financial years below were read from the company&apos;s documents. Edit any number, or add and remove years; your changes are kept.</p>}
             {isEmpty(summary) && <p className="text-[12px] text-slate mb-4">Nothing written yet. Fill it in below, or use “Draft with AI” to write it from the documents.</p>}
             <SummaryView s={summary} onSave={savePatch} onExtract={extractFinancials} extracting={busy === "fin"} />
           </>}

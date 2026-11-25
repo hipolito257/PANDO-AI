@@ -1,14 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { db, deals, companies, financialSnapshots, userSettings } from "@/lib/db";
+import { db, deals, companies, companyFiles, financialSnapshots, userSettings } from "@/lib/db";
+import type { ExtractionResult } from "@/lib/companyFileExtract";
 import { logDeal, nowIso } from "@/lib/deals";
 import { companyFileBlocks } from "@/lib/companyContext";
 import { DRAFT_SYSTEM, autoCagr, emptySummary, normalizeSummary, parseSummary, type DealSummary } from "@/lib/dealSummary";
 
 export const maxDuration = 120;
 type Params = { params: Promise<{ id: string }> };
+
+// The yearly figures read from the company's documents when they were uploaded
+// (deck, CIM, model): every year they give, actual and projected, in their own
+// currency, exactly as printed. Newer documents win for the same year.
+async function docFinancials(companyId: string): Promise<DealSummary["financial"] | null> {
+  const files = await db.select({ filename: companyFiles.filename, extraction: companyFiles.extraction, status: companyFiles.extractionStatus })
+    .from(companyFiles).where(eq(companyFiles.companyId, companyId)).orderBy(desc(companyFiles.createdAt)).catch(() => []);
+  type Row = { year: number; projected: boolean; revenue: number | null; ebitda: number | null; currency: string; file: string; source: string };
+  const rows: Row[] = [];
+  for (const f of files) {
+    if (f.status !== "done" || !f.extraction) continue;
+    let x: ExtractionResult;
+    try { x = JSON.parse(f.extraction); } catch { continue; }
+    for (const r of x.financials ?? []) {
+      if (!r.year || (r.revenue == null && r.ebitda == null)) continue;
+      rows.push({ year: r.year, projected: r.period === "forecast" || r.period === "budget", revenue: r.revenue, ebitda: r.ebitda,
+        currency: (r.currency || "").toUpperCase(), file: f.filename, source: r.source });
+    }
+  }
+  if (!rows.length) return null;
+  // One currency for the chart: the one most of the figures use.
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.currency, (counts.get(r.currency) ?? 0) + 1);
+  const currency = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  // One row per year: an actual beats a projection; otherwise the newest document wins.
+  const byYear = new Map<number, Row>();
+  for (const r of rows.filter(r => r.currency === currency)) {
+    const cur = byYear.get(r.year);
+    if (!cur || (cur.projected && !r.projected)) byYear.set(r.year, r);
+  }
+  const list = [...byYear.values()].sort((a, b) => a.year - b.year);
+  // Amounts come in full units; show millions (documents already in millions stay as they are).
+  const max = Math.max(...list.map(r => Math.abs(r.revenue ?? r.ebitda ?? 0)));
+  const div = max >= 100_000 ? 1_000_000 : 1;
+  const round = (n: number) => Math.round(n * 10) / 10;
+  const years = list.map(r => ({
+    label: `${r.projected ? "E" : ""}${r.year}`,
+    revenue: r.revenue != null ? round(r.revenue / div) : null,
+    margin: r.revenue && r.ebitda != null ? round((r.ebitda / r.revenue) * 100) : null,
+    projected: r.projected,
+  }));
+  const sources = [...new Set(list.map(r => `${r.file}${r.source ? ` (${r.source})` : ""}`))].slice(0, 3);
+  return {
+    unit: `${currency || "USD"} $m`, scenario: "Base Case", years, rows: [], cagr: autoCagr(years),
+    footnote: `Source: ${sources.join("; ")}. EBITDA margin = EBITDA / revenue.`,
+  };
+}
 
 // A starting point from the platform's data when nothing has been written yet.
 async function prefill(companyId: string): Promise<DealSummary> {
@@ -40,7 +88,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const [deal] = await db.select({ companyId: deals.companyId, summary: deals.summary }).from(deals).where(eq(deals.id, id)).limit(1);
   if (!deal) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const saved = parseSummary(deal.summary);
-  return NextResponse.json({ summary: saved ?? await prefill(deal.companyId), saved: !!saved });
+  const summary = saved ?? await prefill(deal.companyId);
+  // No numbers yet: take them straight from the documents (all the years they give).
+  let fromDocs = false;
+  if (!saved?.financial.years.length) {
+    const fin = await docFinancials(deal.companyId);
+    if (fin) { summary.financial = fin; fromDocs = true; }
+  }
+  return NextResponse.json({ summary, saved: !!saved, fromDocs });
 }
 
 // PUT { summary } — save the team's edits
@@ -70,6 +125,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!apiKey) return NextResponse.json({ error: "Add your Anthropic API key in Settings to draft with AI." }, { status: 400 });
 
   const c = deal.company;
+  if (onlyFinancials) {
+    const fin = await docFinancials(c.id);
+    if (fin) return NextResponse.json({ summary: { ...emptySummary(), financial: fin }, fromDocs: true });
+  }
   // The documents themselves (CIM, teaser, model…), not just their summaries, so
   // transaction terms, KPIs and figures come straight from the source.
   const files = await companyFileBlocks(c.id, null);
