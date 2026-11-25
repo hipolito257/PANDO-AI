@@ -47,7 +47,7 @@ export function KpiCard({ label, value, delta, sub, icon, accent }: KpiCardProps
 
 interface SectionHeaderProps {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   action?: React.ReactNode;
   className?: string;
 }

@@ -141,3 +141,7 @@ header .order-last > button, header .order-last > a > button, header .order-last
 header .order-last > button:hover, header .order-last > a > button:hover, header .order-last > a:not(:has(button)):hover {
   background: #DCE9C2; color: #0F2D2B; border-color: #DCE9C2; opacity: 1;
 }
+
+/* Horizontal tab bars that scroll on phones without showing a scrollbar */
+.no-scrollbar { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
