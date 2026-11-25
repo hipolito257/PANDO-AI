@@ -10,7 +10,7 @@ export const INTERESTS = [
 export const DEAL_STATUSES = [
   { key: "active",  label: "Active",  cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   { key: "on_hold", label: "On hold", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-  { key: "pending", label: "Pending", cls: "bg-orange/10 text-orange border-orange/30" },
+  { key: "pending", label: "Pending", cls: "bg-sky-50 text-sky-800 border-sky-200" },
 ] as const;
 
 export type Interest = (typeof INTERESTS)[number]["key"];

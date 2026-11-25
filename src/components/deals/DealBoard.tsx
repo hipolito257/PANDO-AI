@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Card } from "@/components/ui/Card";
@@ -9,7 +10,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import { NewDealModal } from "@/components/deals/NewDealModal";
 import { StagesEditor } from "@/components/deals/StagesEditor";
 import { DEAL_STATUSES, INTERESTS, isAlert } from "@/lib/dealRating";
-import { Avatar, DEAL_TYPE_LABEL, RatingPills, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
+import { Avatar, DEAL_TYPE_LABEL, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
 import { DEAL_DRAG_END, DEAL_DRAG_START, DEAL_DRAG_TYPE, DEAL_MOVED, PHASES, moveDealToPhase, phaseInfo, type Phase } from "@/lib/phases";
 
 type DealCard = {
@@ -36,6 +37,7 @@ type BoardProps = {
 // appear (and the sidebar sections light up) so a deal can change section.
 export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const myId = session?.user?.id;
   const [deals, setDeals] = useState<DealCard[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -230,13 +232,21 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
                   </div>
                   <div className="space-y-2 min-h-[60px]">
                     {cards.map(d => (
-                      <Link key={d.id} href={`/deals/${d.id}`} draggable
+                      <div key={d.id} draggable
                         onDragStart={e => startDrag(e, d.id)} onDragEnd={endDrag}
+                        onClick={e => { if (!(e.target as HTMLElement).closest("select, a")) router.push(`/deals/${d.id}`); }}
                         className={`block bg-paper rounded-[8px] border p-3 transition-all duration-200 cursor-grab active:cursor-grabbing ${isAlert(d) ? "border-red-400 ring-1 ring-red-300 hover:border-red-600" : d.interest === "low" ? "border-chalk opacity-75 hover:opacity-100 hover:border-carbon" : "border-chalk hover:border-carbon"} ${dragId === d.id ? "opacity-40 scale-[0.98]" : ""}`}>
-                        <p className="text-[13px] font-semibold text-carbon leading-snug">{d.codeName}</p>
+                        <Link href={`/deals/${d.id}`} draggable={false} className="text-[13px] font-semibold text-carbon leading-snug hover:underline">{d.codeName}</Link>
                         <p className="text-[11px] text-graphite">{d.company?.name}{d.company?.country ? ` · ${d.company.country}` : ""}</p>
                         <p className="text-[10px] text-slate mt-0.5">{DEAL_TYPE_LABEL[d.type] ?? d.type}{d.dealSize != null ? ` · ${fmtSize(d.dealSize, d.currency)}` : ""}</p>
-                        <div className="mt-1.5"><RatingPills interest={d.interest} dealStatus={d.dealStatus} compact /></div>
+                        {/* Change interest and status right here, without opening the deal */}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                          {isAlert(d) && <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-600 text-white" title="High interest and pending">⚠ Alert</span>}
+                          <PillSelect value={d.interest} options={INTERESTS.map(i => ({ key: i.key, label: i.label, short: i.short, cls: i.cls }))}
+                            label={`Interest in ${d.codeName}`} onChange={v => rate(d.id, { interest: v })} />
+                          <PillSelect value={d.dealStatus} options={DEAL_STATUSES.map(s => ({ key: s.key, label: s.label, short: s.label, cls: s.cls }))}
+                            label={`Status of ${d.codeName}`} onChange={v => rate(d.id, { dealStatus: v })} />
+                        </div>
                         <div className="flex items-center justify-between mt-2">
                           <div className="flex -space-x-1.5">
                             {d.members.slice(0, 4).map(m => <Avatar key={m.userId} name={m.user.name} size={20} title={`${m.user.name} · ${m.allocation}%`} />)}
@@ -246,7 +256,7 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
                             {d.nextMilestone && <span className="block">{d.nextMilestone.label} · {fmtDay(d.nextMilestone.date)}</span>}
                           </div>
                         </div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -307,5 +317,24 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
         </div>
       )}
     </div>
+  );
+}
+
+// A pill that is also a dropdown: change it on the card without opening the deal.
+function PillSelect({ value, options, label, onChange }: {
+  value: string; label: string; onChange: (v: string) => void;
+  options: { key: string; label: string; short: string; cls: string }[];
+}) {
+  const cur = options.find(o => o.key === value) ?? options[0];
+  return (
+    <span className={`relative inline-flex items-center text-[10px] font-medium rounded-full border pl-2 pr-4 py-0.5 hover:ring-1 hover:ring-olive/30 ${cur.cls}`}
+      onClick={e => e.stopPropagation()}>
+      {cur.short}
+      <svg width="7" height="7" viewBox="0 0 10 10" className="absolute right-1.5 opacity-60" aria-hidden><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" /></svg>
+      <select value={value} aria-label={label} title={label} onChange={e => onChange(e.target.value)}
+        draggable={false} className="absolute inset-0 opacity-0 cursor-pointer w-full">
+        {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+    </span>
   );
 }
