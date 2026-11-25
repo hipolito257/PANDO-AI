@@ -58,10 +58,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
 }
 
 // POST — draft the summary with Claude from the company's documents (not saved until the user saves it)
-export async function POST(_req: NextRequest, { params }: Params) {
+export async function POST(req: NextRequest, { params }: Params) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
+  const onlyFinancials = (await req.json().catch(() => ({}))).section === "financial";
   const deal = await db.query.deals.findFirst({ where: eq(deals.id, id), with: { company: true } });
   if (!deal) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const setting = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, session.user.id) });
@@ -87,7 +88,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
       model: "claude-sonnet-5-5",
       max_tokens: 4000,
       system: DRAFT_SYSTEM,
-      messages: [{ role: "user", content: [{ type: "text", text: context }, ...files.blocks, { type: "text", text: "Write the executive summary JSON now." }] }],
+      messages: [{ role: "user", content: [{ type: "text", text: context }, ...files.blocks, { type: "text", text: onlyFinancials
+        ? "Only the financial part matters now: extract the historical and projected years exactly as the documents give them. Return the full JSON shape anyway."
+        : "Write the executive summary JSON now." }] }],
     });
     const text = msg.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("");
     const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));

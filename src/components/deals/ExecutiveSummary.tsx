@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { autoCagr, type Bullet, type DealSummary, type FinYear, type TxRow } from "@/lib/dealSummary";
 
-const C = { actual: "#0A231F", projected: "#42533E", line: "#9A8A5E", text: "#0A231F", muted: "#6B7B6B", grid: "#D9DBD4" };
+const C = { actual: "#0A231F", projected: "#8A9982", line: "#9A8A5E", text: "#0A231F", muted: "#6B7B6B", grid: "#D9DBD4" };
 const input = "text-[12px] bg-paper border border-chalk rounded-[6px] px-2 py-1 text-carbon focus:outline-none focus:border-carbon";
 
 // "**Founded in 2015**, the Company…" → bold runs
@@ -67,8 +67,9 @@ function FinancialChart({ fin }: { fin: DealSummary["financial"] }) {
         </g>
       ))}
       <g transform={`translate(${W / 2 - 150}, ${H - 8})`} fontSize="14" fill={C.muted}>
-        <rect x={0} y={-11} width={26} height={10} fill={C.actual} /><text x={32} y={-2}>Revenue</text>
-        <line x1={130} x2={162} y1={-6} y2={-6} stroke={C.line} strokeWidth="3" /><text x={168} y={-2}>EBITDA margin</text>
+        <rect x={-70} y={-11} width={26} height={10} fill={C.actual} /><text x={-38} y={-2}>Actual</text>
+        <rect x={40} y={-11} width={26} height={10} fill={C.projected} /><text x={72} y={-2}>Projected</text>
+        <line x1={170} x2={202} y1={-6} y2={-6} stroke={C.line} strokeWidth="3" /><text x={208} y={-2}>EBITDA margin</text>
       </g>
     </svg>
   );
@@ -76,52 +77,182 @@ function FinancialChart({ fin }: { fin: DealSummary["financial"] }) {
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
-function SummaryView({ s, onSaveTx }: { s: DealSummary; onSaveTx: (rows: TxRow[]) => Promise<boolean> }) {
-  const fin = s.financial;
+function SummaryView({ s, onSave, onExtract, extracting }: {
+  s: DealSummary; onSave: (patch: Partial<DealSummary>) => Promise<boolean>; onExtract: () => void; extracting: boolean;
+}) {
   return (
     <div className="space-y-6">
-      <section>
-        <SectionTitle>Company Overview</SectionTitle>
-        {s.companyOverview.length === 0 ? <p className="text-[12px] text-slate">Nothing yet.</p> : (
-          <ul className="space-y-1.5">
-            {s.companyOverview.map((b, i) => (
-              <li key={i} className={`text-[13px] text-graphite leading-relaxed flex gap-2 ${b.level ? "pl-6" : ""}`}>
-                <span className="shrink-0 text-carbon">{b.level ? "—" : "•"}</span>
-                <span><Rich text={b.text} /></span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <SectionTitle aside={<span className="text-[12px] text-graphite">{fin.unit && `(${fin.unit})`}{fin.scenario && ` | ${fin.scenario}`}</span>}>Financial Overview</SectionTitle>
-        {/* On a phone the chart and its KPI rows keep a readable size and scroll sideways together. */}
-        <div className="overflow-x-auto"><div className="min-w-[560px]">
-        <div className="relative">
-          {fin.cagr.some(c => c.label || c.value) && (
-            <table className="absolute left-0 top-0 text-[11px] border border-carbon bg-paper z-10">
-              <thead><tr><th colSpan={2} className="bg-carbon text-white font-semibold px-3 py-0.5">Revenue CAGR</th></tr></thead>
-              <tbody>{fin.cagr.map((c, i) => <tr key={i}><td className="px-2 text-graphite">{c.label}</td><td className="px-2 text-right text-carbon">{c.value}</td></tr>)}</tbody>
-            </table>
-          )}
-          <div className={fin.cagr.length ? "pt-12" : ""}><FinancialChart fin={fin} /></div>
-        </div>
-        {fin.rows.map((r, ri) => (
-          <div key={ri} className="mt-2">
-            <p className="text-[11px] font-semibold text-carbon text-center border-t border-carbon pt-1">{r.label}</p>
-            <div className="grid bg-fog" style={{ gridTemplateColumns: `repeat(${Math.max(1, fin.years.length)}, minmax(0, 1fr))` }}>
-              {fin.years.map((_, i) => <span key={i} className="text-[11px] text-graphite text-center py-1">{r.values[i] || ""}</span>)}
-            </div>
-          </div>
-        ))}
-        </div></div>
-        {fin.footnote && <p className="text-[10px] text-slate mt-2">{fin.footnote}</p>}
-      </section>
-
-      <TransactionTable rows={s.transaction} onSave={onSaveTx} />
+      <OverviewInline bullets={s.companyOverview} onSave={b => onSave({ companyOverview: b })} />
+      <FinancialInline fin={s.financial} onSave={f => onSave({ financial: f })} onExtract={onExtract} extracting={extracting} />
+      <TransactionTable rows={s.transaction} onSave={rows => onSave({ transaction: rows })} />
       {s.footnotes && <p className="text-[10px] text-slate whitespace-pre-line">{s.footnotes}</p>}
     </div>
+  );
+}
+
+// Company overview: click to edit the bullets, click out to save.
+function OverviewInline({ bullets, onSave }: { bullets: Bullet[]; onSave: (b: Bullet[]) => Promise<boolean> }) {
+  const [text, setText] = useState<string | null>(null);
+  async function done() {
+    if (text === null) return;
+    const next = textToBullets(text);
+    if (JSON.stringify(next) !== JSON.stringify(bullets)) await onSave(next);
+    setText(null);
+  }
+  return (
+    <section>
+      <SectionTitle aside={text === null ? <button onClick={() => setText(bulletsToText(bullets))} className="text-[10px] text-slate hover:text-carbon">Edit</button>
+        : <span className="text-[10px] text-slate">One bullet per line · “- ” for a sub-bullet · **bold** · click out to save</span>}>Company Overview</SectionTitle>
+      {text !== null ? (
+        <textarea autoFocus value={text} onChange={e => setText(e.target.value)} onBlur={done} rows={Math.max(5, text.split("\n").length + 1)}
+          className={`${input} w-full text-[13px] leading-relaxed`} placeholder={"**Founded in 2015**, the Company is…\n- **Brand A (92% of sales)** is the flagship…"} />
+      ) : bullets.length === 0 ? (
+        <button onClick={() => setText("")} className="text-[12px] text-slate hover:text-carbon">Nothing yet. Click to write it.</button>
+      ) : (
+        <ul className="space-y-1.5 cursor-text" onClick={() => setText(bulletsToText(bullets))} title="Click to edit">
+          {bullets.map((b, i) => (
+            <li key={i} className={`text-[13px] text-graphite leading-relaxed flex gap-2 ${b.level ? "pl-6" : ""}`}>
+              <span className="shrink-0 text-carbon">{b.level ? "—" : "•"}</span>
+              <span><Rich text={b.text} /></span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// Financial overview: chart + the numbers behind it, editable in place.
+function FinancialInline({ fin, onSave, onExtract, extracting }: {
+  fin: DealSummary["financial"]; onSave: (f: DealSummary["financial"]) => Promise<boolean>; onExtract: () => void; extracting: boolean;
+}) {
+  const [f, setF] = useState(fin);
+  useEffect(() => setF(fin), [fin]);
+  const [saving, setSaving] = useState(false);
+  async function commit(next: DealSummary["financial"]) {
+    const withCagr = { ...next, cagr: autoCagr(next.years) };
+    setF(withCagr);
+    if (JSON.stringify(withCagr) === JSON.stringify(fin)) return;
+    setSaving(true); await onSave(withCagr); setSaving(false);
+  }
+  const numOrNull = (v: string) => { const t = v.replace(/[,%\s]/g, ""); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? n : null; };
+  const setYear = (i: number, y: Partial<FinYear>) => setF(x => ({ ...x, years: x.years.map((v, j) => (j === i ? { ...v, ...y } : v)) }));
+  const setRowVal = (ri: number, i: number, v: string) => setF(x => ({ ...x, rows: x.rows.map((r, k) => (k === ri ? { ...r, values: r.values.map((c, j) => (j === i ? v : c)) } : r)) }));
+  const yearNum = (l: string) => Number(l.replace(/\D/g, "")) || new Date().getFullYear();
+  function addYear(where: "before" | "after") {
+    const ys = f.years;
+    const thisYear = new Date().getFullYear();
+    const n = ys.length ? (where === "before" ? yearNum(ys[0].label) - 1 : yearNum(ys[ys.length - 1].label) + 1) : thisYear - 1;
+    const projected = n > thisYear;
+    const y: FinYear = { label: `${projected ? "E" : ""}${n}`, revenue: null, margin: null, projected };
+    commit({
+      ...f,
+      years: where === "before" ? [y, ...ys] : [...ys, y],
+      rows: f.rows.map(r => ({ ...r, values: where === "before" ? ["", ...r.values] : [...r.values, ""] })),
+    });
+  }
+  const removeYear = (i: number) => commit({ ...f, years: f.years.filter((_, j) => j !== i), rows: f.rows.map(r => ({ ...r, values: r.values.filter((_, j) => j !== i) })) });
+  const cell = "w-full min-w-[56px] bg-transparent text-right focus:outline-none focus:bg-paper focus:ring-1 focus:ring-olive/40 px-1 py-0.5 placeholder:text-slate/60";
+  const blur = () => commit(f);
+
+  return (
+    <section>
+      <SectionTitle aside={
+        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1 flex-1">
+          <span className="text-[12px] text-graphite">(<input value={f.unit} onChange={e => setF({ ...f, unit: e.target.value })} onBlur={blur} placeholder="USD $m" aria-label="Unit"
+            className="w-[64px] bg-transparent focus:outline-none focus:bg-paper text-center" />) |
+            <input value={f.scenario} onChange={e => setF({ ...f, scenario: e.target.value })} onBlur={blur} placeholder="Base Case" aria-label="Scenario"
+              className="ml-1 w-[90px] bg-transparent focus:outline-none focus:bg-paper" /></span>
+          <span className="ml-auto flex items-center gap-3">
+            <span className="text-[10px] text-slate">{saving ? "Saving…" : extracting ? "Reading the documents…" : ""}</span>
+            <button onClick={onExtract} disabled={extracting} className="text-[10px] font-medium text-forest hover:underline disabled:opacity-50">
+              {extracting ? "Extracting…" : "Extract from documents"}
+            </button>
+          </span>
+        </span>
+      }>Financial Overview</SectionTitle>
+
+      {f.years.length > 0 && (
+        <div className="overflow-x-auto"><div className="min-w-[560px] relative">
+          {f.cagr.some(c => c.label || c.value) && (
+            <table className="absolute left-0 top-0 text-[11px] border border-carbon bg-paper z-10">
+              <thead><tr><th colSpan={2} className="bg-carbon text-white font-semibold px-3 py-0.5">Revenue CAGR</th></tr></thead>
+              <tbody>{f.cagr.map((c, i) => <tr key={i}><td className="px-2 text-graphite">{c.label}</td><td className="px-2 text-right text-carbon">{c.value}</td></tr>)}</tbody>
+            </table>
+          )}
+          <div className={f.cagr.length ? "pt-12" : ""}><FinancialChart fin={f} /></div>
+        </div></div>
+      )}
+
+      {/* The numbers: click any cell to edit */}
+      <div className="overflow-x-auto mt-3">
+        <table className="text-[12px] border-collapse min-w-full">
+          <thead>
+            <tr className="border-b border-chalk">
+              <th className="text-left font-medium text-slate px-2 py-1 whitespace-nowrap sticky left-0 bg-paper">{f.unit || "Year"}</th>
+              {f.years.map((y, i) => (
+                <th key={i} className={`px-1 py-1 group ${y.projected ? "bg-fog/70" : ""}`}>
+                  <div className="flex items-center justify-end gap-0.5">
+                    <input value={y.label} onChange={e => setYear(i, { label: e.target.value })} onBlur={blur} aria-label="Year"
+                      className={`${cell} font-semibold text-carbon`} />
+                    <button onClick={() => removeYear(i)} title="Remove year" className="text-slate hover:text-red-600 opacity-50 sm:opacity-0 group-hover:opacity-100">×</button>
+                  </div>
+                  <label className="flex items-center justify-end gap-1 text-[9px] font-normal text-slate pr-1">
+                    <input type="checkbox" checked={y.projected} onChange={e => commit({ ...f, years: f.years.map((v, j) => (j === i ? { ...v, projected: e.target.checked } : v)) })} />Proj.
+                  </label>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-chalk">
+              <td className="px-2 py-1 text-graphite whitespace-nowrap sticky left-0 bg-paper">Revenue</td>
+              {f.years.map((y, i) => (
+                <td key={i} className={y.projected ? "bg-fog/70" : ""}>
+                  <input defaultValue={y.revenue ?? ""} key={`r${i}-${y.revenue}`} placeholder="—" aria-label={`Revenue ${y.label}`}
+                    onBlur={e => { const v = numOrNull(e.target.value); if (v !== y.revenue) commit({ ...f, years: f.years.map((x, j) => (j === i ? { ...x, revenue: v } : x)) }); }}
+                    className={`${cell} text-carbon`} />
+                </td>
+              ))}
+            </tr>
+            <tr className="border-b border-chalk">
+              <td className="px-2 py-1 text-graphite whitespace-nowrap sticky left-0 bg-paper">EBITDA margin %</td>
+              {f.years.map((y, i) => (
+                <td key={i} className={y.projected ? "bg-fog/70" : ""}>
+                  <input defaultValue={y.margin ?? ""} key={`m${i}-${y.margin}`} placeholder="—" aria-label={`EBITDA margin ${y.label}`}
+                    onBlur={e => { const v = numOrNull(e.target.value); if (v !== y.margin) commit({ ...f, years: f.years.map((x, j) => (j === i ? { ...x, margin: v } : x)) }); }}
+                    className={`${cell} text-carbon`} />
+                </td>
+              ))}
+            </tr>
+            {f.rows.map((r, ri) => (
+              <tr key={ri} className="border-b border-chalk group">
+                <td className="px-2 py-1 sticky left-0 bg-paper">
+                  <span className="flex items-center gap-1">
+                    <input value={r.label} onChange={e => setF({ ...f, rows: f.rows.map((x, k) => (k === ri ? { ...x, label: e.target.value } : x)) })} onBlur={blur}
+                      placeholder="KPI (e.g. Stores)" className="bg-transparent focus:outline-none focus:bg-paper text-graphite w-[120px]" aria-label="KPI name" />
+                    <button onClick={() => commit({ ...f, rows: f.rows.filter((_, k) => k !== ri) })} title="Remove row" className="text-slate hover:text-red-600 opacity-50 sm:opacity-0 group-hover:opacity-100">×</button>
+                  </span>
+                </td>
+                {f.years.map((y, i) => (
+                  <td key={i} className={y.projected ? "bg-fog/70" : ""}>
+                    <input value={r.values[i] ?? ""} onChange={e => setRowVal(ri, i, e.target.value)} onBlur={blur} placeholder="—" aria-label={`${r.label} ${y.label}`}
+                      className={`${cell} text-carbon`} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] font-medium text-forest">
+        <button onClick={() => addYear("before")} className="hover:underline">+ Earlier year</button>
+        <button onClick={() => addYear("after")} className="hover:underline">+ Later year</button>
+        {f.rows.length < 6 && <button onClick={() => commit({ ...f, rows: [...f.rows, { label: "", values: f.years.map(() => "") }] })} className="hover:underline">+ KPI row</button>}
+      </div>
+      <input value={f.footnote} onChange={e => setF({ ...f, footnote: e.target.value })} onBlur={blur} placeholder="Source and notes (e.g. CIM p. 32, Adjusted EBITDA)"
+        className="mt-2 w-full text-[10px] text-slate bg-transparent focus:outline-none focus:bg-paper px-1 py-0.5" aria-label="Footnote" />
+    </section>
   );
 }
 
@@ -331,15 +462,29 @@ export function ExecutiveSummary({ dealId }: { dealId: string }) {
     setSummary(j.summary); setSaved(true); setDraft(null);
   }
 
-  // Saves just the transaction rows, keeping the rest of the summary as it is.
-  async function saveTx(rows: TxRow[]) {
+  // Saves one part (overview, financials, transaction) and keeps the rest as it is.
+  async function savePatch(patch: Partial<DealSummary>) {
     if (!summary) return false;
     setError(null);
-    const res = await fetch(`/api/deals/${dealId}/summary`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ summary: { ...summary, transaction: rows } }) });
+    const next = { ...summary, ...patch };
+    setSummary(next);
+    const res = await fetch(`/api/deals/${dealId}/summary`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ summary: next }) });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { setError(j.error ?? "Couldn't save"); return false; }
     setSummary(j.summary); setSaved(true);
     return true;
+  }
+
+  // Reads the documents again and replaces only the financial overview.
+  async function extractFinancials() {
+    if (summary?.financial.years.length && !confirm("Replace the financial numbers with what the documents say? The overview and transaction stay as they are.")) return;
+    setBusy("fin"); setError(null);
+    const res = await fetch(`/api/deals/${dealId}/summary`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: "financial" }) });
+    const j = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok) { setError(j.error ?? "Couldn't read the documents"); return; }
+    if (!j.summary?.financial?.years?.length) { setError("The documents don't show yearly revenue. Add the years by hand."); return; }
+    await savePatch({ financial: j.summary.financial });
   }
 
   async function aiDraft() {
@@ -381,15 +526,10 @@ export function ExecutiveSummary({ dealId }: { dealId: string }) {
       {busy === "ai" && <p className="text-[12px] text-graphite mb-2">Reading the company&apos;s documents and writing a draft… (about 30 seconds)</p>}
       {!summary ? <p className="text-[12px] text-slate">Loading…</p>
         : draft ? <SummaryEditor key={editorKey} s={draft} onChange={setDraft} />
-        : isEmpty(summary) ? (
-          <div className="space-y-6">
-            <div className="text-center py-4">
-              <p className="text-[13px] text-carbon">No executive summary yet</p>
-              <p className="text-[12px] text-slate mt-1">Write the company, financial and transaction overview, or let Claude draft it from the documents.</p>
-            </div>
-            <TransactionTable rows={summary.transaction} onSave={saveTx} />
-          </div>
-        ) : <SummaryView s={summary} onSaveTx={saveTx} />}
+        : <>
+            {isEmpty(summary) && <p className="text-[12px] text-slate mb-4">Nothing written yet. Fill it in below, or use “Draft with AI” to write it from the documents.</p>}
+            <SummaryView s={summary} onSave={savePatch} onExtract={extractFinancials} extracting={busy === "fin"} />
+          </>}
     </Card>
   );
 }
