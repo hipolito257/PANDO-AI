@@ -177,7 +177,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
 
         {/* Page actions: their own scrollable row under the title on phones */}
         {actions && (
-          <div className="order-last md:order-none basis-full md:basis-auto flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 md:ml-auto md:mr-2 [&>*]:shrink-0">
+          <div className="order-last md:order-none basis-full md:basis-auto flex items-center gap-2 overflow-x-auto no-scrollbar md:overflow-visible pb-2 md:pb-0 md:ml-auto md:mr-2 [&>*]:shrink-0">
             {actions}
           </div>
         )}

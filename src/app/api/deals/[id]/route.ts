@@ -6,6 +6,7 @@ import {
 } from "@/lib/db";
 import { DEAL_TYPES, entryStage, listStages, logDeal, newId, nowIso, notifyDealTeam } from "@/lib/deals";
 import { isPhase, phaseInfo } from "@/lib/phases";
+import { interestInfo, isAlert, isDealStatus, isInterest, statusInfo } from "@/lib/dealRating";
 import { loadValuation } from "@/lib/valuationData";
 
 type Params = { params: Promise<{ id: string }> };
@@ -100,7 +101,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const set: Partial<typeof deals.$inferInsert> = { updatedAt: nowIso() };
   if (typeof b.codeName === "string" && b.codeName.trim()) set.codeName = b.codeName.trim().slice(0, 120);
   if (typeof b.type === "string" && DEAL_TYPES.some(t => t.value === b.type)) set.type = b.type;
-  if (typeof b.onHold === "boolean") set.onHold = b.onHold;
+  if (typeof b.onHold === "boolean") {
+    set.onHold = b.onHold;
+    set.dealStatus = b.onHold ? "on_hold" : deal.dealStatus === "on_hold" ? "active" : deal.dealStatus;
+  }
+  if (isDealStatus(b.dealStatus)) { set.dealStatus = b.dealStatus; set.onHold = b.dealStatus === "on_hold"; }
+  if (isInterest(b.interest)) set.interest = b.interest;
   if (b.statusNote !== undefined) set.statusNote = b.statusNote ? String(b.statusNote).slice(0, 1000) : null;
   if (b.description !== undefined) set.description = b.description ? String(b.description).slice(0, 4000) : null;
   if (b.dealSize !== undefined) set.dealSize = typeof b.dealSize === "number" && Number.isFinite(b.dealSize) ? b.dealSize : null;
@@ -150,6 +156,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   if (typeof b.onHold === "boolean" && b.onHold !== deal.onHold) {
     await logDeal(session.user.id, who, b.onHold ? "deal_on_hold" : "deal_resumed", id, set.codeName ?? deal.codeName, set.statusNote ?? undefined);
+  }
+  const name = set.codeName ?? deal.codeName;
+  if (set.interest && set.interest !== deal.interest) {
+    await logDeal(session.user.id, who, "deal_rated", id, name, `marked it ${interestInfo(set.interest).label}`);
+  }
+  if (isDealStatus(b.dealStatus) && b.dealStatus !== deal.dealStatus) {
+    await logDeal(session.user.id, who, "deal_status_changed", id, name, `set the status to ${statusInfo(b.dealStatus).label}`);
+  }
+  // Becomes an alert (high interest + pending): tell the deal team.
+  const after = { interest: set.interest ?? deal.interest, dealStatus: (typeof set.dealStatus === "string" ? set.dealStatus : deal.dealStatus) };
+  if (isAlert(after) && !isAlert(deal)) {
+    await notifyDealTeam(id, session.user.id, { title: `⚠ ${name}: high interest, pending`, body: `${who} flagged it. It needs a next step.` });
   }
   return NextResponse.json({ ok: true });
 }

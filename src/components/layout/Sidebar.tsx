@@ -10,7 +10,7 @@ import { DEAL_DRAG_END, DEAL_DRAG_START, DEAL_DRAG_TYPE, moveDealToPhase, type P
 // The platform's five sections; each opens to show its pages. Deals move
 // between Deal Sourcing, Portfolio and Exit: those sections are drop targets
 // while a deal card is being dragged.
-type NavItem = { href: string; label: string; badge?: "radar" | "exit" };
+type NavItem = { href: string; label: string; badge?: "radar" | "exit" | "alerts" };
 type Section = {
   key: string; label: string; icon: React.ReactNode; items: NavItem[];
   phase?: Phase;            // sections that hold deals
@@ -32,7 +32,7 @@ const SECTIONS: Section[] = [
   ] },
   { key: "sourcing", label: "Deal Sourcing", icon: <IconRadar />, phase: "sourcing", also: ["/empresa", "/valuation", "/review", "/deals"], items: [
     { href: "/sourcing", label: "Overview" },
-    { href: "/deals", label: "Pipeline" },
+    { href: "/deals", label: "Pipeline", badge: "alerts" },
     { href: "/mandatos", label: "Mandates" },
     { href: "/comparables", label: "Comparables" },
     { href: "/documentos", label: "Documents" },
@@ -67,7 +67,7 @@ function sectionOf(pathname: string, dealPhase: string | null): string {
 /** Fired by a deal page so the menu opens that deal's section. */
 const ACTIVE_SECTION_EVENT = "pando:active-section";
 
-type Badges = { radar?: number; exit?: number };
+type Badges = { radar?: number; exit?: number; alerts?: number };
 
 export function Sidebar({ badges = {} }: { badges?: Badges }) {
   const pathname  = usePathname();
@@ -255,7 +255,8 @@ function SectionNav({ collapsed, pathname, badges, mobile }: { collapsed: boolea
                             active ? "text-white bg-white/[0.07]" : "text-white/55 hover:text-white hover:bg-white/[0.04]")}>
                           <span className="flex-1 whitespace-nowrap">{item.label}</span>
                           {count > 0 && !active && (
-                            <span className="bg-pistacho text-olive text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">{count > 99 ? "99+" : count}</span>
+                            <span title={item.badge === "alerts" ? "High interest, pending" : undefined}
+                              className={cn("text-[10px] font-semibold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center", item.badge === "alerts" ? "bg-red-600 text-white" : "bg-pistacho text-olive")}>{count > 99 ? "99+" : count}</span>
                           )}
                         </Link>
                       );

@@ -551,7 +551,9 @@ export const deals = pgTable("Deal", {
   stageChangedAt: text("stageChangedAt"),
   phase:          text("phase").notNull().default("sourcing"), // sourcing | portfolio | exit (src/lib/phases.ts)
   phaseChangedAt: text("phaseChangedAt"),
-  onHold:         boolean("onHold").notNull().default(false),
+  onHold:         boolean("onHold").notNull().default(false), // mirrors dealStatus === "on_hold"
+  interest:       text("interest").notNull().default("radar"),   // high | radar | low (src/lib/dealRating.ts)
+  dealStatus:     text("dealStatus").notNull().default("active"), // active | on_hold | pending
   statusNote:     text("statusNote"),        // why it's on hold / dropped
   leadUserId:     text("leadUserId").references(() => users.id, { onDelete: "set null" }),
   dealSize:       doublePrecision("dealSize"),

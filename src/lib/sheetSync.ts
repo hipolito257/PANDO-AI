@@ -7,7 +7,7 @@
 // Nothing is written to the deals until someone approves the changes.
 import { createSign, randomUUID } from "crypto";
 import { notify } from "@/lib/push";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, deals, dealMembers, companies, users, sheetSyncs, sheetSyncRuns } from "@/lib/db";
 import { listStages, logDeal, notifyDealTeam, nowIso, type DealStageRow } from "@/lib/deals";
 import { recordFieldChanges } from "@/lib/provenance";
@@ -588,7 +588,10 @@ export async function applyRun(runId: string, selectedIds: string[] | null, user
       if (c.field === "stage") {
         if (!to || !stages.some(s => s.key === to)) continue;
         set.stage = to; set.stageChangedAt = now;
-      } else if (c.field === "onHold") set.onHold = to === "true";
+      } else if (c.field === "onHold") {
+        set.onHold = to === "true";
+        set.dealStatus = to === "true" ? "on_hold" : sql`CASE WHEN "dealStatus" = 'on_hold' THEN 'active' ELSE "dealStatus" END` as unknown as string;
+      }
       else if (c.field === "type") { if (to) set.type = to; else continue; }
       else if (c.field === "lead") set.leadUserId = to;
       else if (c.field === "dealSize") set.dealSize = to === null ? null : Number(to);
@@ -632,7 +635,7 @@ export async function applyRun(runId: string, selectedIds: string[] | null, user
     await db.insert(deals).values({
       id: dealId, companyId, codeName: x.codeName.slice(0, 120), type: x.type ?? "buy_side",
       stage: stages.some(s => s.key === x.stage) ? x.stage : stages[0]?.key ?? "sourcing", stageChangedAt: now,
-      onHold: x.onHold, statusNote: x.statusNote?.slice(0, 1000) ?? null, leadUserId: lead,
+      onHold: x.onHold, dealStatus: x.onHold ? "on_hold" : "active", statusNote: x.statusNote?.slice(0, 1000) ?? null, leadUserId: lead,
       dealSize: x.dealSize, currency: x.currency ?? "USD", description: x.description?.slice(0, 4000) ?? null,
       sheetKey: c.key ?? null, createdBy: user.id, createdAt: now, updatedAt: now,
     });

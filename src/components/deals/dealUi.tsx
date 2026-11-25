@@ -1,4 +1,5 @@
 "use client";
+import { interestInfo, isAlert, statusInfo } from "@/lib/dealRating";
 // Small shared pieces for the deals pages.
 export const DEAL_TYPE_LABEL: Record<string, string> = {
   buy_side: "Buy-side", sell_side: "Sell-side", minority: "Minority", add_on: "Add-on",
@@ -19,6 +20,18 @@ export function Avatar({ name, size = 22, title }: { name: string | null | undef
     <span title={title ?? name ?? ""} style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
       className="inline-flex items-center justify-center rounded-full bg-forest text-white font-semibold shrink-0 border border-paper">
       {initials(name)}
+    </span>
+  );
+}
+
+/** Interest + status of a deal, and the alert flag when it's high interest and pending. */
+export function RatingPills({ interest, dealStatus, compact }: { interest?: string | null; dealStatus?: string | null; compact?: boolean }) {
+  const i = interestInfo(interest), s = statusInfo(dealStatus);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {isAlert({ interest, dealStatus }) && <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-red-600 text-white" title="High interest and pending: needs a next step">⚠ Alert</span>}
+      <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 border ${i.cls}`}>{compact ? i.short : i.label}</span>
+      <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 border ${s.cls}`}>{s.label}</span>
     </span>
   );
 }

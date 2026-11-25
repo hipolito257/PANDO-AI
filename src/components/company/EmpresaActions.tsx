@@ -42,13 +42,28 @@ export function EmpresaActions({ company }: { company: CompanyData }) {
   const [editOpen, setEditOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
   const genRef = useRef<HTMLDivElement>(null);
+  const genBtn = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  function toggleGen() {
+    if (genOpen) { setGenOpen(false); return; }
+    const r = genBtn.current?.getBoundingClientRect();
+    if (r) setMenuPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.right - 240, window.innerWidth - 248)) });
+    setGenOpen(true);
+  }
   const router = useRouter();
 
   useEffect(() => {
     if (!genOpen) return;
     const close = (e: MouseEvent) => { if (genRef.current && !genRef.current.contains(e.target as Node)) setGenOpen(false); };
+    const hide = () => setGenOpen(false);
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    window.addEventListener("resize", hide);
+    document.querySelector("main")?.addEventListener("scroll", hide);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("resize", hide);
+      document.querySelector("main")?.removeEventListener("scroll", hide);
+    };
   }, [genOpen]);
 
   return (
@@ -66,14 +81,17 @@ export function EmpresaActions({ company }: { company: CompanyData }) {
         </button>
         <div ref={genRef} className="relative">
           <button
-            onClick={() => setGenOpen(v => !v)}
+            ref={genBtn}
+            onClick={toggleGen}
+            aria-expanded={genOpen}
             className="px-3.5 pt-[7px] pb-[5px] font-display text-[10.5px] uppercase tracking-[.16em] border border-white/45 text-white hover:bg-pistacho hover:text-olive hover:border-pistacho transition-colors duration-300 flex items-center gap-1.5"
           >
             Generate
             <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
-          {genOpen && (
-            <div className="absolute right-0 top-9 w-[230px] bg-paper border border-chalk rounded-[10px] shadow-xl z-50 py-1">
+          {genOpen && menuPos && (
+            <div className="fixed w-[240px] bg-paper border border-chalk shadow-xl z-[80] py-1 normal-case tracking-normal"
+              style={{ top: menuPos.top, left: menuPos.left }}>
               {GENERATE_OPTIONS.map(o => (
                 <Link key={o.label} href={o.href(company.id)} onClick={() => setGenOpen(false)}
                   className="block px-3 py-2 hover:bg-fog transition-colors">

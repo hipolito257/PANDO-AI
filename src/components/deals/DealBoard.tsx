@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/Button";
 import { fetchJson } from "@/lib/fetchJson";
 import { NewDealModal } from "@/components/deals/NewDealModal";
 import { StagesEditor } from "@/components/deals/StagesEditor";
-import { Avatar, DEAL_TYPE_LABEL, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
+import { DEAL_STATUSES, INTERESTS, isAlert } from "@/lib/dealRating";
+import { Avatar, DEAL_TYPE_LABEL, RatingPills, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
 import { DEAL_DRAG_END, DEAL_DRAG_START, DEAL_DRAG_TYPE, DEAL_MOVED, PHASES, moveDealToPhase, phaseInfo, type Phase } from "@/lib/phases";
 
 type DealCard = {
   id: string; codeName: string; type: string; stage: string; onHold: boolean; statusNote: string | null;
+  interest: string; dealStatus: string;
   dealSize: number | null; currency: string; updatedAt: string; leadUserId: string | null;
   company: { id: string; name: string; slug: string; sector: string | null; country: string } | null;
   lead: { id: string; name: string } | null;
@@ -41,6 +43,8 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
   const [view, setView] = useState<"board" | "list">("board");
   const [mine, setMine] = useState(false);
   const [type, setType] = useState("all");
+  const [interest, setInterest] = useState("all");
+  const [status, setStatus] = useState("all");
   const [showNew, setShowNew] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
@@ -103,8 +107,16 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
   }, [phase]);
 
   const visible = useMemo(() => deals.filter(d =>
-    (!mine || d.members.some(m => m.userId === myId) || d.leadUserId === myId) && (type === "all" || d.type === type),
-  ), [deals, mine, type, myId]);
+    (!mine || d.members.some(m => m.userId === myId) || d.leadUserId === myId) && (type === "all" || d.type === type)
+    && (interest === "all" || d.interest === interest) && (status === "all" || d.dealStatus === status),
+  ), [deals, mine, type, myId, interest, status]);
+  const alerts = deals.filter(isAlert);
+
+  async function rate(dealId: string, patch: { interest?: string; dealStatus?: string }) {
+    setDeals(ds => ds.map(d => (d.id === dealId ? { ...d, ...patch, onHold: patch.dealStatus ? patch.dealStatus === "on_hold" : d.onHold } : d)));
+    const res = await fetch(`/api/deals/${dealId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+    if (!res.ok) load();
+  }
 
   async function moveTo(dealId: string, stage: string) {
     const deal = deals.find(d => d.id === dealId);
@@ -139,6 +151,14 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
             <option value="all">All types</option>
             {Object.entries(DEAL_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
+          <select value={interest} onChange={e => setInterest(e.target.value)} aria-label="Interest" className="text-[12px] bg-paper border border-chalk rounded-[8px] px-2.5 py-1.5 text-graphite">
+            <option value="all">All interest</option>
+            {INTERESTS.map(i => <option key={i.key} value={i.key}>{i.label}</option>)}
+          </select>
+          <select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status" className="text-[12px] bg-paper border border-chalk rounded-[8px] px-2.5 py-1.5 text-graphite">
+            <option value="all">All statuses</option>
+            {DEAL_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
           {phase === "sourcing" ? <Link href="/deals/sync" className="ml-auto text-[12px] text-slate hover:text-carbon">
             {sheet?.connected ? "Google Sheet sync" : "Sync from Google Sheet"}
           </Link> : <span className="ml-auto" />}
@@ -152,6 +172,20 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
             <span className="text-[13px] text-carbon"><b>{sheet.pending} change{sheet.pending === 1 ? "" : "s"}</b> from the Google Sheet waiting for review</span>
             <span className="text-[12px] text-orange font-medium">Review →</span>
           </Link>
+        )}
+
+        {/* High interest + pending: these need a next step. */}
+        {alerts.length > 0 && (
+          <div className="border border-red-200 bg-red-50 px-4 py-3" role="alert">
+            <p className="text-[13px] text-red-800 font-medium">⚠ {alerts.length} high-interest deal{alerts.length === 1 ? " is" : "s are"} pending</p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {alerts.map(d => (
+                <Link key={d.id} href={`/deals/${d.id}`} className="text-[12px] bg-paper border border-red-200 px-2.5 py-1 text-carbon hover:border-red-500">
+                  <b>{d.codeName}</b>{d.company?.name && d.company.name !== d.codeName ? ` · ${d.company.name}` : ""}{d.statusNote ? <span className="text-slate"> · {d.statusNote}</span> : null}
+                </Link>
+              ))}
+            </div>
+          </div>
         )}
 
         {state === "loading" ? (
@@ -198,13 +232,11 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
                     {cards.map(d => (
                       <Link key={d.id} href={`/deals/${d.id}`} draggable
                         onDragStart={e => startDrag(e, d.id)} onDragEnd={endDrag}
-                        className={`block bg-paper rounded-[8px] border border-chalk p-3 hover:border-carbon transition-all duration-200 cursor-grab active:cursor-grabbing ${dragId === d.id ? "opacity-40 scale-[0.98]" : ""}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-[13px] font-semibold text-carbon leading-snug">{d.codeName}</p>
-                          {d.onHold && <StagePill stage={undefined} onHold />}
-                        </div>
+                        className={`block bg-paper rounded-[8px] border p-3 transition-all duration-200 cursor-grab active:cursor-grabbing ${isAlert(d) ? "border-red-400 ring-1 ring-red-300 hover:border-red-600" : d.interest === "low" ? "border-chalk opacity-75 hover:opacity-100 hover:border-carbon" : "border-chalk hover:border-carbon"} ${dragId === d.id ? "opacity-40 scale-[0.98]" : ""}`}>
+                        <p className="text-[13px] font-semibold text-carbon leading-snug">{d.codeName}</p>
                         <p className="text-[11px] text-graphite">{d.company?.name}{d.company?.country ? ` · ${d.company.country}` : ""}</p>
                         <p className="text-[10px] text-slate mt-0.5">{DEAL_TYPE_LABEL[d.type] ?? d.type}{d.dealSize != null ? ` · ${fmtSize(d.dealSize, d.currency)}` : ""}</p>
+                        <div className="mt-1.5"><RatingPills interest={d.interest} dealStatus={d.dealStatus} compact /></div>
                         <div className="flex items-center justify-between mt-2">
                           <div className="flex -space-x-1.5">
                             {d.members.slice(0, 4).map(m => <Avatar key={m.userId} name={m.user.name} size={20} title={`${m.user.name} · ${m.allocation}%`} />)}
@@ -227,15 +259,25 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="border-b border-chalk text-slate text-[10px] uppercase tracking-wide">
-                  {["Deal", "Company", "Stage", "Type", "Size", "Team", "Open tasks", "Next milestone", "Section"].map(h => <th key={h} className="text-left font-semibold px-4 py-2">{h}</th>)}
+                  {["Deal", "Company", "Stage", "Interest", "Status", "Type", "Size", "Team", "Open tasks", "Next milestone", "Section"].map(h => <th key={h} className="text-left font-semibold px-4 py-2">{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {visible.map(d => (
-                  <tr key={d.id} className="border-b border-chalk last:border-0 hover:bg-fog/50">
-                    <td className="px-4 py-2.5"><Link href={`/deals/${d.id}`} className="font-semibold text-carbon hover:underline">{d.codeName}</Link></td>
+                  <tr key={d.id} className={`border-b border-chalk last:border-0 ${isAlert(d) ? "bg-red-50 hover:bg-red-100/60" : "hover:bg-fog/50"}`}>
+                    <td className="px-4 py-2.5 whitespace-nowrap">{isAlert(d) && <span className="text-red-600 mr-1" title="High interest and pending">⚠</span>}<Link href={`/deals/${d.id}`} className="font-semibold text-carbon hover:underline">{d.codeName}</Link></td>
                     <td className="px-4 py-2.5 text-graphite">{d.company?.name}</td>
-                    <td className="px-4 py-2.5"><StagePill stage={stageByKey.get(d.stage)} onHold={d.onHold} /></td>
+                    <td className="px-4 py-2.5"><StagePill stage={stageByKey.get(d.stage)} /></td>
+                    <td className="px-4 py-2.5">
+                      <select value={d.interest} onChange={e => rate(d.id, { interest: e.target.value })} aria-label={`Interest in ${d.codeName}`} className="text-[11px] bg-paper border border-chalk px-1.5 py-1 text-graphite">
+                        {INTERESTS.map(i => <option key={i.key} value={i.key}>{i.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <select value={d.dealStatus} onChange={e => rate(d.id, { dealStatus: e.target.value })} aria-label={`Status of ${d.codeName}`} className="text-[11px] bg-paper border border-chalk px-1.5 py-1 text-graphite">
+                        {DEAL_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                      </select>
+                    </td>
                     <td className="px-4 py-2.5 text-graphite">{DEAL_TYPE_LABEL[d.type] ?? d.type}</td>
                     <td className="px-4 py-2.5 text-graphite">{fmtSize(d.dealSize, d.currency)}</td>
                     <td className="px-4 py-2.5"><div className="flex -space-x-1.5">{d.members.slice(0, 5).map(m => <Avatar key={m.userId} name={m.user.name} size={20} />)}</div></td>

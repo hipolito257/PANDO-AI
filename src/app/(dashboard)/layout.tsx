@@ -7,7 +7,7 @@ import { Reveal } from "@/components/layout/Reveal";
 const SPLASH_GATE = `try{if(!sessionStorage.getItem("pando:splash")){location.replace("/inicio?next="+encodeURIComponent(location.pathname+location.search))}}catch(e){}`;
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  let badges = { radar: 0, exit: 0 };
+  let badges = { radar: 0, exit: 0, alerts: 0 };
   try {
     const [radarSignals, exitSignals] = await Promise.all([
       db.query.signals.findMany({
@@ -17,7 +17,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
         where: (s, { and, eq }) => and(eq(s.isRead, false), eq(s.type, "exit_signal")),
       }),
     ]);
-    badges = { radar: radarSignals.length, exit: exitSignals.length };
+    badges = { ...badges, radar: radarSignals.length, exit: exitSignals.length };
+  } catch {}
+  try {
+    // High-interest deals that are pending: shown in red next to Pipeline.
+    const alerts = await db.query.deals.findMany({
+      columns: { id: true },
+      where: (d, { and, eq }) => and(eq(d.interest, "high"), eq(d.dealStatus, "pending")),
+    });
+    badges.alerts = alerts.length;
   } catch {}
 
   return (

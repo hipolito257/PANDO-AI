@@ -9,7 +9,8 @@ import { fetchJson } from "@/lib/fetchJson";
 import { levelInfo } from "@/lib/availability";
 import { ExecutiveSummary } from "@/components/deals/ExecutiveSummary";
 import { ValuationSummary, type ValComp, type LboModelRef } from "@/components/comparables/ValuationPanel";
-import { PHASES, moveDealToPhase, phaseInfo, type Phase } from "@/lib/phases";
+import { DEAL_STATUSES, INTERESTS, isAlert } from "@/lib/dealRating";
+import { phaseInfo } from "@/lib/phases";
 import { Avatar, CURRENCIES, DEAL_ROLE_LABEL, DEAL_TYPE_LABEL, StagePill, fmtDay, fmtSize, type Stage } from "@/components/deals/dealUi";
 
 type Person = { id: string; name: string };
@@ -23,6 +24,7 @@ type Milestone = { id: string; label: string; date: string | null; done: boolean
 type DealData = {
   deal: {
     id: string; codeName: string; type: string; stage: string; stageChangedAt: string | null; onHold: boolean; statusNote: string | null;
+    interest: string; dealStatus: string;
     phase: string;
     leadUserId: string | null; dealSize: number | null; currency: string; description: string | null; createdAt: string;
     company: { id: string; name: string; slug: string; sector: string | null; country: string; description: string | null };
@@ -41,7 +43,7 @@ const ACTION_LABEL: Record<string, string> = {
   deal_resumed: "resumed the deal", deal_member_added: "added to the team:", deal_member_removed: "removed from the team:",
   deal_task_done: "completed a task:", deal_milestone_done: "reached a milestone:",
   uploaded_company_file: "uploaded a document:", applied_file_extraction: "applied document data:",
-  edited_company: "edited the company", edited_deal: "", updated_availability: "updated availability",
+  edited_company: "edited the company", deal_rated: "", deal_status_changed: "", edited_deal: "", updated_availability: "updated availability",
 };
 
 function ago(iso: string | null) {
@@ -86,16 +88,6 @@ export function DealView({ id, company }: { id: string; company: CompanySlots })
     (window as unknown as { __pandoSection?: { path: string; phase: string } }).__pandoSection = { path: window.location.pathname, phase: dealPhase };
     window.dispatchEvent(new CustomEvent("pando:active-section", { detail: { phase: dealPhase } }));
   }, [dealPhase]);
-  const [moving, setMoving] = useState<string | null>(null);
-  async function changeSection(target: Phase) {
-    if (!data || target === data.deal.phase) return;
-    setMoving(target); setErr(null);
-    const r = await moveDealToPhase(id, target);
-    setMoving(null);
-    if (!r.ok) setErr(r.error ?? "Couldn't move the deal");
-    await load();
-  }
-
   async function call(path: string, method: string, body: unknown) {
     setErr(null);
     const res = await fetch(`/api/deals/${id}${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -155,21 +147,22 @@ export function DealView({ id, company }: { id: string; company: CompanySlots })
 
       <div className="p-6 space-y-4">
         {err && <Card><p className="text-[12px] text-red-600">{err}</p></Card>}
-
-        {/* ── Section: where this deal lives (Deal Sourcing / Portfolio / Exit) ── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="eyebrow">Section</span>
-          <div className="flex border border-olive/25 bg-paper" role="radiogroup" aria-label="Section">
-            {PHASES.map(p => {
-              const on = deal.phase === p.key;
-              return (
-                <button key={p.key} role="radio" aria-checked={on} disabled={!!moving} onClick={() => changeSection(p.key)}
-                  className={`font-display text-[10.5px] uppercase tracking-[.16em] px-3.5 pt-[8px] pb-[6px] transition-colors duration-300 ${on ? "bg-olive text-white" : moving === p.key ? "bg-pistacho text-olive" : "text-olive/70 hover:bg-pistacho/50 hover:text-olive"}`}>
-                  {moving === p.key ? "Moving…" : p.short}
-                </button>
-              );
-            })}
+        {isAlert(deal) && (
+          <div className="border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800" role="alert">
+            <b>⚠ High interest, pending.</b> {deal.statusNote ? <>Pending on: {deal.statusNote}</> : "Add what it is pending on and the next step."}
           </div>
+        )}
+
+        {/* ── Back to the deals of its section, and which section it is in ── */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link href={phaseInfo(deal.phase).href} className="inline-flex items-center gap-2 text-[12px] text-graphite hover:text-carbon group">
+            <span aria-hidden className="transition-transform duration-300 group-hover:-translate-x-0.5">←</span>
+            Back to {phaseInfo(deal.phase).short === "Sourcing" ? "the pipeline" : `${phaseInfo(deal.phase).short} deals`}
+          </Link>
+          <span className="flex items-center gap-2">
+            <span className="eyebrow">Section</span>
+            <span className="font-display text-[10.5px] uppercase tracking-[.16em] px-3.5 pt-[7px] pb-[5px] bg-olive text-white">{phaseInfo(deal.phase).label}</span>
+          </span>
         </div>
 
         {/* ── Header ── */}
@@ -216,10 +209,22 @@ export function DealView({ id, company }: { id: string; company: CompanySlots })
                   }} className={`${input} w-[120px] text-right`} title={fmtSize(deal.dealSize, deal.currency)} />
                 </span>
               </label>
-              <Button variant="ghost" size="sm" onClick={() => {
-                if (deal.onHold) patchDeal({ onHold: false, statusNote: null });
-                else { const why = prompt("Why is this deal on hold?") ?? ""; patchDeal({ onHold: true, statusNote: why }); }
-              }}>{deal.onHold ? "Resume" : "Put on hold"}</Button>
+              <label className="text-[10px] text-slate">Interest
+                <select value={deal.interest} onChange={e => patchDeal({ interest: e.target.value })} className={`${input} block`}>
+                  {INTERESTS.map(i => <option key={i.key} value={i.key}>{i.label}</option>)}
+                </select>
+              </label>
+              <label className="text-[10px] text-slate">Status
+                <select value={deal.dealStatus} onChange={e => {
+                  const v = e.target.value;
+                  if (v === "active") { patchDeal({ dealStatus: v, statusNote: null }); return; }
+                  const why = prompt(v === "on_hold" ? "Why is this deal on hold?" : "What is it pending on?", deal.statusNote ?? "");
+                  if (why === null) { e.target.value = deal.dealStatus; return; }
+                  patchDeal({ dealStatus: v, statusNote: why });
+                }} className={`${input} block`}>
+                  {DEAL_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </label>
               <Button variant="ghost" size="sm" onClick={async () => {
                 if (!confirm(`Delete ${deal.codeName}? Its team, tasks and milestones are deleted too. The company and its documents stay.`)) return;
                 if (await call("", "DELETE", {})) router.push("/deals");
