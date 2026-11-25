@@ -118,7 +118,7 @@ export default async function ExitPage() {
                       </div>
                       {sig && <p className="text-[11px] text-graphite mt-0.5">{sig.title}</p>}
                     </div>
-                    <Link href="/radar"
+                    <Link href="/deals"
                       className="shrink-0 px-3 py-1.5 text-[11px] font-medium bg-amber-600 text-white rounded-[7px] hover:bg-amber-700 transition-colors">
                       Go to Pipeline →
                     </Link>

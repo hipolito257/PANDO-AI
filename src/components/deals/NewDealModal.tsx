@@ -19,6 +19,9 @@ export function NewDealModal({ onClose, companyId, companyName, phase = "sourcin
     companyId: companyId ?? "", codeName: "", type: "buy_side", stage: "", leadUserId: "",
     dealSize: "", currency: "USD", description: "",
   });
+  // With Radar gone, companies are added here: pick one or create it on the spot.
+  const [newCo, setNewCo] = useState({ name: "", sector: "", country: "México", website: "" });
+  const creatingCompany = form.companyId === "__new";
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -42,10 +45,23 @@ export function NewDealModal({ onClose, companyId, companyName, phase = "sourcin
     e.preventDefault();
     setSaving(true); setErr(null);
     try {
+      let companyIdToUse = form.companyId;
+      if (creatingCompany) {
+        if (!newCo.name.trim()) throw new Error("Write the company's name");
+        const cr = await fetch("/api/companies", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newCo.name.trim(), sector: newCo.sector || null, country: newCo.country || "México",
+            website: newCo.website || null, status: phase === "sourcing" ? "pipeline" : "portfolio" }),
+        });
+        const cj = await cr.json().catch(() => ({}));
+        if (cr.ok) companyIdToUse = cj.id ?? cj.company?.id;
+        else if (cr.status === 409 && cj.company?.id) companyIdToUse = cj.company.id; // already on the platform: use it
+        else throw new Error(cj.error ?? "Could not create the company");
+      }
       const size = Number(form.dealSize.replace(/[,\s]/g, ""));
       const res = await fetch("/api/deals", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, phase, dealSize: form.dealSize.trim() && Number.isFinite(size) ? size : null }),
+        body: JSON.stringify({ ...form, companyId: companyIdToUse, phase, dealSize: form.dealSize.trim() && Number.isFinite(size) ? size : null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Could not create the deal");
@@ -71,9 +87,30 @@ export function NewDealModal({ onClose, companyId, companyName, phase = "sourcin
             <label className={label}>Company *</label>
             <select required value={form.companyId} disabled={!!companyId} onChange={e => setForm({ ...form, companyId: e.target.value })} className={input}>
               <option value="">Choose a company…</option>
+              {!companyId && <option value="__new">+ New company…</option>}
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
+          {creatingCompany && (
+            <div className="col-span-2 grid grid-cols-2 gap-3 bg-fog p-3">
+              <div className="col-span-2">
+                <label className={label}>Company name *</label>
+                <input autoFocus value={newCo.name} onChange={e => setNewCo({ ...newCo, name: e.target.value })} className={input} placeholder="e.g. Extral" />
+              </div>
+              <div>
+                <label className={label}>Sector</label>
+                <input value={newCo.sector} onChange={e => setNewCo({ ...newCo, sector: e.target.value })} className={input} placeholder="e.g. Industrials" />
+              </div>
+              <div>
+                <label className={label}>Country</label>
+                <input value={newCo.country} onChange={e => setNewCo({ ...newCo, country: e.target.value })} className={input} />
+              </div>
+              <div className="col-span-2">
+                <label className={label}>Website</label>
+                <input value={newCo.website} onChange={e => setNewCo({ ...newCo, website: e.target.value })} className={input} placeholder="https://" />
+              </div>
+            </div>
+          )}
           <div>
             <label className={label}>Code name *</label>
             <input required value={form.codeName} onChange={e => setForm({ ...form, codeName: e.target.value })} placeholder="e.g. Project Element" className={input} />

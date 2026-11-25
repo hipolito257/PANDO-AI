@@ -298,7 +298,7 @@ RULES:
   if (signalsAdded > 0) {
     await notify("all", "radar", {
       title: `Radar: ${signalsAdded} new signal${signalsAdded === 1 ? "" : "s"}`,
-      body: `Found in "${filename}".`, url: "/radar", tag: "radar",
+      body: `Found in "${filename}".`, url: "/sourcing", tag: "radar",
     }, [session?.user?.id]);
   }
 

@@ -665,7 +665,7 @@ export async function GET(req: NextRequest) {
     await notify("all", "radar", {
       title: `Radar: ${totalSignals} new signal${totalSignals === 1 ? "" : "s"}`,
       body: totalExits ? `Including ${totalExits} possible exit${totalExits === 1 ? "" : "s"}. Open the radar to review.` : "Funding rounds, news and other activity on tracked companies.",
-      url: "/radar", tag: "radar",
+      url: "/sourcing", tag: "radar",
     });
   }
 

@@ -13,7 +13,7 @@ export const PUSH_KINDS = [
   { key: "sheet", label: "Google Sheet changes waiting for approval" },
   { key: "tasks", label: "Tasks assigned to me" },
   { key: "deals", label: "Stage changes on my deals" },
-  { key: "radar", label: "New radar signals" },
+  { key: "radar", label: "New signals on tracked companies" },
 ] as const;
 export type PushKind = (typeof PUSH_KINDS)[number]["key"];
 export type PushPrefs = Record<PushKind, boolean>;

@@ -33,7 +33,6 @@ const SECTIONS: Section[] = [
   { key: "sourcing", label: "Deal Sourcing", icon: <IconRadar />, phase: "sourcing", also: ["/empresa", "/valuation", "/review", "/deals"], items: [
     { href: "/sourcing", label: "Overview" },
     { href: "/deals", label: "Pipeline" },
-    { href: "/radar", label: "Radar", badge: "radar" },
     { href: "/mandatos", label: "Mandates" },
     { href: "/comparables", label: "Comparables" },
     { href: "/documentos", label: "Documents" },

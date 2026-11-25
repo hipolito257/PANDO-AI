@@ -105,7 +105,7 @@ export default async function DashboardPage() {
           <Card className="col-span-2" padding="none">
             <div className="p-5 border-b border-chalk">
               <SectionHeader title="Recent signals" subtitle="Activity requiring attention"
-                action={<Link href="/radar" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">View radar →</Link>}
+                action={<Link href="/deals" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">Open pipeline →</Link>}
                 className="mb-0" />
             </div>
             <div className="divide-y divide-chalk">
@@ -173,7 +173,7 @@ export default async function DashboardPage() {
         <Card padding="none">
           <div className="p-5 border-b border-chalk">
             <SectionHeader title="Top companies by score" subtitle="Sorted by relevance for active mandates"
-              action={<Link href="/radar" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">View all →</Link>}
+              action={<Link href="/deals" className="text-[11px] text-slate hover:text-carbon font-medium transition-colors">Open pipeline →</Link>}
               className="mb-0" />
           </div>
           <div className="overflow-x-auto">
