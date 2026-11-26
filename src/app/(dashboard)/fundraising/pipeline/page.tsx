@@ -5,11 +5,13 @@ import { useState } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { InvestorModal, useInvestors } from "@/components/fundraising/InvestorModal";
-import { INVESTOR_STAGES, fmtMoney, investorTypeInfo, type Investor } from "@/lib/fundraising";
+import { InvestorModal, SheetSyncButton, useInvestors } from "@/components/fundraising/InvestorModal";
+import { useRouter } from "next/navigation";
+import { INVESTOR_STAGES, fmtMoney, investorTypeInfo, type Investor, scoreTone } from "@/lib/fundraising";
 
 export default function InvestorPipelinePage() {
-  const { investors, team, state, load, patch } = useInvestors();
+  const { investors, team, state, load, patch, sheet } = useInvestors();
+  const router = useRouter();
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [editing, setEditing] = useState<Investor | null>(null);
@@ -22,7 +24,7 @@ export default function InvestorPipelinePage() {
   return (
     <div>
       <Topbar title="Investor pipeline" subtitle={state === "ok" ? `${inPlay} in conversation · ${investors.length} total` : ""}
-        actions={<Button variant="fill" size="sm" onClick={() => setAdding("identified")}>+ Add investor</Button>} />
+        actions={<><SheetSyncButton sheet={sheet} onDone={load} /><Button variant="fill" size="sm" onClick={() => setAdding("identified")}>+ Add investor</Button></>} />
       <div className="p-6 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <select value={type} onChange={e => setType(e.target.value)} className="text-[12px] bg-paper border border-chalk px-2.5 py-1.5 text-graphite">
@@ -54,7 +56,7 @@ export default function InvestorPipelinePage() {
                     </div>
                     <div className="space-y-2 min-h-[60px]">
                       {cards.map(i => (
-                        <button key={i.id} draggable onClick={() => setEditing(i)}
+                        <button key={i.id} draggable onClick={() => router.push(`/fundraising/investors/${i.id}`)}
                           onDragStart={e => { setDragId(i.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", i.id); }}
                           onDragEnd={() => { setDragId(null); setOver(null); }}
                           className={`w-full text-left bg-paper border border-chalk p-3 hover:border-olive transition-all duration-200 cursor-grab active:cursor-grabbing ${dragId === i.id ? "opacity-40 scale-[0.98]" : ""}`}>
@@ -62,7 +64,10 @@ export default function InvestorPipelinePage() {
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: investorTypeInfo(i.type).color }} />
                             <span className="text-[10px] text-slate truncate">{investorTypeInfo(i.type).label}</span>
                           </div>
-                          <p className="text-[13px] font-semibold text-carbon leading-snug mt-1">{i.name}</p>
+                          <div className="flex items-start justify-between gap-2 mt-1">
+                            <p className="text-[13px] font-semibold text-carbon leading-snug">{i.name}</p>
+                            {i.probability != null && <span title={`Chance to commit · fit ${i.fitScore ?? "—"}/100`} className={`shrink-0 text-[10px] font-semibold border px-1.5 py-0.5 ${scoreTone(i.probability)}`}>{i.probability}%</span>}
+                          </div>
                           <p className="text-[11px] text-graphite">{[i.city, i.country].filter(Boolean).join(", ")}</p>
                           {(i.committedAmount ?? i.targetAmount) != null && (
                             <p className="text-[11px] text-carbon mt-1">{i.committedAmount != null ? "Committed " : "Ticket "}{fmtMoney(i.committedAmount ?? i.targetAmount, i.currency)}</p>

@@ -6,18 +6,20 @@ import { INVESTOR_STAGES, INVESTOR_TYPES, type Investor } from "@/lib/fundraisin
 
 export type FundInfo = { target: number | null; currency: string; name: string | null };
 export type TeamMember = { id: string; name: string };
+export type SheetStatus = { lastRunAt: string | null; lastStatus: string | null; frequency: string } | null;
 
 export function useInvestors() {
   const [investors, setInvestors] = useState<Investor[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [fund, setFund] = useState<FundInfo>({ target: null, currency: "USD", name: null });
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
+  const [sheet, setSheet] = useState<SheetStatus>(null);
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/investors");
       if (!r.ok) throw new Error();
       const j = await r.json();
-      setInvestors(j.investors); setTeam(j.team); setFund(j.fund); setState("ok");
+      setInvestors(j.investors); setTeam(j.team); setFund(j.fund); setSheet(j.sheet ?? null); setState("ok");
     } catch { setState("error"); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -29,7 +31,7 @@ export function useInvestors() {
     if (!r?.ok) load();
   }, [load]);
 
-  return { investors, team, fund, state, load, patch, setFund };
+  return { investors, team, fund, state, load, patch, setFund, sheet };
 }
 
 const input = "w-full text-[13px] bg-paper border border-chalk px-3 py-2 text-carbon focus:outline-none focus:border-olive";
@@ -117,5 +119,27 @@ export function InvestorModal({ investor, team, defaultStage, defaultType, onClo
         </div>
       </form>
     </div>
+  );
+}
+
+/** "Sync now" + link to the sheet settings, for the Fundraising top bars. */
+export function SheetSyncButton({ sheet, onDone }: { sheet: SheetStatus; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  if (!sheet) return <a href="/fundraising/sheet"><Button variant="outline" size="sm">Connect Google Sheet</Button></a>;
+  return (
+    <>
+      <Button variant="outline" size="sm" loading={busy} title={msg ?? (sheet.lastRunAt ? `Last sync ${new Date(sheet.lastRunAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Never synced")}
+        onClick={async () => {
+          setBusy(true); setMsg(null);
+          const r = await fetch("/api/fundraising/sheet", { method: "POST" });
+          const j = await r.json().catch(() => ({}));
+          setBusy(false);
+          setMsg(r.ok ? `Synced: ${j.summary.created} added, ${j.summary.updated} updated, ${j.summary.contacts} new people` : j.error ?? "The sync failed");
+          if (!r.ok) alert(j.error ?? "The sync failed");
+          onDone();
+        }}>Sync sheet</Button>
+      <a href="/fundraising/sheet"><Button variant="outline" size="sm">Sheet settings</Button></a>
+    </>
   );
 }

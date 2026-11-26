@@ -2,47 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { asc, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { auth } from "@/lib/auth";
-import { db, investors, users, firmSettings } from "@/lib/db";
-import { INVESTOR_STAGES, INVESTOR_TYPES } from "@/lib/fundraising";
+import { db, investors, investorContacts, investorSheetSyncs, users, firmSettings } from "@/lib/db";
+import { cleanInvestor, num } from "@/lib/investorClean";
 import { FIRM_SETTINGS_ID } from "@/lib/firmThesis";
 
 const now = () => new Date().toISOString();
 const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
-const num = (v: unknown) => {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : Number(String(v).replace(/[,\s$]/g, ""));
-  return Number.isFinite(n) ? n : null;
-};
-
-function clean(b: Record<string, unknown>) {
-  const out: Partial<typeof investors.$inferInsert> = {};
-  if (b.name !== undefined) { const v = str(b.name, 160); if (v) out.name = v; }
-  if (typeof b.type === "string" && INVESTOR_TYPES.some(t => t.key === b.type)) out.type = b.type;
-  if (typeof b.stage === "string" && INVESTOR_STAGES.some(s => s.key === b.stage)) out.stage = b.stage;
-  for (const [k, max] of [["country", 60], ["city", 80], ["website", 300], ["contactName", 120], ["contactRole", 120], ["nextStep", 300], ["notes", 4000]] as const) {
-    if (b[k] !== undefined) out[k] = str(b[k], max);
-  }
-  if (b.nextStepDate !== undefined) out.nextStepDate = typeof b.nextStepDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.nextStepDate) ? b.nextStepDate : null;
-  if (b.targetAmount !== undefined) out.targetAmount = num(b.targetAmount);
-  if (b.committedAmount !== undefined) out.committedAmount = num(b.committedAmount);
-  if (typeof b.currency === "string" && b.currency) out.currency = b.currency.slice(0, 5).toUpperCase();
-  if (b.ownerId !== undefined) out.ownerId = typeof b.ownerId === "string" && b.ownerId ? b.ownerId : null;
-  return out;
-}
+const clean = cleanInvestor;
 
 // GET — every investor, the team (for owners) and the fund target
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const [rows, team, settings] = await Promise.all([
+  const [rows, team, settings, contacts, sheet] = await Promise.all([
     db.select().from(investors).orderBy(asc(investors.name)),
     db.select({ id: users.id, name: users.name }).from(users).where(eq(users.status, "active")),
     db.select({ fundTarget: firmSettings.fundTarget, fundCurrency: firmSettings.fundCurrency, fundName: firmSettings.fundName })
       .from(firmSettings).where(eq(firmSettings.id, FIRM_SETTINGS_ID)).limit(1),
+    db.select().from(investorContacts).orderBy(asc(investorContacts.name)),
+    db.select({ lastRunAt: investorSheetSyncs.lastRunAt, lastStatus: investorSheetSyncs.lastStatus, frequency: investorSheetSyncs.frequency })
+      .from(investorSheetSyncs).limit(1).catch(() => []),
   ]);
   const names = new Map(team.map(u => [u.id, u]));
+  const byInvestor = new Map<string, typeof contacts>();
+  for (const c of contacts) byInvestor.set(c.investorId, [...(byInvestor.get(c.investorId) ?? []), c]);
   return NextResponse.json({
-    investors: rows.map(r => ({ ...r, owner: r.ownerId ? names.get(r.ownerId) ?? null : null })),
+    investors: rows.map(({ research: _r, ...r }) => { // eslint-disable-line @typescript-eslint/no-unused-vars
+      const cs = (byInvestor.get(r.id) ?? []).sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
+      return { ...r, owner: r.ownerId ? names.get(r.ownerId) ?? null : null, contacts: cs,
+        contactName: cs[0]?.name ?? r.contactName, contactRole: cs[0]?.role ?? r.contactRole };
+    }),
+    sheet: sheet[0] ?? null,
     team,
     fund: { target: settings[0]?.fundTarget ?? null, currency: settings[0]?.fundCurrency ?? "USD", name: settings[0]?.fundName ?? null },
   });
@@ -61,6 +51,10 @@ export async function POST(req: NextRequest) {
     type: "family_office", stage: "identified", currency: "USD", ...values, name: values.name,
     id, ownerId: values.ownerId === undefined ? session.user.id : values.ownerId, stageChangedAt: t, createdBy: session.user.id, createdAt: t, updatedAt: t,
   });
+  if (values.contactName) {
+    await db.insert(investorContacts).values({ id: randomUUID(), investorId: id, name: values.contactName, role: values.contactRole ?? null,
+      isPrimary: true, source: "manual", createdAt: t, updatedAt: t });
+  }
   return NextResponse.json({ id }, { status: 201 });
 }
 

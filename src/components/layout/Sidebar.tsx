@@ -29,6 +29,7 @@ const SECTIONS: Section[] = [
     { href: "/fundraising", label: "Overview" },
     { href: "/fundraising/pipeline", label: "Investor pipeline" },
     { href: "/fundraising/investors", label: "Investor map" },
+    { href: "/fundraising/sheet", label: "Google Sheet" },
   ] },
   { key: "sourcing", label: "Deal Sourcing", icon: <IconRadar />, phase: "sourcing", also: ["/empresa", "/valuation", "/review", "/deals"], items: [
     { href: "/sourcing", label: "Overview" },

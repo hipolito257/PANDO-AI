@@ -688,7 +688,57 @@ export const investors = pgTable("Investor", {
   nextStepDate:    text("nextStepDate"),
   notes:           text("notes"),
   stageChangedAt:  text("stageChangedAt"),
+  linkedinUrl:     text("linkedinUrl"),
+  description:     text("description"),
+  aum:             doublePrecision("aum"),
+  focus:           text("focus"),          // what they invest in (strategies, sectors)
+  geographies:     text("geographies"),
+  ticketMin:       doublePrecision("ticketMin"),
+  ticketMax:       doublePrecision("ticketMax"),
+  fitScore:        integer("fitScore"),    // 0-100: how well they fit Pando
+  probability:     integer("probability"), // 0-100: chance they commit
+  scoreSource:     text("scoreSource"),    // ai | manual
+  scoredAt:        text("scoredAt"),
+  research:        text("research"),       // AI research JSON (src/lib/fundraising.ts InvestorResearch)
+  researchStatus:  text("researchStatus"), // running | done | error
+  researchError:   text("researchError"),
+  researchedAt:    text("researchedAt"),
+  sheetKey:        text("sheetKey"),       // investor name as written in the synced Google Sheet
   createdBy:       text("createdBy"),
   createdAt:       text("createdAt").notNull(),
   updatedAt:       text("updatedAt").notNull(),
+});
+
+export const investorContacts = pgTable("InvestorContact", {
+  id:          text("id").primaryKey(),
+  investorId:  text("investorId").notNull().references(() => investors.id, { onDelete: "cascade" }),
+  name:        text("name").notNull(),
+  role:        text("role"),
+  email:       text("email"),
+  phone:       text("phone"),
+  linkedinUrl: text("linkedinUrl"),
+  notes:       text("notes"),
+  isPrimary:   boolean("isPrimary").notNull().default(false),
+  source:      text("source").notNull().default("manual"), // manual | sheet | ai
+  createdAt:   text("createdAt").notNull(),
+  updatedAt:   text("updatedAt").notNull(),
+});
+
+// The Google Sheet the Fundraising section is fed from (one row).
+export const investorSheetSyncs = pgTable("InvestorSheetSync", {
+  id:          text("id").primaryKey(),
+  sourceUrl:   text("sourceUrl").notNull(),
+  fileId:      text("fileId").notNull(),
+  fileKind:    text("fileKind").notNull().default("gsheet"),
+  sheetName:   text("sheetName"),
+  headerRow:   integer("headerRow").notNull().default(1),
+  columnMap:   text("columnMap").notNull().default("{}"),
+  frequency:   text("frequency").notNull().default("daily"), // daily | manual
+  snapshot:    text("snapshot"),
+  lastRunAt:   text("lastRunAt"),
+  lastStatus:  text("lastStatus"),   // ok | error
+  lastError:   text("lastError"),
+  lastSummary: text("lastSummary"),  // JSON: { created, updated, contacts, changes[] }
+  createdBy:   text("createdBy"),
+  createdAt:   text("createdAt").notNull(),
 });

@@ -34,7 +34,41 @@ export type Investor = {
   ownerId: string | null; owner?: { id: string; name: string } | null;
   nextStep: string | null; nextStepDate: string | null; notes: string | null;
   stageChangedAt: string | null; createdAt: string; updatedAt: string;
+  linkedinUrl?: string | null; description?: string | null; aum?: number | null;
+  focus?: string | null; geographies?: string | null; ticketMin?: number | null; ticketMax?: number | null;
+  fitScore?: number | null; probability?: number | null; scoreSource?: string | null; scoredAt?: string | null;
+  research?: string | null; researchStatus?: string | null; researchError?: string | null; researchedAt?: string | null;
+  sheetKey?: string | null;
+  contacts?: InvestorContact[];
 };
+
+export type InvestorContact = {
+  id: string; investorId: string; name: string; role: string | null; email: string | null; phone: string | null;
+  linkedinUrl: string | null; notes: string | null; isPrimary: boolean; source: string; createdAt: string; updatedAt: string;
+};
+
+/** What the AI found about an investor (stored as JSON on Investor.research). */
+export type InvestorResearch = {
+  summary: string;
+  investorType: string;
+  website: string; linkedinUrl: string;
+  hq: { city: string; country: string };
+  aum: { amount: number | null; currency: string; asOf: string; source: string };
+  ticket: { min: number | null; max: number | null; currency: string; note: string };
+  investsIn: string[]; sectors: string[]; geographies: string[];
+  lpActivity: { fund: string; manager: string; year: string; amount: string; source: string }[];
+  directInvestments: { company: string; year: string; note: string; source: string }[];
+  people: { name: string; title: string; email: string; phone: string; linkedinUrl: string; source: string }[];
+  fit: number | null; probability: number | null;
+  rationale: string[]; strengths: string[]; concerns: string[]; approach: string;
+  sources: { title: string; url: string }[];
+};
+
+/** Colour band for a 0-100 score. */
+export function scoreTone(n: number | null | undefined) {
+  if (n == null) return "bg-fog text-slate border-chalk";
+  return n >= 70 ? "bg-olive text-paper border-olive" : n >= 45 ? "bg-pistacho/70 text-olive border-pistacho" : "bg-amber-50 text-amber-800 border-amber-200";
+}
 
 export function fmtMoney(v: number | null | undefined, currency = "USD") {
   if (v == null) return "—";
