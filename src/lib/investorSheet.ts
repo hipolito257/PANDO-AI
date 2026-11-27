@@ -1,166 +1,118 @@
-// Fundraising fed from a Google Sheet: one row per investor (or per contact —
-// rows with the same investor name are that investor's people). Runs daily
-// and on demand. A value from the sheet is applied when it changed in the
-// sheet since the last sync, so edits made by hand in the platform stay until
-// someone changes that cell in the sheet.
+// Fundraising fed from a workbook (Google Sheet or Excel in Drive), all tabs.
+// How each tab is read comes from a plan the platform works out itself
+// (src/lib/investorSheetPlan.ts) and redoes when the workbook's layout changes.
+// A value is applied when it changed in the sheet since the last sync, so edits
+// made by hand in the platform stay until someone changes that cell in the sheet.
 import { randomUUID } from "crypto";
 import { asc, eq } from "drizzle-orm";
 import { db, investors, investorContacts, investorSheetSyncs, users } from "@/lib/db";
-import { downloadSheet, headersOf, norm, parseSheetUrl, parseSize, readWorkbook, type SheetTab } from "@/lib/sheetSync";
+import { downloadSheet, norm, parseSheetUrl, parseSize, readWorkbook, type SheetTab } from "@/lib/sheetSync";
+import { INVESTOR_STAGES, INVESTOR_TYPES } from "@/lib/fundraising";
+import {
+  PLAN_FIELDS, STAGE_WORDS, TYPE_WORDS, fingerprint, guessFrom, makePlan, makeValueMap, validatePlan,
+  type PlanField, type SheetPlan, type TabPlan, type ValueMap,
+} from "@/lib/investorSheetPlan";
 
 export const INVESTOR_SYNC_ID = "default";
+export const INVESTOR_FIELDS = PLAN_FIELDS;
 
-export const INVESTOR_FIELDS = [
-  { key: "name",          label: "Investor",              required: true, alias: ["investor", "inversionista", "inversor", "name", "nombre", "lp", "institution", "institucion", "firm", "firma", "entity", "entidad", "family office", "fondo", "fund", "empresa", "company", "organizacion", "organization"] },
-  { key: "type",          label: "Type",                  alias: ["type", "tipo", "investor type", "tipo de inversionista", "category", "categoria", "segment", "segmento"] },
-  { key: "stage",         label: "Stage",                 alias: ["stage", "etapa", "status", "estatus", "estado", "pipeline", "fase"] },
-  { key: "country",       label: "Country",               alias: ["country", "pais"] },
-  { key: "city",          label: "City",                  alias: ["city", "ciudad"] },
-  { key: "website",       label: "Website",               alias: ["website", "web", "sitio", "sitio web", "url", "pagina"] },
-  { key: "linkedinUrl",   label: "Investor LinkedIn",     alias: ["company linkedin", "linkedin empresa", "linkedin fondo", "linkedin investor"] },
-  { key: "description",   label: "Description",           alias: ["description", "descripcion", "profile", "perfil", "about"] },
-  { key: "aum",           label: "AUM",                   alias: ["aum", "assets under management", "activos", "activos bajo administracion"] },
-  { key: "focus",         label: "Focus / strategy",      alias: ["focus", "strategy", "estrategia", "sectors", "sectores", "thesis", "tesis", "invests in", "invierte en", "asset classes"] },
-  { key: "geographies",   label: "Geographies",           alias: ["geography", "geographies", "geografia", "region", "regiones", "regions"] },
-  { key: "targetAmount",  label: "Ticket / target",       alias: ["ticket", "target", "target amount", "monto", "monto objetivo", "ask", "potential", "potential commitment", "compromiso potencial", "commitment target"] },
-  { key: "committedAmount", label: "Committed",           alias: ["committed", "comprometido", "commitment", "compromiso", "committed amount", "monto comprometido"] },
-  { key: "currency",      label: "Currency",              alias: ["currency", "moneda", "divisa"] },
-  { key: "owner",         label: "Pando owner",           alias: ["owner", "responsable", "lead", "pando lead", "coverage", "relationship owner", "encargado"] },
-  { key: "nextStep",      label: "Next step",             alias: ["next step", "next steps", "siguiente paso", "proximo paso", "siguientes pasos", "action", "accion"] },
-  { key: "nextStepDate",  label: "Next step date",        alias: ["next step date", "fecha", "fecha siguiente paso", "follow up", "follow up date", "fecha seguimiento", "due date"] },
-  { key: "notes",         label: "Notes",                 alias: ["notes", "notas", "comments", "comentarios", "observaciones"] },
-  { key: "contactName",   label: "Contact name",          alias: ["contact", "contacto", "contact name", "nombre contacto", "nombre del contacto", "persona", "person", "key contact"] },
-  { key: "contactRole",   label: "Contact role",          alias: ["role", "puesto", "cargo", "title", "position", "contact role", "contact title"] },
-  { key: "contactEmail",  label: "Contact email",         alias: ["email", "correo", "mail", "e mail", "contact email", "correo electronico"] },
-  { key: "contactPhone",  label: "Contact phone",         alias: ["phone", "telefono", "tel", "celular", "mobile", "movil", "whatsapp"] },
-  { key: "contactLinkedin", label: "Contact LinkedIn",    alias: ["linkedin", "contact linkedin", "linkedin contacto"] },
-] as const;
-
-export type InvestorField = (typeof INVESTOR_FIELDS)[number]["key"];
-export type InvestorColumnMap = Partial<Record<InvestorField, string>>;
 const INV_KEYS = ["type", "stage", "country", "city", "website", "linkedinUrl", "description", "aum", "focus", "geographies",
   "targetAmount", "committedAmount", "currency", "owner", "nextStep", "nextStepDate", "notes"] as const;
 const CONTACT_KEYS = ["contactRole", "contactEmail", "contactPhone", "contactLinkedin"] as const;
+type InvKey = (typeof INV_KEYS)[number];
 
-export function guessInvestorColumns(headers: string[]): InvestorColumnMap {
-  const map: InvestorColumnMap = {};
-  const used = new Set<string>();
-  const hs = Array.from(headers, h => ({ h: h ?? "", n: norm(h) }));
-  for (const pass of ["exact", "contains"] as const) {
-    for (const f of INVESTOR_FIELDS) {
-      if (map[f.key]) continue;
-      const hit = hs.find(({ h, n }) => !used.has(h) && n && (pass === "exact"
-        ? (f.alias as readonly string[]).includes(n)
-        : (f.alias as readonly string[]).some(a => a.length > 3 && (n.includes(a) || a.includes(n)))));
-      if (hit) { map[f.key] = hit.h; used.add(hit.h); }
-    }
-  }
-  return map;
-}
+type SheetContact = { key: string; name: string; values: Partial<Record<(typeof CONTACT_KEYS)[number], string>> };
+export type SheetInvestor = { key: string; name: string; values: Partial<Record<InvKey, string>>; contacts: SheetContact[]; tabs: string[] };
+type Snapshot = Record<string, { v: Record<string, string>; c: Record<string, Record<string, string>> }>;
+export type SyncChange = { investor: string; field: string; from: string | null; to: string | null; kind: "created" | "updated" | "contact" };
+export type SyncSummary = { rows: number; investors: number; created: number; updated: number; contacts: number; tabs: string[]; changes: SyncChange[]; notInSheet: string[] };
 
-export function guessInvestorHeaderRow(rows: string[][]): number {
-  let best = 0, bestScore = -1;
-  for (let i = 0; i < Math.min(rows.length, 15); i++) {
-    const cells = rows[i] ?? [];
-    const filled = cells.filter(Boolean).length;
-    if (filled < 2) continue;
-    const hits = cells.filter(c => INVESTOR_FIELDS.some(f => (f.alias as readonly string[]).includes(norm(c)))).length;
-    const s = hits * 10 + Math.min(filled, 9);
-    if (s > bestScore) { best = i; bestScore = s; }
-  }
-  return best + 1;
-}
-
-const TYPE_WORDS: Record<string, string[]> = {
-  family_office: ["family office", "fo", "familia", "family"],
-  afore: ["afore", "pension", "pensiones", "siefore"],
-  institutional: ["institutional", "institucional", "endowment", "sovereign", "soberano", "bank", "banco"],
-  dfi: ["dfi", "development", "desarrollo", "multilateral", "ifc", "idb", "bid", "nafin", "fonadin", "cmic"],
-  fund_of_funds: ["fund of funds", "fondo de fondos", "fof", "fdf"],
-  insurance: ["insurance", "aseguradora", "seguros"],
-  corporate: ["corporate", "corporativo", "strategic", "estrategico", "empresa"],
-  hnwi: ["hnwi", "individual", "persona fisica", "angel", "uhnwi", "private"],
-};
-const STAGE_WORDS: Record<string, string[]> = {
-  identified: ["identified", "identificado", "prospect", "prospecto", "target", "lead", "por contactar", "pending", "new", "nuevo"],
-  contacted: ["contacted", "contactado", "outreach", "email sent", "correo enviado", "reached out"],
-  meeting: ["meeting", "reunion", "first meeting", "primera reunion", "call", "llamada", "pitch", "intro"],
-  diligence: ["diligence", "due diligence", "dd", "ddq", "revision", "analysis", "analisis", "data room"],
-  soft_commit: ["soft commit", "soft", "verbal", "interesado", "interested", "lpa", "negotiation", "negociacion", "term sheet"],
-  committed: ["committed", "comprometido", "closed", "cerrado", "signed", "firmado", "invested", "invirtio", "won"],
-  declined: ["declined", "rechazado", "rechazo", "pass", "no", "lost", "perdido", "not interested", "no interesado", "descartado"],
-};
-function guessFrom(words: Record<string, string[]>, raw: string): string | null {
-  const n = norm(raw);
-  if (!n) return null;
-  for (const [k, ws] of Object.entries(words)) if (ws.includes(n)) return k;
-  for (const [k, ws] of Object.entries(words)) if (ws.some(w => w.length > 2 && n.includes(w))) return k;
-  return null;
-}
 function parseDate(raw: string): string | null {
   const s = raw.trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/); // dd/mm/yyyy (Mexico)
-  if (m) {
-    const y = m[3].length === 2 ? `20${m[3]}` : m[3];
-    return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-  }
+  if (m) return `${m[3].length === 2 ? `20${m[3]}` : m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   return null;
 }
 
-type SheetInvestor = { key: string; name: string; values: Partial<Record<(typeof INV_KEYS)[number], string>>; contacts: SheetContact[] };
-type SheetContact = { key: string; name: string; values: Partial<Record<(typeof CONTACT_KEYS)[number], string>> };
-type Snapshot = Record<string, { v: Record<string, string>; c: Record<string, Record<string, string>> }>;
-export type SyncChange = { investor: string; field: string; from: string | null; to: string | null; kind: "created" | "updated" | "contact" };
-export type SyncSummary = { rows: number; investors: number; created: number; updated: number; contacts: number; changes: SyncChange[]; notInSheet: string[] };
-
-/** Groups the sheet's rows into investors (with their contacts). */
-export function readInvestors(tab: SheetTab, headerRow: number, map: InvestorColumnMap): SheetInvestor[] {
-  const headers = headersOf(tab, headerRow);
-  const col = (f: InvestorField) => (map[f] ? headers.indexOf(map[f]!) : -1);
-  const nameCol = col("name");
-  if (nameCol < 0) throw new Error("Choose which column has the investor's name.");
+/** Reads every used tab with its plan and merges them into investors (with their people). */
+export function readWorkbookInvestors(tabs: SheetTab[], plan: SheetPlan): { list: SheetInvestor[]; rows: number } {
   const out = new Map<string, SheetInvestor>();
-  for (const row of tab.rows.slice(headerRow)) {
-    const name = (row[nameCol] ?? "").trim();
-    if (!name) continue;
-    const key = norm(name);
-    let inv = out.get(key);
-    if (!inv) { inv = { key, name, values: {}, contacts: [] }; out.set(key, inv); }
-    for (const f of INV_KEYS) {
-      const c = col(f);
-      const v = c >= 0 ? (row[c] ?? "").trim() : "";
-      if (v && !inv.values[f]) inv.values[f] = v; // the first row that has it wins
-    }
-    const cName = col("contactName") >= 0 ? (row[col("contactName")] ?? "").trim() : "";
-    if (cName) {
-      const values: SheetContact["values"] = {};
-      for (const f of CONTACT_KEYS) { const c = col(f); const v = c >= 0 ? (row[c] ?? "").trim() : ""; if (v) values[f] = v; }
-      const cKey = norm(values.contactEmail || cName);
-      if (!inv.contacts.some(x => x.key === cKey)) inv.contacts.push({ key: cKey, name: cName, values });
+  let rows = 0;
+  for (const tp of plan.tabs.filter(t => t.use && t.columns.name)) {
+    const tab = tabs.find(t => t.name === tp.name);
+    if (!tab) continue;
+    const at = (row: string[], f: PlanField) => { const c = tp.columns[f]; return c ? String(row?.[c - 1] ?? "").trim() : ""; };
+    for (const row of tab.rows.slice(tp.headerRow)) {
+      const name = at(row, "name");
+      if (!name || name.length > 160) continue;
+      rows++;
+      const key = norm(name);
+      let inv = out.get(key);
+      if (!inv) { inv = { key, name, values: {}, contacts: [], tabs: [] }; out.set(key, inv); }
+      if (!inv.tabs.includes(tp.name)) inv.tabs.push(tp.name);
+      for (const f of INV_KEYS) {
+        const v = at(row, f);
+        if (v && !inv.values[f]) inv.values[f] = v; // the first row / tab that has it wins
+      }
+      // A tab that is one type or one stage ("AFOREs", "Committed") gives it to its rows.
+      if (tp.type && !inv.values.type) inv.values.type = tp.type;
+      if (tp.stage && !inv.values.stage) inv.values.stage = tp.stage;
+      const cName = at(row, "contactName");
+      if (cName) {
+        const values: SheetContact["values"] = {};
+        for (const f of CONTACT_KEYS) { const v = at(row, f); if (v) values[f] = v; }
+        const cKey = norm(values.contactEmail || cName);
+        if (!inv.contacts.some(x => x.key === cKey)) inv.contacts.push({ key: cKey, name: cName, values });
+      }
     }
   }
-  return [...out.values()];
+  return { list: [...out.values()], rows };
 }
 
-/** Reads the sheet and applies it to the Fundraising section. */
-export async function runInvestorSync(trigger: "manual" | "cron"): Promise<SyncSummary> {
+async function loadSync() {
   const [sync] = await db.select().from(investorSheetSyncs).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID)).limit(1);
+  return sync ?? null;
+}
+const readTabs = (fileId: string, kind: string) => downloadSheet({ fileId, kind: kind as "gsheet" | "drive_file" }).then(readWorkbook);
+
+/** The plan for these tabs: the saved one if the layout hasn't changed, otherwise a new one. */
+async function ensurePlan(sync: NonNullable<Awaited<ReturnType<typeof loadSync>>>, tabs: SheetTab[], apiKey: string | null, force = false) {
+  const fp = fingerprint(tabs);
+  let plan: SheetPlan | null = sync.plan ? JSON.parse(sync.plan) : null;
+  let valueMap: ValueMap | null = sync.valueMap ? JSON.parse(sync.valueMap) : null;
+  const layoutChanged = sync.planFingerprint !== fp;
+  if (force || !plan || (layoutChanged && plan.by !== "manual")) {
+    plan = await makePlan(tabs, apiKey);
+  } else if (layoutChanged) {
+    plan = validatePlan(plan, tabs, "manual"); // keep the team's adjustments, drop what no longer fits
+  }
+  valueMap = await makeValueMap(plan, tabs, apiKey, force ? null : valueMap);
+  await db.update(investorSheetSyncs).set({ plan: JSON.stringify(plan), planFingerprint: fp, valueMap: JSON.stringify(valueMap) })
+    .where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
+  return { plan, valueMap };
+}
+
+/** Reads the workbook and applies it to the Fundraising section. */
+export async function runInvestorSync(trigger: "manual" | "cron", apiKey: string | null = process.env.ANTHROPIC_API_KEY ?? null, opts: { replan?: boolean } = {}): Promise<SyncSummary> {
+  const sync = await loadSync();
   if (!sync) throw new Error("Connect the Google Sheet first.");
   const now = new Date().toISOString();
   try {
-    const tabs = await readWorkbook(await downloadSheet({ fileId: sync.fileId, kind: sync.fileKind as "gsheet" | "drive_file" }));
-    const tab = tabs.find(t => t.name === sync.sheetName) ?? tabs[0];
-    if (!tab) throw new Error("The file has no visible tabs.");
-    const sheet = readInvestors(tab, sync.headerRow, JSON.parse(sync.columnMap || "{}"));
+    const tabs = await readTabs(sync.fileId, sync.fileKind);
+    if (!tabs.length) throw new Error("The file has no visible tabs.");
+    const { plan, valueMap } = await ensurePlan(sync, tabs, apiKey, opts.replan);
+    const { list, rows } = readWorkbookInvestors(tabs, plan);
+    if (!list.length) throw new Error("No investors were found in the file. Check how the tabs were read below.");
     const prev: Snapshot = sync.snapshot ? JSON.parse(sync.snapshot) : {};
-    const summary = await applySheet(sheet, prev);
-    summary.rows = Math.max(0, tab.rows.length - sync.headerRow);
+    const summary = await applySheet(list, prev, valueMap);
+    summary.rows = rows;
+    summary.tabs = plan.tabs.filter(t => t.use).map(t => t.name);
     const snap: Snapshot = {};
-    for (const s of sheet) snap[s.key] = { v: s.values as Record<string, string>, c: Object.fromEntries(s.contacts.map(c => [c.key, { name: c.name, ...c.values }])) };
+    for (const s of list) snap[s.key] = { v: s.values as Record<string, string>, c: Object.fromEntries(s.contacts.map(c => [c.key, { name: c.name, ...c.values }])) };
     await db.update(investorSheetSyncs).set({
       snapshot: JSON.stringify(snap), lastRunAt: now, lastStatus: "ok", lastError: null,
-      lastSummary: JSON.stringify({ ...summary, trigger, changes: summary.changes.slice(0, 300) }),
+      lastSummary: JSON.stringify({ ...summary, trigger, changes: summary.changes.slice(0, 400) }),
     }).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
     return summary;
   } catch (err) {
@@ -170,13 +122,13 @@ export async function runInvestorSync(trigger: "manual" | "cron"): Promise<SyncS
   }
 }
 
-export async function applySheet(sheet: SheetInvestor[], prev: Snapshot): Promise<SyncSummary> {
+export async function applySheet(sheet: SheetInvestor[], prev: Snapshot, valueMap: ValueMap = { stage: {}, type: {} }): Promise<SyncSummary> {
   const [all, people, contacts] = await Promise.all([
     db.select().from(investors).orderBy(asc(investors.name)),
     db.select({ id: users.id, name: users.name, email: users.email }).from(users),
     db.select().from(investorContacts),
   ]);
-  const summary: SyncSummary = { rows: 0, investors: sheet.length, created: 0, updated: 0, contacts: 0, changes: [], notInSheet: [] };
+  const summary: SyncSummary = { rows: 0, investors: sheet.length, created: 0, updated: 0, contacts: 0, tabs: [], changes: [], notInSheet: [] };
   const now = new Date().toISOString();
   const owner = (raw: string) => {
     const n = norm(raw);
@@ -184,19 +136,21 @@ export async function applySheet(sheet: SheetInvestor[], prev: Snapshot): Promis
       ?? people.find(p => n && (norm(p.name).startsWith(n) || n.startsWith(norm(p.name).split(" ")[0] + " ")))
       ?? null;
   };
+  const typeKeys = INVESTOR_TYPES.map(t => t.key) as string[];
+  const stageKeys = INVESTOR_STAGES.map(s => s.key) as string[];
   // Sheet text → the value stored on the investor (null = can't read it, skip).
-  const convert = (f: (typeof INV_KEYS)[number], raw: string): unknown => {
+  const convert = (f: InvKey, raw: string): unknown => {
     switch (f) {
-      case "type": return guessFrom(TYPE_WORDS, raw);
-      case "stage": return guessFrom(STAGE_WORDS, raw);
+      case "type": return typeKeys.includes(raw) ? raw : valueMap.type[norm(raw)] || guessFrom(TYPE_WORDS, raw);
+      case "stage": return stageKeys.includes(raw) ? raw : valueMap.stage[norm(raw)] || guessFrom(STAGE_WORDS, raw);
       case "aum": case "targetAmount": case "committedAmount": return parseSize(raw, 1);
       case "currency": { const c = raw.toUpperCase().match(/USD|MXN|EUR|GBP|CAD/); return c ? c[0] : null; }
       case "owner": return owner(raw)?.id ?? null;
       case "nextStepDate": return parseDate(raw);
-      default: return raw.slice(0, f === "notes" || f === "description" ? 4000 : 300);
+      default: return raw.slice(0, f === "notes" || f === "description" ? 4000 : f === "focus" ? 1000 : 300);
     }
   };
-  const column = (f: (typeof INV_KEYS)[number]) => (f === "owner" ? "ownerId" : f) as keyof typeof investors.$inferInsert;
+  const column = (f: InvKey) => (f === "owner" ? "ownerId" : f) as keyof typeof investors.$inferInsert;
 
   for (const s of sheet) {
     const was = prev[s.key];
@@ -207,7 +161,7 @@ export async function applySheet(sheet: SheetInvestor[], prev: Snapshot): Promis
         const raw = s.values[f];
         if (!raw) continue;
         const v = convert(f, raw);
-        if (v !== null && v !== undefined) (values as Record<string, unknown>)[column(f)] = v;
+        if (v !== null && v !== undefined && v !== "") (values as Record<string, unknown>)[column(f)] = v;
       }
       const id = randomUUID();
       await db.insert(investors).values({
@@ -215,15 +169,16 @@ export async function applySheet(sheet: SheetInvestor[], prev: Snapshot): Promis
         id, name: s.name.slice(0, 160), sheetKey: s.key, stageChangedAt: now, createdBy: "sheet", createdAt: now, updatedAt: now,
       });
       inv = { id, name: s.name } as typeof all[number];
+      all.push(inv);
       summary.created++;
-      summary.changes.push({ investor: s.name, field: "investor", from: null, to: "added from the sheet", kind: "created" });
+      summary.changes.push({ investor: s.name, field: "investor", from: null, to: `added from ${s.tabs.join(", ")}`, kind: "created" });
     } else {
       const set: Partial<typeof investors.$inferInsert> = {};
       for (const f of INV_KEYS) {
         const raw = s.values[f];
         if (!raw || was?.v?.[f] === raw) continue; // unchanged in the sheet: keep what's in the platform
         const v = convert(f, raw);
-        if (v === null || v === undefined) continue;
+        if (v === null || v === undefined || v === "") continue;
         const cur = (inv as Record<string, unknown>)[column(f)];
         if (cur === v) continue;
         (set as Record<string, unknown>)[column(f)] = v;
@@ -243,13 +198,13 @@ export async function applySheet(sheet: SheetInvestor[], prev: Snapshot): Promis
       const old = was?.c?.[sc.key];
       const email = sc.values.contactEmail?.toLowerCase() ?? null;
       const ex = mine.find(c => (email && c.email?.toLowerCase() === email) || norm(c.name) === norm(sc.name));
-      const fields = { name: sc.name, role: sc.values.contactRole ?? null, email, phone: sc.values.contactPhone ?? null, linkedinUrl: sc.values.contactLinkedin ?? null };
+      const fields = { name: sc.name.slice(0, 120), role: sc.values.contactRole ?? null, email, phone: sc.values.contactPhone ?? null, linkedinUrl: sc.values.contactLinkedin ?? null };
       if (!ex) {
         await db.insert(investorContacts).values({ id: randomUUID(), investorId: inv.id, ...fields, isPrimary: mine.length === 0, source: "sheet", createdAt: now, updatedAt: now });
         mine.push({ id: "", investorId: inv.id, ...fields, notes: null, isPrimary: false, source: "sheet", createdAt: now, updatedAt: now });
         summary.contacts++;
         summary.changes.push({ investor: inv.name, field: "contact", from: null, to: sc.name, kind: "contact" });
-      } else {
+      } else if (ex.id) {
         const set: Record<string, string | null> = {};
         const pairs: [keyof typeof fields, string][] = [["role", "contactRole"], ["email", "contactEmail"], ["phone", "contactPhone"], ["linkedinUrl", "contactLinkedin"]];
         for (const [k, sk] of pairs) {
@@ -269,29 +224,40 @@ export async function applySheet(sheet: SheetInvestor[], prev: Snapshot): Promis
   return summary;
 }
 
-/** Connects (or reconnects) the sheet: reads it and guesses the header row and columns. */
-export async function connectInvestorSheet(url: string, userId: string, sheetName?: string | null) {
+/** Connects the workbook, works out how to read it and syncs right away. */
+export async function connectInvestorSheet(url: string, userId: string, apiKey: string | null) {
   const ref = parseSheetUrl(url);
   if (!ref) throw new Error("Paste the link of a Google Sheet (or an Excel file in Google Drive).");
   const tabs = await readWorkbook(await downloadSheet(ref));
   if (!tabs.length) throw new Error("The file has no visible tabs.");
-  const tab = tabs.find(t => t.name === sheetName) ?? tabs[0];
-  const headerRow = guessInvestorHeaderRow(tab.rows);
-  const headers = headersOf(tab, headerRow);
-  const columnMap = guessInvestorColumns(headers);
-  const values = { sourceUrl: url, fileId: ref.fileId, fileKind: ref.kind, sheetName: tab.name, headerRow, columnMap: JSON.stringify(columnMap) };
-  const [exists] = await db.select({ id: investorSheetSyncs.id, fileId: investorSheetSyncs.fileId }).from(investorSheetSyncs).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID)).limit(1);
-  if (exists) await db.update(investorSheetSyncs).set({ ...values, ...(exists.fileId !== ref.fileId ? { snapshot: null } : {}) }).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
+  const sync = await loadSync();
+  const values = { sourceUrl: url, fileId: ref.fileId, fileKind: ref.kind, sheetName: null, plan: null, planFingerprint: null, valueMap: null };
+  if (sync) await db.update(investorSheetSyncs).set({ ...values, ...(sync.fileId !== ref.fileId ? { snapshot: null } : {}) }).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
   else await db.insert(investorSheetSyncs).values({ id: INVESTOR_SYNC_ID, ...values, createdBy: userId, createdAt: new Date().toISOString() });
-  return { tabs: tabs.map(t => t.name), headers, columnMap, headerRow, sheetName: tab.name };
+  return runInvestorSync("manual", apiKey);
 }
 
-/** Headers of the connected tab (for the column mapping screen). */
-export async function investorSheetHeaders() {
-  const [sync] = await db.select().from(investorSheetSyncs).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID)).limit(1);
+/** Saves the team's adjustments to how the tabs are read. */
+export async function saveInvestorPlan(raw: unknown) {
+  const sync = await loadSync();
+  if (!sync) throw new Error("Connect the Google Sheet first.");
+  const tabs = await readTabs(sync.fileId, sync.fileKind);
+  const plan = validatePlan({ ...(raw as object), summary: sync.plan ? JSON.parse(sync.plan).summary : "" }, tabs, "manual");
+  await db.update(investorSheetSyncs).set({ plan: JSON.stringify(plan), planFingerprint: fingerprint(tabs) }).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
+  return plan;
+}
+
+/** Each tab's titles and first rows, for the "how your file was read" screen. */
+export async function investorSheetTabs() {
+  const sync = await loadSync();
   if (!sync) return null;
-  const tabs = await readWorkbook(await downloadSheet({ fileId: sync.fileId, kind: sync.fileKind as "gsheet" | "drive_file" }));
-  const tab = tabs.find(t => t.name === sync.sheetName) ?? tabs[0];
-  return { tabs: tabs.map(t => t.name), headers: tab ? headersOf(tab, sync.headerRow) : [], sample: tab ? tab.rows.slice(sync.headerRow, sync.headerRow + 3) : [] };
+  const tabs = await readTabs(sync.fileId, sync.fileKind);
+  const plan: SheetPlan | null = sync.plan ? JSON.parse(sync.plan) : null;
+  return tabs.map(t => {
+    const tp: TabPlan | undefined = plan?.tabs.find(x => x.name === t.name);
+    const headerRow = tp?.headerRow ?? 1;
+    const width = Math.max(...t.rows.slice(0, 40).map(r => r?.length ?? 0), 0);
+    const header = Array.from({ length: width }, (_, i) => String(t.rows[headerRow - 1]?.[i] ?? "").trim());
+    return { name: t.name, rows: t.rows.length, headers: header.map((h, i) => h || `Column ${i + 1}`), sample: t.rows.slice(headerRow, headerRow + 2).map(r => Array.from({ length: width }, (_, i) => String(r?.[i] ?? "").slice(0, 40))) };
+  });
 }
-

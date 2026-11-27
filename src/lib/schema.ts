@@ -739,6 +739,9 @@ export const investorSheetSyncs = pgTable("InvestorSheetSync", {
   lastStatus:  text("lastStatus"),   // ok | error
   lastError:   text("lastError"),
   lastSummary: text("lastSummary"),  // JSON: { created, updated, contacts, changes[] }
+  plan:        text("plan"),         // JSON SheetPlan (src/lib/investorSheet.ts): how each tab is read
+  planFingerprint: text("planFingerprint"), // tabs + headers when the plan was made; a change re-plans
+  valueMap:    text("valueMap"),     // JSON { stage: {value: key}, type: {value: key} }
   createdBy:   text("createdBy"),
   createdAt:   text("createdAt").notNull(),
 });
