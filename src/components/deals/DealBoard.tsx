@@ -1,4 +1,5 @@
 "use client";
+import { TopScroll } from "@/components/ui/TopScroll";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -217,7 +218,8 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
               </div>
             ))}
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-3">
+          <TopScroll>
+          <div className="flex gap-3 pb-3 w-max min-w-full">
             {stages.map(s => {
               const cards = visible.filter(d => d.stage === s.key);
               return (
@@ -263,6 +265,7 @@ export function DealBoard({ phase, title, emptyTitle, emptyText }: BoardProps) {
               );
             })}
           </div>
+          </TopScroll>
           </>
         ) : (
           <Card padding="none" className="overflow-x-auto">

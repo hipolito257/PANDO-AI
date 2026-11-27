@@ -1,6 +1,7 @@
 "use client";
 // Fundraising › Investor pipeline: investors move between stages by dragging
 // their card (on a phone, tap a card and change its stage).
+import { TopScroll } from "@/components/ui/TopScroll";
 import { useState } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { Card } from "@/components/ui/Card";
@@ -36,7 +37,8 @@ export default function InvestorPipelinePage() {
         {state === "loading" ? <Card><p className="text-[13px] text-slate">Loading…</p></Card>
           : state === "error" ? <Card><p className="text-[13px] mb-2">Couldn&apos;t load the investors</p><Button size="sm" variant="outline" onClick={load}>Try again</Button></Card>
           : (
-            <div className="flex gap-3 overflow-x-auto pb-3">
+            <TopScroll>
+            <div className="flex gap-3 pb-3 w-max min-w-full">
               {INVESTOR_STAGES.map(s => {
                 const cards = visible.filter(i => i.stage === s.key);
                 const amount = cards.reduce((n, i) => n + (i.committedAmount ?? i.targetAmount ?? 0), 0);
@@ -81,6 +83,7 @@ export default function InvestorPipelinePage() {
                 );
               })}
             </div>
+            </TopScroll>
           )}
       </div>
       {(editing || adding) && (
