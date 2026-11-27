@@ -211,8 +211,9 @@ Return ONLY this JSON (no markdown):
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-haiku-5-5",
         max_tokens: 300,
+        thinking: { type: "disabled" },
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(20000),
@@ -420,8 +421,9 @@ Return ONLY a valid JSON array. If no companies found, return [].`;
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-haiku-5-5",
         max_tokens: 2000,
+        thinking: { type: "disabled" },
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(30000),
@@ -467,8 +469,9 @@ ${JSON.stringify(candidates, null, 2)}`;
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-5",
+        model: "claude-haiku-5-5",
         max_tokens: 2500,
+        thinking: { type: "disabled" },
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(30000),

@@ -104,11 +104,11 @@ export async function researchInvestor(id: string, apiKey: string) {
     const client = new Anthropic({ apiKey });
     const tools = [{ type: "web_search_20260209", name: "web_search", max_uses: 10 }] as unknown as Anthropic.Messages.ToolUnion[];
     const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: context }];
-    let msg = await client.messages.create({ model: MODEL, max_tokens: 16000, system: SYSTEM, tools, messages });
+    let msg = await client.messages.create({ model: MODEL, max_tokens: 16000, system: SYSTEM, tools, messages, output_config: { effort: "medium" } });
     // Long searches pause; send the turn back so the server continues it.
     for (let i = 0; msg.stop_reason === "pause_turn" && i < 4; i++) {
       messages.push({ role: "assistant", content: msg.content as unknown as Anthropic.Messages.ContentBlockParam[] });
-      msg = await client.messages.create({ model: MODEL, max_tokens: 16000, system: SYSTEM, tools, messages });
+      msg = await client.messages.create({ model: MODEL, max_tokens: 16000, system: SYSTEM, tools, messages, output_config: { effort: "medium" } });
       messages.pop();
     }
     if (msg.stop_reason === "refusal") throw new Error("The model declined this research. Try again or fill it in by hand.");

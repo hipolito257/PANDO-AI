@@ -145,7 +145,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
       model: "claude-sonnet-5-5",
-      max_tokens: 4000,
+      max_tokens: 8000,
+      output_config: { effort: "medium" },
       system: DRAFT_SYSTEM,
       messages: [{ role: "user", content: [{ type: "text", text: context }, ...files.blocks, { type: "text", text: onlyFinancials
         ? "Only the financial part matters now: extract the historical and projected years exactly as the documents give them. Return the full JSON shape anyway."

@@ -197,7 +197,8 @@ function tabPreview(t: SheetTab) {
 
 async function askJson(apiKey: string, system: string, user: string) {
   const client = new Anthropic({ apiKey });
-  const msg = await client.messages.create({ model: MODEL, max_tokens: 8000, system, messages: [{ role: "user", content: user }] });
+  // Reading a layout and classifying are simple: little reasoning needed (reasoning is billed as output).
+  const msg = await client.messages.create({ model: MODEL, max_tokens: 8000, system, messages: [{ role: "user", content: user }], output_config: { effort: "low" } });
   if (msg.stop_reason === "refusal") throw new Error("refused");
   const text = msg.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("");
   return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));

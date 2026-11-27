@@ -50,7 +50,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
     const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
       model: "claude-sonnet-5-5",
-      max_tokens: 2000,
+      max_tokens: 4000,
+      output_config: { effort: "medium" },
       system: CAP_DRAFT_SYSTEM,
       messages: [{ role: "user", content: [...files.blocks, { type: "text", text: `Extract the cap table of ${company.name}.` }] }],
     });

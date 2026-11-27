@@ -169,8 +169,9 @@ export async function expandQuery(query: string, apiKey: string | null | undefin
   try {
     const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
-      model: "claude-haiku-4-5",
+      model: "claude-haiku-5-5",
       max_tokens: 300,
+      thinking: { type: "disabled" },
       system: "You turn a search question about company documents (decks, financial models, reports of a private equity firm) into search keywords. Reply with ONLY a JSON array of 6 to 16 short keywords or 2-word phrases, in BOTH Spanish and English: the key terms of the question, their translations, close synonyms and the wording a document would use (e.g. revenue/ingresos/ventas, EBITDA, margin/margen). No explanations.",
       messages: [{ role: "user", content: query.slice(0, 500) }],
     });
