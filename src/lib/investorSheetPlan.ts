@@ -47,7 +47,10 @@ export type TabPlan = {
   columns: Partial<Record<PlanField, number>>;      // 1-based column numbers
 };
 export type SheetPlan = { summary: string; tabs: TabPlan[]; by: "ai" | "guess" | "manual" };
-export type ValueMap = { stage: Record<string, string>; type: Record<string, string> };
+export type ValueMap = {
+  stage: Record<string, string>; type: Record<string, string>;
+  guessed?: Record<string, string>; // investor key -> type worked out by AI when the file has no type
+};
 
 const TYPE_KEYS = INVESTOR_TYPES.map(t => t.key) as string[];
 const STAGE_KEYS = INVESTOR_STAGES.map(s => s.key) as string[];
@@ -263,4 +266,28 @@ export async function makeValueMap(plan: SheetPlan, tabs: SheetTab[], apiKey: st
     console.error("[investor sheet values]", err);
   }
   return map;
+}
+
+const CLASSIFY_SYSTEM = `You classify prospective investors (LPs) of Pando, a Mexican private equity firm, by type.
+Types: ${INVESTOR_TYPES.map(t => `${t.key} (${t.label})`).join(", ")}.
+Guidance: in Mexico the AFORE operators often appear just by brand (XXI Banorte, Sura, Profuturo, Principal, Citibanamex / Banamex, Inbursa, Coppel, Azteca, PensionISSSTE, Invercap) and are "afore". Banks, endowments, sovereign funds and asset managers investing their balance sheet are "institutional". Development banks and multilaterals (IFC, IDB Invest, BID, Nafin, Bancomext, CAF, DFC, FMO, Proparco, DEG, BII) are "dfi". Funds of funds and fund-of-funds programmes (e.g. Fondo de Fondos) are "fund_of_funds". Insurers are "insurance". Operating companies investing strategically are "corporate". Wealthy individuals are "hnwi". Family offices and holding companies of families are "family_office". When unsure, pick the most likely type from the name.
+Answer with ONLY JSON mapping each given id to a type key: { "<id>": "<type key>" }`;
+
+/** Types for investors the file gives no type for (by name, country, notes). */
+export async function classifyTypes(items: { key: string; name: string; country?: string; city?: string; notes?: string }[], apiKey: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < items.length; i += 120) {
+    const chunk = items.slice(i, i + 120);
+    const lines = chunk.map((x, j) => `${j + 1}. ${x.name}${x.city || x.country ? ` | ${[x.city, x.country].filter(Boolean).join(", ")}` : ""}${x.notes ? ` | ${x.notes.slice(0, 120)}` : ""}`);
+    try {
+      const raw = await askJson(apiKey, CLASSIFY_SYSTEM, lines.join("\n"));
+      for (const [id, k] of Object.entries((raw ?? {}) as Record<string, unknown>)) {
+        const item = chunk[Number(id) - 1];
+        if (item && typeof k === "string" && TYPE_KEYS.includes(k)) out[item.key] = k;
+      }
+    } catch (err) {
+      console.error("[investor type classify]", err);
+    }
+  }
+  return out;
 }

@@ -9,7 +9,7 @@ import { db, investors, investorContacts, investorSheetSyncs, users } from "@/li
 import { downloadSheet, norm, parseSheetUrl, parseSize, readWorkbook, type SheetTab } from "@/lib/sheetSync";
 import { INVESTOR_STAGES, INVESTOR_TYPES } from "@/lib/fundraising";
 import {
-  PLAN_FIELDS, STAGE_WORDS, TYPE_WORDS, fingerprint, guessFrom, makePlan, makeValueMap, validatePlan,
+  PLAN_FIELDS, STAGE_WORDS, TYPE_WORDS, classifyTypes, fingerprint, guessFrom, makePlan, makeValueMap, validatePlan,
   type PlanField, type SheetPlan, type TabPlan, type ValueMap,
 } from "@/lib/investorSheetPlan";
 
@@ -22,7 +22,7 @@ const CONTACT_KEYS = ["contactRole", "contactEmail", "contactPhone", "contactLin
 type InvKey = (typeof INV_KEYS)[number];
 
 type SheetContact = { key: string; name: string; values: Partial<Record<(typeof CONTACT_KEYS)[number], string>> };
-export type SheetInvestor = { key: string; name: string; values: Partial<Record<InvKey, string>>; contacts: SheetContact[]; tabs: string[] };
+export type SheetInvestor = { key: string; name: string; values: Partial<Record<InvKey, string>>; contacts: SheetContact[]; tabs: string[]; guessType?: string };
 type Snapshot = Record<string, { v: Record<string, string>; c: Record<string, Record<string, string>> }>;
 export type SyncChange = { investor: string; field: string; from: string | null; to: string | null; kind: "created" | "updated" | "contact" };
 export type SyncSummary = { rows: number; investors: number; created: number; updated: number; contacts: number; tabs: string[]; changes: SyncChange[]; notInSheet: string[] };
@@ -103,6 +103,15 @@ export async function runInvestorSync(trigger: "manual" | "cron", apiKey: string
     if (!tabs.length) throw new Error("The file has no visible tabs.");
     const { plan, valueMap } = await ensurePlan(sync, tabs, apiKey, opts.replan);
     const { list, rows } = readWorkbookInvestors(tabs, plan);
+    // No type in the file: let AI work it out from the name (asked once per investor, then remembered).
+    const guessed = { ...(valueMap.guessed ?? {}) };
+    const missing = list.filter(i => !i.values.type && !guessed[i.key]);
+    if (missing.length && apiKey) {
+      Object.assign(guessed, await classifyTypes(missing.map(i => ({ key: i.key, name: i.name, country: i.values.country, city: i.values.city, notes: i.values.notes ?? i.values.focus })), apiKey));
+      valueMap.guessed = guessed;
+      await db.update(investorSheetSyncs).set({ valueMap: JSON.stringify(valueMap) }).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
+    }
+    for (const i of list) if (!i.values.type && guessed[i.key]) i.guessType = guessed[i.key];
     if (!list.length) throw new Error("No investors were found in the file. Check how the tabs were read below.");
     const prev: Snapshot = sync.snapshot ? JSON.parse(sync.snapshot) : {};
     const summary = await applySheet(list, prev, valueMap);
@@ -163,6 +172,7 @@ export async function applySheet(sheet: SheetInvestor[], prev: Snapshot, valueMa
         const v = convert(f, raw);
         if (v !== null && v !== undefined && v !== "") (values as Record<string, unknown>)[column(f)] = v;
       }
+      if (!values.type && s.guessType) values.type = s.guessType;
       const id = randomUUID();
       await db.insert(investors).values({
         type: "family_office", stage: "identified", currency: "USD", ...values,
@@ -183,6 +193,11 @@ export async function applySheet(sheet: SheetInvestor[], prev: Snapshot, valueMa
         if (cur === v) continue;
         (set as Record<string, unknown>)[column(f)] = v;
         summary.changes.push({ investor: inv.name, field: f, from: cur == null ? null : String(cur), to: String(v), kind: "updated" });
+      }
+      // Still on the default type and the file has none: use the type AI worked out.
+      if (!s.values.type && s.guessType && inv.type === "family_office" && s.guessType !== "family_office" && !set.type) {
+        set.type = s.guessType;
+        summary.changes.push({ investor: inv.name, field: "type (AI)", from: inv.type, to: s.guessType, kind: "updated" });
       }
       if (inv.sheetKey !== s.key) set.sheetKey = s.key;
       if (Object.keys(set).length) {
