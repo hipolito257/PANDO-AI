@@ -78,17 +78,17 @@ const readTabs = (fileId: string, kind: string) => downloadSheet({ fileId, kind:
 
 /** The plan for these tabs: the saved one if the layout hasn't changed, otherwise a new one. */
 async function ensurePlan(sync: NonNullable<Awaited<ReturnType<typeof loadSync>>>, tabs: SheetTab[], apiKey: string | null, force = false) {
-  const fp = fingerprint(tabs);
   let plan: SheetPlan | null = sync.plan ? JSON.parse(sync.plan) : null;
   let valueMap: ValueMap | null = sync.valueMap ? JSON.parse(sync.valueMap) : null;
-  const layoutChanged = sync.planFingerprint !== fp;
+  const layoutChanged = sync.planFingerprint !== fingerprint(tabs, plan);
   if (force || !plan || (layoutChanged && plan.by !== "manual")) {
     plan = await makePlan(tabs, apiKey);
   } else if (layoutChanged) {
     plan = validatePlan(plan, tabs, "manual"); // keep the team's adjustments, drop what no longer fits
   }
-  valueMap = await makeValueMap(plan, tabs, apiKey, force ? null : valueMap);
-  await db.update(investorSheetSyncs).set({ plan: JSON.stringify(plan), planFingerprint: fp, valueMap: JSON.stringify(valueMap) })
+  // Words already translated and types already worked out are kept: AI is only asked about new ones.
+  valueMap = await makeValueMap(plan, tabs, apiKey, force && valueMap ? { stage: {}, type: {}, guessed: valueMap.guessed } : valueMap);
+  await db.update(investorSheetSyncs).set({ plan: JSON.stringify(plan), planFingerprint: fingerprint(tabs, plan), valueMap: JSON.stringify(valueMap) })
     .where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
   return { plan, valueMap };
 }
@@ -258,7 +258,7 @@ export async function saveInvestorPlan(raw: unknown) {
   if (!sync) throw new Error("Connect the Google Sheet first.");
   const tabs = await readTabs(sync.fileId, sync.fileKind);
   const plan = validatePlan({ ...(raw as object), summary: sync.plan ? JSON.parse(sync.plan).summary : "" }, tabs, "manual");
-  await db.update(investorSheetSyncs).set({ plan: JSON.stringify(plan), planFingerprint: fingerprint(tabs) }).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
+  await db.update(investorSheetSyncs).set({ plan: JSON.stringify(plan), planFingerprint: fingerprint(tabs, plan) }).where(eq(investorSheetSyncs.id, INVESTOR_SYNC_ID));
   return plan;
 }
 

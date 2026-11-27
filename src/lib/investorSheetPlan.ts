@@ -56,9 +56,16 @@ const TYPE_KEYS = INVESTOR_TYPES.map(t => t.key) as string[];
 const STAGE_KEYS = INVESTOR_STAGES.map(s => s.key) as string[];
 const cell = (v: string | undefined) => (v ?? "").replace(/\s+/g, " ").trim().slice(0, 50);
 
-/** Changes when tabs or their first rows change, so the plan is redone. */
-export function fingerprint(tabs: SheetTab[]) {
-  const text = tabs.map(t => `${t.name}::${t.rows.slice(0, 12).map(r => Array.from(r, cell).join("|")).join("/")}`).join("\n");
+/** The workbook's layout: tab names and each tab's title row. Editing data doesn't change it;
+ *  adding/renaming tabs or columns does, and then the plan is redone. */
+export function fingerprint(tabs: SheetTab[], plan?: SheetPlan | null) {
+  const text = tabs.map(t => {
+    const tp = plan?.tabs.find(x => x.name === t.name);
+    const titles = tp
+      ? Array.from(t.rows[tp.headerRow - 1] ?? [], cell).join("|")
+      : t.rows.slice(0, 12).map(r => Array.from(r, cell).join("|")).join("/");
+    return `${t.name}::${titles}`;
+  }).join("\n");
   return createHash("sha1").update(text).digest("hex");
 }
 
@@ -237,7 +244,7 @@ export async function makePlan(tabs: SheetTab[], apiKey: string | null | undefin
 
 /** Translates the sheet's own stage/type words the keyword guess can't place. */
 export async function makeValueMap(plan: SheetPlan, tabs: SheetTab[], apiKey: string | null | undefined, prev: ValueMap | null): Promise<ValueMap> {
-  const map: ValueMap = { stage: { ...(prev?.stage ?? {}) }, type: { ...(prev?.type ?? {}) } };
+  const map: ValueMap = { stage: { ...(prev?.stage ?? {}) }, type: { ...(prev?.type ?? {}) }, guessed: { ...(prev?.guessed ?? {}) } };
   const unknown: { stage: Set<string>; type: Set<string> } = { stage: new Set(), type: new Set() };
   for (const tp of plan.tabs.filter(x => x.use)) {
     const t = tabs.find(x => x.name === tp.name);
