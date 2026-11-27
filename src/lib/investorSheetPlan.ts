@@ -8,7 +8,7 @@ import { createHash } from "crypto";
 import { norm, type SheetTab } from "@/lib/sheetSync";
 import { INVESTOR_STAGES, INVESTOR_TYPES } from "@/lib/fundraising";
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-sonnet-5-5";
 
 export const PLAN_FIELDS = [
   { key: "name",            label: "Investor",          hint: "name of the investor institution / family office / fund / person investing. On a tab listing people, the column that says which investor each person belongs to." },

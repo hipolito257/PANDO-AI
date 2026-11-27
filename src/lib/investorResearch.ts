@@ -8,7 +8,7 @@ import { db, investors, investorContacts, firmSettings } from "@/lib/db";
 import { FIRM_SETTINGS_ID, getFirmThesis } from "@/lib/firmThesis";
 import { INVESTOR_TYPES, investorStageInfo, type InvestorResearch } from "@/lib/fundraising";
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-sonnet-5-5";
 
 const SYSTEM = `You are the fundraising analyst of Pando, a Mexican private equity firm raising a fund from limited partners (LPs). You research one prospective investor with web search and judge how good a prospect it is for Pando's fund.
 
