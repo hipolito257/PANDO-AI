@@ -188,7 +188,7 @@ export async function readWorkbook(buf: Buffer): Promise<SheetTab[]> {
     if (ws.state && ws.state !== "visible") return;
     const rows: string[][] = [];
     ws.eachRow({ includeEmpty: true }, row => {
-      const vals = (row.values as unknown[]).slice(1).map(cellText); // exceljs rows are 1-based
+      const vals = Array.from((row.values as unknown[]).slice(1), cellText); // exceljs rows are 1-based; no holes
       rows[row.number - 1] = vals;
     });
     for (let i = 0; i < rows.length; i++) rows[i] = rows[i] ?? [];
@@ -221,7 +221,8 @@ export function guessHeaderRow(rows: string[][]): number {
 }
 
 export function headersOf(tab: SheetTab, headerRow: number): string[] {
-  return (tab.rows[headerRow - 1] ?? []).map((h, i) => h || `Column ${i + 1}`);
+  // Array.from fills the gaps exceljs leaves for empty cells (map would keep them as holes).
+  return Array.from(tab.rows[headerRow - 1] ?? [], (h, i) => h || `Column ${i + 1}`);
 }
 
 export function guessColumnMap(headers: string[]): ColumnMap {

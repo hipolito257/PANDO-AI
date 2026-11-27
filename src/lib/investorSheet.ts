@@ -45,7 +45,7 @@ const CONTACT_KEYS = ["contactRole", "contactEmail", "contactPhone", "contactLin
 export function guessInvestorColumns(headers: string[]): InvestorColumnMap {
   const map: InvestorColumnMap = {};
   const used = new Set<string>();
-  const hs = headers.map(h => ({ h, n: norm(h) }));
+  const hs = Array.from(headers, h => ({ h: h ?? "", n: norm(h) }));
   for (const pass of ["exact", "contains"] as const) {
     for (const f of INVESTOR_FIELDS) {
       if (map[f.key]) continue;
